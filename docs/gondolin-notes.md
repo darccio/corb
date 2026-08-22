@@ -1,0 +1,511 @@
+# Gondolin SDK notes
+
+What is true about the Gondolin micro-VM SDK, as verified against a specific
+version. Corb builds on this SDK, so this file is the ground truth Corb's
+design assumes. It changes when Gondolin releases; the design in
+[`design.md`](./design.md) changes when Corb's own decisions change.
+
+> Adapted from an earlier design brief for a similar system.
+
+---
+
+## 1. Scope and pinning
+
+- Package: `@earendil-works/gondolin`
+- Verified version: **0.12.0**
+- Licence: Apache-2.0. Requires Node >= 23.6.0. Host platforms: macOS and Linux
+  only.
+- Docs site: `https://earendil-works.github.io/gondolin/<slug>/`. The site is
+  flat, with no section prefixes in the path. Raw markdown source lives at
+  `https://raw.githubusercontent.com/earendil-works/gondolin/main/docs/<slug>.md`.
+
+The project describes itself as early. It has had breaking reshapes in recent
+minor releases (the WHATWG-style hook signatures landed in 0.6.0). **Pin the
+version exactly** in `package.json` — no caret, no tilde — and treat a version
+bump as a change that needs the risk register below re-walked.
+
+Everything in this file was checked against the shipped `.d.ts` for 0.12.0 and
+the published docs. Where the two disagree, that is called out.
+
+---
+
+## 2. VM lifecycle
+
+```ts
+import { VM } from "@earendil-works/gondolin";
+
+const vm = await VM.create({ /* VMOptions */ });  // autoStart defaults to true
+await vm.close();                                 // otherwise QEMU keeps running
+```
+
+`VMOptions`:
+
+| Field | Notes |
+|---|---|
+| `sandbox` | `SandboxServerOptions`. Carries `imagePath` — see [§8](#8-guest-images). |
+| `rootfs` | `{ mode?: "readonly" \| "memory" \| "cow", size? }` |
+| `autoStart` | Default `true` |
+| `fetch` | Custom fetch implementation for egress |
+| `httpHooks` | From `createHttpHooks()` — see [§4](#4-network-egress-hooks-dns) |
+| `dns` | `{ mode, syntheticHostMapping }` |
+| `ssh` | `SshOptions` — see [§6](#6-ssh-egress) |
+| `tcp` | Mapped raw TCP escape hatch |
+| `maxHttpBodyBytes`, `maxHttpResponseBodyBytes` | Request/response body caps |
+| `allowWebSockets` | Default `true` |
+| `vfs` | `{ mounts, hooks, fuseMount }` — see [§7](#7-vfs-providers) |
+| `env` | Guest environment. Pass the `env` returned by `createHttpHooks`. |
+| `memory` | Default `"1G"` |
+| `cpus` | Default `2` |
+| `startTimeoutMs`, `sessionLabel`, `debugLog` | |
+
+Instance surface: `vm.id`, `vm.getHostPid()`, `vm.checkpoint(path)`,
+`vm.shell()`, `vm.fs`, `vm.enableSsh()`, `vm.enableIngress()`,
+`vm.getIngressRoutes()` / `vm.setIngressRoutes()`, `vm.setDebugLog()`.
+
+Session registry (module level): `listSessions`, `findSession`, `gcSessions`,
+`connectToSession`. A running VM is discoverable and re-attachable from another
+host process, which is what makes a detached session model possible.
+
+Checkpoints are **disk only**. There are no memory snapshots. `/root`, `/tmp`,
+`/var/tmp`, `/var/cache` and `/var/log` are tmpfs and are excluded from
+checkpoints, and data living behind a VFS mount is not captured either.
+
+---
+
+## 3. `exec`
+
+```ts
+exec(command: string | string[], options?: ExecOptions): ExecProcess
+```
+
+| Form | Behaviour |
+|---|---|
+| `string` | Run through a login shell, i.e. `["/bin/sh", "-lc", cmd]` |
+| `string[]` | Direct exec. **No `$PATH` search — absolute paths required.** |
+
+`ExecOptions`: `argv`, `env`, `cwd`, `stdin`, `pty`, `encoding`, `signal`,
+`stdout` / `stderr` (`"buffer" \| "pipe" \| "inherit" \| "ignore" \| WritableStream`),
+`windowBytes`, `buffer`.
+
+`ExecResult` is **always returned**; a non-zero exit does not throw. Fields:
+`exitCode`, `signal?`, `ok`, `stdout` / `stderr`, `stdoutBuffer` /
+`stderrBuffer`, `json<T>()`, `lines()`.
+
+### Interactive full-screen processes
+
+This is the documented pattern for hosting a TUI:
+
+```ts
+const proc = vm.exec(["/bin/bash", "-i"], {
+  stdin: true, pty: true, stdout: "pipe", stderr: "pipe",
+});
+proc.attach(process.stdin, process.stdout, process.stderr);
+const result = await proc;
+```
+
+`attach()` wires stdin through, enables raw mode, and forwards terminal resize
+events into the guest. Call it at most once per process, and do not also
+consume `proc.stdout` yourself.
+
+### Sharp edges
+
+- **No exec timeout and no kill.** `ExecOptions` has no timeout field. The only
+  lever is an `AbortSignal`, and aborting rejects the local promise without
+  guaranteeing the guest process actually dies. There is no `sendSignal` or
+  `kill` anywhere in the callback surface. Any timeout-and-terminate behaviour
+  is yours to build, and the only reliable termination primitive is
+  `vm.close()`.
+- **Concurrency is documented inconsistently.** One page says the guest runs one
+  command at a time and that a long-running `exec` blocks further exec
+  requests; another says each attached client gets an independent command
+  channel with no cross-talk. The types expose `waitForExecIdle()` and
+  `execPressure()`, which suggests serialisation pressure is a real phenomenon.
+  Measure before designing around it (risk R2).
+
+---
+
+## 4. Network: egress, hooks, DNS
+
+```ts
+const { httpHooks, env, secretManager } = createHttpHooks({
+  allowedHosts: ["api.anthropic.com", "*.github.com"],   // wildcards, NOT CIDR
+  allowedInternalHosts: [],                              // hosts exempt from the private-range block
+  secrets: { API_KEY: { hosts: ["api.anthropic.com"], value: process.env.API_KEY! } },
+  blockInternalRanges: true,                             // default
+  isRequestAllowed: (req) => req.method !== "DELETE",     // NOTE: req.body is null here
+  isIpAllowed: ({ ip }) => !ip.startsWith("203.0.113."),
+  onRequest: async (req) => { /* Request | Response | void */ },
+  onResponse: async (res, req) => { /* Response | void */ },
+});
+
+const vm = await VM.create({ httpHooks, env /* ... */ });  // pass BOTH
+```
+
+### Rules that bite
+
+- **`allowedHosts` sentinels are asymmetric.** Omitting the field means **allow
+  all**. Passing an explicit empty array `[]` means **deny all**. There is no
+  safe default here; always set it explicitly, and never build it from a
+  possibly-undefined config value.
+- **`allowedHosts` cannot express IP or CIDR policy.** It matches hostnames with
+  wildcards. Use `isIpAllowed` for address-shaped policy.
+- `blockInternalRanges` (default true) covers 127/8, 10/8, 172.16/12,
+  192.168/16, 169.254/16 and 100.64/10, plus IPv6 loopback, link-local and ULA.
+- **TLS is terminating MITM, not SNI passthrough.** The host reads the
+  ClientHello, mints a leaf certificate from a local CA, decrypts, and re-issues
+  the connection upstream. The CA lives at `~/.cache/gondolin/ssl`, is injected
+  into the guest at `/etc/gondolin/mitm/ca.crt`, and a merged bundle is placed at
+  `/run/gondolin/ca-certificates.crt`. `mitmCertDir` isolates it per run. The CA
+  private key is a sensitive host asset.
+- **DNS is mediated and is not the policy input.** The guest resolves names, but
+  those answers are largely disregarded for policy: the host enforces against
+  the HTTP `Host` header and performs its own resolution, which is what defeats
+  DNS rebinding. Modes are `"open" | "trusted" | "synthetic"`, default
+  `synthetic`. Only UDP/53 is handled; **all other UDP is dropped**.
+- `onRequest` may return a synthetic `Response` to short-circuit the request.
+  Doing so skips upstream DNS and IP checks and skips `onResponse` entirely.
+  This is the sanctioned mechanism for a host-side callback (see [§11](#11-there-is-no-guesthost-rpc-by-design)).
+- **Secrets may already be expanded by the time `onRequest` runs.** Do not log
+  request headers or URLs from inside a hook.
+- Non-HTTP flows are sniffed and classified as `http`, `tls` or `ssh`. Anything
+  else is denied as `unknown-protocol`. HTTP `CONNECT` is denied.
+- **No HTTP/2 and no HTTP/3.** Only HTTP/1.x over plain TCP and HTTPS via the
+  TLS interception path. No QUIC, no WebRTC. WebSockets are supported but opaque
+  after the 101 handshake. Keep-alive weakens the rebinding protection.
+- Guest LAN addressing is fixed: gateway `192.168.127.1`, guest
+  `192.168.127.3/24`.
+- Escape hatch: `tcp.hosts` mapped TCP gives a raw tunnel (requires
+  `dns.mode: "synthetic"` with `syntheticHostMapping: "per-host"`). It bypasses
+  the HTTP hooks **and** secret substitution, so anything reached this way sees
+  real credentials if you put them in the guest.
+
+An honest limitation stated by the SDK's own docs: the network layer exists to
+prevent *unexpected* egress destinations and limit protocol abuse. It does not
+prevent exfiltration to a destination you have allowed.
+
+---
+
+## 5. Secrets
+
+```ts
+const { httpHooks, env } = createHttpHooks({
+  allowedHosts: ["api.anthropic.com"],
+  secrets: { ANTHROPIC_API_KEY: { hosts: ["api.anthropic.com"], value: real } },
+});
+```
+
+The host generates a placeholder string. The guest's environment holds only the
+placeholder. On outbound HTTP to an **allowed** host, the host substitutes the
+real value. A placeholder aimed at a host outside that secret's `hosts` list
+causes the request to be blocked rather than silently sent.
+
+| | Substituted |
+|---|---|
+| Plain header values | yes |
+| `Authorization: Basic` / `Proxy-Authorization: Basic` | yes — decoded, replaced, re-encoded |
+| URL query string | only with `replaceSecretsInQuery: true` |
+| Request body | **no** |
+| URL path | **no** |
+| Response content | **no** |
+
+The guarantee is that the guest cannot read the real value from its process
+environment, its disk, or its memory, because the real value never enters the
+VM. The stated caveat is that an allowed server which echoes request headers
+back in a response defeats this.
+
+Placeholder modes are `"shared"` (default) and `"unique"`; custom shapes come
+from `makePlaceholderFunc({ prefix, length, alphabet })`. Matching is
+exact-substring, so keep placeholder entropy high.
+
+Runtime rotation: `secretManager.updateSecret(name, { value?, hosts? })`,
+`listSecrets()`, `deleteSecret()`.
+
+---
+
+## 6. SSH egress
+
+This is how git-over-SSH works without the guest ever holding a key.
+
+```ts
+import { VM, getInfoFromSshExecRequest } from "@earendil-works/gondolin";
+
+const vm = await VM.create({
+  dns: { mode: "synthetic", syntheticHostMapping: "per-host" },
+  ssh: {
+    allowedHosts: ["github.com"],
+    agent: process.env.SSH_AUTH_SOCK,
+    execPolicy: (req) => {
+      const git = getInfoFromSshExecRequest(req);
+      if (!git) return { allow: false, message: "non-git ssh denied" };
+      if (!allowedRepos.has(git.repo)) return { allow: false, message: "repo not allowed" };
+      if (git.service === "git-receive-pack") return { allow: false, message: "push disabled" };
+      return { allow: true };
+    },
+  },
+});
+```
+
+Upstream authentication happens on the host, against the host's ssh-agent or a
+configured key. The guest never receives private key material. Upstream host
+keys are verified host-side against `known_hosts` or a custom `hostVerifier`.
+
+`SshOptions`: `allowedHosts` (accepts `HOST:PORT`), `credentials`, `agent`,
+`knownHostsFile`, `execPolicy`, connection caps, timeouts, `hostKey`,
+`hostVerifier`.
+
+`getInfoFromSshExecRequest` parses the SSH exec request into `{ repo, service }`,
+where `service` is `git-upload-pack` (fetch/clone) or `git-receive-pack` (push).
+That is what makes "allow fetch, deny push, only these repositories" a short
+predicate rather than an argument-vector guessing game.
+
+Restrictions: **exec channels only**. Interactive shells are denied and
+subsystems (including sftp) are denied. The guest-facing proxy host key lacks
+post-quantum key exchange, so modern OpenSSH clients print a warning; the docs
+give a `GIT_SSH_COMMAND` workaround to suppress it.
+
+Note that SSH egress, like mapped TCP, bypasses the HTTP hooks and secret
+substitution — `ssh.execPolicy` is the enforcement point on that path.
+
+Separately, `vm.enableSsh()` is **host to guest** debug access. It mints an
+ephemeral Ed25519 key, runs guest sshd on loopback only, and explicitly disables
+agent forwarding and port forwarding at both ends. It defaults to `user: "root"`;
+a non-root user must already exist in the guest image.
+
+---
+
+## 7. VFS providers
+
+```ts
+vfs: {
+  mounts: { "/work/repo": new RealFSProvider("/host/path") },
+  hooks: { before, after },
+  fuseMount: "/data",   // default
+}
+```
+
+Routing is longest-matching-prefix. Note the aliasing: every VFS path is *also*
+reachable under `fuseMount`, so a mount at `/work` typically appears at both
+`/work` and `/data/work`. Any path-shaped policy must account for both spellings.
+
+`VirtualProvider` requires `readonly`, `supportsSymlinks`, `supportsWatch`, and
+both async **and `*Sync`** variants of `open`, `stat`, `lstat`, `readdir`,
+`mkdir`, `rmdir`, `unlink` and `rename`. Optional members: `link`, `readFile`,
+`writeFile`, `appendFile`, `exists`, `copyFile`, `realpath`, `access`,
+`readlink`, `symlink`, `statfs`, and the `watch*` family. `VirtualFileHandle`
+provides `read` / `write` / `stat` / `truncate` / `close` plus sync twins.
+`ERRNO` is exported for precise errno control. Extend `VirtualProviderClass`
+(read/write) or `ReadonlyVirtualProvider` (sync, read-only).
+
+Built-in providers: `MemoryProvider`, `RealFSProvider`, `ReadonlyProvider`,
+`ReadonlyVirtualProvider`, `ShadowProvider`.
+
+```ts
+new ShadowProvider(backend, {
+  shouldShadow: ({ path }) => path === "/.env" || path.startsWith("/secrets/"),
+  writeMode: "deny",            // or "tmpfs"
+  denySymlinkBypass: true,      // default; also consults realpath()
+  denyWriteErrno: ERRNO.EACCES,
+});
+```
+
+### Sharp edges
+
+- **`VfsHooks` are observe-only.** Both `before` and `after` return `void`. You
+  cannot deny or rewrite an operation from a hook. Use hooks for the audit log;
+  use a *provider* to enforce.
+- **`createShadowPathPredicate` has no glob support.** It does exact-path and
+  prefix matching only. Any glob semantics must be hand-written.
+- `ShadowProvider` is a *redirect-or-deny-writes* primitive. It has no concept
+  of hiding a path (returning `ENOENT` on lookup) and no concept of denying
+  reads.
+- **`denySymlinkBypass` is the load-bearing detail.** `ShadowProvider` defaults
+  it on and consults `realpath()` so that a symlink cannot alias around a rule.
+  Any custom provider that checks only the requested path silently loses this,
+  and `ln -s .env decoy && cat decoy` then defeats every rule.
+- `RealFSProvider` blocks symlinks that escape the exposed directory for
+  follow-style operations, failing closed including on dangling links.
+  `lstat`, `readlink` and `unlink` on the link entry itself are still allowed.
+- Mounting a custom provider at `/` can hide the distribution CA bundle and
+  break TLS.
+- **`MAX_RPC_DATA` is 60 KiB**, which caps the payload of a single VFS
+  operation. This is a VFS-RPC limit; it does not apply to the HTTP hook path.
+- VFS-backed data is not captured in `vm.checkpoint()`.
+
+The enforcement point being in host JavaScript, below the guest kernel's view of
+the filesystem, is the reason there is no raw-syscall escape hatch: there is no
+real filesystem underneath the mount for a guest process to fall back to.
+
+---
+
+## 8. Guest images
+
+`gondolin build` consumes a **JSON build config**, not a Dockerfile:
+
+```bash
+gondolin build --init-config > build-config.json
+gondolin build --config build-config.json --output ./assets
+```
+
+An OCI image can supply the root filesystem:
+
+```json
+{
+  "arch": "aarch64",
+  "distro": "alpine",
+  "oci": { "image": "docker.io/library/node:22-alpine" }
+}
+```
+
+OCI support swaps the **root filesystem contents**, not the whole image build
+pipeline. Boot artefacts (kernel, initramfs) remain Alpine-derived and the OCI
+filesystem is layered on as `rootfs.ext4`. `alpine.rootfsPackages` is ignored
+when `oci` is set, and the supplied rootfs must contain `/bin/sh`. Host build
+tools required: `cpio`, `lz4`, `e2fsprogs`, and optionally Docker or Podman.
+
+Init hooks: `rootfsInit`, `initramfsInit`, and `rootfsInitExtra`, the last of
+which is appended to the rootfs init and runs **before** `sandboxd` starts.
+`postBuild.copy` and `postBuild.commands` (run through `/bin/sh -lc` in a build
+chroot) inject files.
+
+**PID 1 is Gondolin's own `/init`**, which starts `sandboxfs`, `sandboxssh`,
+`sandboxingress` and `sandboxd`. The entire host control plane depends on those.
+There is no documented supervisor or entrypoint concept and no way to run your
+own long-running PID 1 — replacing `sandboxd` forfeits the SDK.
+`rootfsInitExtra` is the sanctioned boot hook.
+
+Do **not** put real secrets in the image `env`; it is baked into the image.
+
+### Selecting a custom-built image
+
+`VMOptions` has no `image` field, which is easy to misread as "you must juggle
+an environment variable to point at your build output". You do not.
+`VMOptions.sandbox` is a `SandboxServerOptions`, whose `imagePath` accepts three
+things: an asset directory path, an explicit `GuestAssets` object, or **an image
+selector string** — either `name:tag` or a build id. So:
+
+```ts
+const vm = await VM.create({ sandbox: { imagePath: "corb:0.1.0" } });
+```
+
+is sufficient to boot a locally built image. (Risk R17, resolved.)
+
+---
+
+## 9. Ingress
+
+```ts
+const ingress = await vm.enableIngress({ listenHost: "127.0.0.1", listenPort: 0 });
+vm.setIngressRoutes([{ prefix: "/", port: 8000, stripPrefix: true }]);
+```
+
+A host-to-guest **HTTP reverse proxy**, deliberately not a generic port forward.
+Routes are stored in `/etc/gondolin/listeners`, longest prefix wins. Hooks:
+`isAllowed`, `onRequest`, `onResponse` (header patching: a string or array sets
+a header, `null` deletes it). Deny by throwing `IngressRequestBlockedError`.
+HTTP/1.1 host-side only; the WebSocket handshake is hookable but opaque after
+the 101.
+
+Ingress requires the default `/etc/gondolin` mount. Setting `vfs: null` or
+overriding `/etc/gondolin` with a custom mount makes `enableIngress()` fail.
+
+---
+
+## 10. Threat model, and what Gondolin does not give you
+
+The thesis is that untrusted code runs in a real Linux VM whose I/O surface
+(network and persistence) is mediated by host code you control. The guest is
+treated as adversarial; the host is the policy enforcement point.
+
+Explicit non-goals: a malicious host; a malicious local user on the same
+account; VM escape and QEMU bugs; side channels; and **denial of service**.
+
+**There is no in-guest hardening whatsoever.** Searching the documentation set
+and the shipped package for `seccomp`, `cgroup`, `apparmor`, `selinux`,
+`landlock`, `namespace`, `no-new-privs`, `rlimit`, `CAP_SYS` and `prctl`
+produces zero hits. The only resource controls are the `memory` and `cpus`
+options plus I/O buffer caps, and the docs are explicit that this is not full
+resource governance. The documentation assumes a root guest throughout.
+
+Consequences for anything built on top:
+
+- Dropping privilege inside the guest is entirely your responsibility.
+- CPU burn, memory pressure, fork bombs and disk fill inside the VM are not
+  addressed by the SDK. Host-side resource limits on the VM process are the only
+  lever.
+- Bounding a session's wall-clock lifetime is your responsibility.
+
+---
+
+## 11. There is no guest→host RPC, by design
+
+The SDK's QEMU documentation carries a section titled "Why We Do Not Use Vsock".
+Its reasoning is a policy argument, not a technical one: giving the guest a
+general socket transport to the host makes it easy to accidentally create a
+generic tunnel, and the design wants the host to remain the egress policy
+enforcement point.
+
+Four fixed-purpose virtio-serial channels exist (exec control, VFS RPC, SSH
+forwarding, ingress forwarding), all host-initiated. The one backchannel,
+`SandboxServer.openTcpStream()`, is host-to-guest and restricted to loopback
+targets, and the types annotate `openIngressStream` with a warning that it
+should not be exposed as a generic port-forwarding primitive.
+
+**If you need a host callback, the composable route is an `onRequest`
+short-circuit against a sentinel hostname.** It is documented, purpose-built,
+gives you the full request and response, and never touches the network. It is
+not vsock, and it is not a VFS side channel (60 KiB frame cap, and it abuses
+file semantics).
+
+---
+
+## 12. Sharp edges, quick reference
+
+| # | Edge | Consequence |
+|---|---|---|
+| 1 | No HTTP/2 or HTTP/3 | Clients that negotiate h2 must be pinned to HTTP/1.1 |
+| 2 | Terminating MITM TLS, not SNI passthrough | Every guest TLS client needs the injected CA bundle |
+| 3 | Node ignores the system CA store | Must set `NODE_EXTRA_CA_CERTS` explicitly for Node guests |
+| 4 | `allowedHosts` omitted = allow all; `[]` = deny all | An undefined config value silently opens egress |
+| 5 | `exec` array form does no `$PATH` search | Absolute paths required |
+| 6 | No exec timeout, no kill | Build your own watchdog; `vm.close()` is the only hard stop |
+| 7 | `VfsHooks` are observe-only | Enforce in a provider, not a hook |
+| 8 | `MAX_RPC_DATA` = 60 KiB | Caps a single VFS operation payload |
+| 9 | `createShadowPathPredicate` has no globs | Hand-write the matcher |
+| 10 | Custom providers can lose `denySymlinkBypass` | Symlink aliasing defeats path rules |
+| 11 | No guest→host RPC | Use an `onRequest` sentinel-host short-circuit |
+| 12 | No in-guest hardening at all | Privilege drop is yours; DoS is an explicit non-goal |
+| 13 | SSH egress and mapped TCP bypass HTTP hooks and secrets | Police those paths separately |
+| 14 | Every VFS path is aliased under `fuseMount` | Path policy must cover both spellings |
+| 15 | Adding guest packages requires an image rebuild | Alpine-only image builder |
+
+---
+
+## 13. Risk register
+
+Status values:
+
+- **open** — unresolved; needs an empirical test or a build decision.
+- **closed** — resolved by a decision recorded in [`design.md`](./design.md) or
+  by a documented workaround.
+- **resolved-by-inspection** — settled by reading the shipped types or docs, with
+  no test required.
+
+| # | Risk | Detail | Status |
+|---|---|---|---|
+| R1 | HTTP/2 to the model API | Gondolin supports HTTP/1.x and TLS interception only, with no HTTP/2 or HTTP/3. Model-provider SDKs commonly negotiate h2, and some agent configurations select a WebSocket transport (supported, but opaque after the 101 handshake). **Closed by M0.1 (2026-08-22):** a real TLS handshake to `api.anthropic.com` from inside a guest completes and negotiates `http/1.1` even though the client offers `h2`; a local chunked-response test confirms the egress mediation delivers streamed chunks incrementally, not buffered. See `spike-results.md` for verbatim evidence. | closed |
+| R2 | Exec concurrency with a long-lived interactive process | The docs contradict themselves (§3). The agent's TUI is one long-running `exec`. Start a long exec, attempt a second, and measure `execPressure()`. If exec serialises, the design must need exactly one exec — everything else must be network- or VFS-mediated — and `vm.fs` must cover host-side file needs. | open |
+| R3 | MITM CA and Node | TLS is terminating MITM, so the guest must trust the injected CA. Node does not use the system CA store by default. Set `NODE_EXTRA_CA_CERTS=/run/gondolin/ca-certificates.crt`; a guest Go toolchain needs `SSL_CERT_FILE` / `SSL_CERT_DIR`; git and curl need the bundle too. Test HTTPS from Node, Go, git and curl inside the guest. | open |
+| R4 | OCI rootfs viability | OCI swaps the rootfs only; boot stays Alpine-derived; the rootfs must contain `/bin/sh`. Confirm the agent and any toolchains work in the resulting rootfs, and that `arch` matches the host (aarch64 on Apple Silicon). | open |
+| R5 | VFS uid/gid reporting | Can a provider report `uid`/`gid` in `stat` such that the non-root guest user appears to own the workspace? If yes, no `/etc/passwd` fixup is needed at all. If no, an equivalent fixup belongs in `rootfsInitExtra`. | open |
+| R6 | VFS performance under a real build | A JS-implemented FUSE-over-RPC layer with a 60 KiB frame cap is a genuine risk on a large source tree. Benchmark a full build and a recursive grep. If too slow, use a VFS mount only for policy-sensitive trees and a checkpointed disk for scratch. | open |
+| R7 | Exec timeout and kill | The SDK provides neither (§3). Anything beyond the single foreground process needs a bespoke watchdog. | open |
+| R8 | No glob support in the shadow predicate | `createShadowPathPredicate` is exact-path and prefix only. Corb needs `**/.env*`-shaped rules. Addressed by the glob policy provider in `design.md`. | closed |
+| R9 | Git-over-SSH warnings | The guest-facing proxy host key lacks post-quantum KEX, so OpenSSH warns on every operation. Apply the documented `GIT_SSH_COMMAND` workaround so the noise does not confuse the agent. | closed |
+| R10 | Ingress depends on `/etc/gondolin` | `vfs: null` or a custom `/etc/gondolin` mount makes `enableIngress()` fail. Documented constraint; only relevant if ingress is adopted. | resolved-by-inspection |
+| R11 | Project maturity | 0.12.0, self-described as early, with breaking reshapes as recently as 0.6.0. Pin exactly and expect churn on upgrade. | open |
+| R12 | VFS write semantics versus guest uid | The assumption is that writes go over RPC to a provider in the host process, which performs the real write as the host user, so guest-kernel DAC against a guest uid is not the enforcement point. This is load-bearing for the design; test it rather than assume it. | open |
+| R13 | `VirtualProviderClass` defaults | Confirm that extending it and overriding a subset of methods delegates the rest correctly, before relying on partial overrides in a policy provider. | open |
+| R14 | Sentinel-host round-trip latency | A host round-trip on every gated command adds latency. Measure it; if it is annoying, cache by payload hash within a session. | open |
+| R15 | Cgroup attach timing on Linux | Confirm `vm.getHostPid()` returns a stable PID early enough to attach a cgroup before the guest can do meaningful work. | open |
+| R16 | Reading a request body inside `onRequest` | `HttpHooks.onRequest` is typed `(request: Request) => Promise<Request \| Response \| void> \| Request \| Response \| void` and receives a full WHATWG `Request`. The "request body is always null" caveat in the SDK's JSDoc is attached to `isRequestAllowed`, not to `onRequest`; a separate `ON_REQUEST_EARLY_POLICY_SAFE` marker symbol exists specifically to opt a hook into pre-body policy checks. Awaiting `req.json()` inside `onRequest` is sound. | resolved-by-inspection (0.12.0 .d.ts) |
+| R17 | Selecting a custom-built guest image | `VMOptions` has no `image` field, but `VMOptions.sandbox` is a `SandboxServerOptions` whose `imagePath` accepts an asset directory path, an explicit `GuestAssets` object, or an image selector string (`name:tag` or a build id). `VM.create({ sandbox: { imagePath: "corb:0.1.0" } })` works; no environment-variable juggling is needed. | resolved-by-inspection (0.12.0 .d.ts) |
