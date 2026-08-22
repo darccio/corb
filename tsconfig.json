@@ -4,6 +4,8 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "strict": true,
+    "skipLibCheck": true,
+    "rewriteRelativeImportExtensions": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "erasableSyntaxOnly": true,
