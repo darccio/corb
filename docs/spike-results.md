@@ -215,3 +215,236 @@ All under `spike/m0-1-http2/`:
 
 *(M0.2 — R3, MITM CA trust — is separate and not yet run as part of this
 entry.)*
+
+---
+
+## M0.2 — R3: MITM CA trust for node, curl, git and go
+
+**Date:** 2026-08-22
+**Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
+**Verdict: PASS for all four tools** — with a surprising, load-bearing
+correction to the premise: **none of them need an explicit CA env var from
+Corb's own configuration.** Gondolin's own guest init unconditionally exports
+`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` and
+`NODE_EXTRA_CA_CERTS` for every process it execs, regardless of what `env` is
+passed to `VM.create()` or `vm.exec()`. Corb's design can still set these
+explicitly (harmless, self-documenting, defensive against a future Gondolin
+change), but it is not required for trust to work.
+
+### What was built
+
+`spike/m0-2-mitm-ca/`:
+
+- `package.json` — standalone package, depends on exactly
+  `@earendil-works/gondolin@0.12.0`.
+- `build-config.json` — minimal `BuildConfig`: `alpine.rootfsPackages:
+  ["linux-virt", "nodejs", "curl", "ca-certificates", "bash", "git", "go"]`,
+  **no `postBuild` section** — every package is a plain `apk` add needing no
+  compilation, so the build needs neither Docker nor root. Built via the
+  `gondolin build` CLI with `/usr/sbin:/sbin` prepended to `PATH` (same
+  e2fsprogs-on-PATH requirement M0.1 found). `rootfs.sizeMb` bumped to 3072
+  (from M0.1's 2048) to fit the Go toolchain. Assets under
+  `spike/m0-2-mitm-ca/assets/`.
+- `check.go` — stdlib-only (`net/http`) POST to `https://api.anthropic.com/v1/messages`;
+  a completed handshake plus any HTTP response (even 401) is a pass, a
+  certificate error is a fail. No API key, no external Go modules (so `go
+  run` needs no module downloads).
+- `run-spike.mjs` — the main driver: boots one VM (`httpHooks` from
+  `createHttpHooks({ allowedHosts: ["api.anthropic.com", "github.com"] })`,
+  **no CA env vars set at the `VM.create()` level on purpose**), then for each
+  of node/curl/git/go runs the same real-endpoint check twice via
+  `vm.exec(argv, { env })` — once with a deliberately minimal `env` (no
+  tool-specific CA var) and once with that tool's documented var pointed at
+  `/run/gondolin/ca-certificates.crt`. Also runs a diagnostic comparing the
+  guest's system trust bundle (`/etc/ssl/certs/ca-certificates.crt`) against
+  Gondolin's merged bundle.
+- `diag-env.mjs`, `diag-env2.mjs` — follow-up diagnostics (see "what
+  surprised us" below): dump the full guest process environment via
+  `/usr/bin/env` under different `VM.create()`/`vm.exec()` env configurations,
+  to find out where the CA trust env vars actually come from.
+- `diag-ca-install.mjs` — checks whether Gondolin's attempt to install its CA
+  into the guest's system trust store via `update-ca-certificates` actually
+  changes `/etc/ssl/certs/ca-certificates.crt`.
+- `diag-negative-control.mjs` — the rigorous version of the "with/without"
+  test: since Gondolin's init makes a true "without" baseline impossible via
+  simple omission (see below), this explicitly overrides *every* relevant CA
+  env var to a nonexistent path (`/nonexistent/definitely-not-a-cert.crt`) for
+  a genuine negative control, then restores the real merged bundle path as a
+  positive control, both within the same VM boot, for all four tools.
+
+### What surprised us: a "bare" run is not actually bare
+
+The task brief's plan was: run each tool once with its CA env var unset, once
+with it set, and expect "fails without / passes with" as the diagnostic
+signal. The first full run (`evidence-01-full-run.log`) did **not** produce
+that split — every tool passed on both the "bare" and "explicit" run. Digging
+into why (rather than assuming Alpine's system store already trusted the CA):
+
+1. `evidence-02-env-diagnostic.log`: a direct-exec `/usr/bin/env` inside the
+   guest, called with `vm.exec(["/usr/bin/env"], { env: { PATH: "/usr/bin:/bin" } })`
+   — i.e. an `ExecOptions.env` that mentions nothing CA-related — still shows:
+
+   ```
+   CURL_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+   NODE_EXTRA_CA_CERTS=/etc/gondolin/mitm/ca.crt
+   SSL_CERT_FILE=/run/gondolin/ca-certificates.crt
+   REQUESTS_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+   UV_SYSTEM_CERTS=true
+   ```
+
+2. `evidence-03-env-source-diagnostic.log`: ruling out that this comes from
+   `createHttpHooks()`'s returned `env` — that object was logged as `{}` (no
+   secrets configured) — and ruling out that `VM.create()`'s own `env` field
+   is the source, by omitting it from `VM.create()` entirely. The same five
+   vars still appeared in the guest process environment.
+3. Reading the shipped package directly settled it:
+   `node_modules/@earendil-works/gondolin/dist/src/alpine/init-scripts.js`
+   contains a shell function that runs during Gondolin's own guest `/init`
+   (PID 1, per `gondolin-notes.md` §8) which unconditionally does:
+
+   ```sh
+   export SSL_CERT_FILE="${runtime_ca_bundle}"
+   export CURL_CA_BUNDLE="${runtime_ca_bundle}"
+   export REQUESTS_CA_BUNDLE="${runtime_ca_bundle}"
+   export NODE_EXTRA_CA_CERTS="${mitm_ca_cert}"
+   ```
+
+   (`runtime_ca_bundle` = `/run/gondolin/ca-certificates.crt`, the merged
+   bundle; `mitm_ca_cert` = `/etc/gondolin/mitm/ca.crt`, the raw CA cert —
+   Node gets pointed at the single CA cert, the other three at the merged
+   bundle). This runs regardless of any host-side JS configuration, and its
+   exports are inherited by every process the guest execs.
+4. `diag-ca-install.mjs` / `evidence-04-update-ca-certificates-diagnostic.log`:
+   the same init script also tries to install the CA into the system trust
+   store proper via `update-ca-certificates`, and the guest does have that
+   binary and a populated `/usr/local/share/ca-certificates/gondolin-mitm-ca.crt`.
+   But a manual re-run of `update-ca-certificates` still leaves
+   `/etc/ssl/certs/ca-certificates.crt` at its original 120-certificate count
+   (never picking up the 121st, Gondolin's own CA) — so **the system trust
+   store itself does *not* end up trusting the CA** on this Alpine build; only
+   the four exported env vars do. This is a minor loose end (not chased
+   further — it doesn't change any verdict below, since the env-var path
+   already gives all four tools working trust) but is worth knowing: any
+   guest tool that consults *only* the OS trust store, ignoring all of
+   `SSL_CERT_FILE`/`SSL_CERT_DIR`/`CURL_CA_BUNDLE`/`NODE_EXTRA_CA_CERTS`, would
+   still fail today, despite `update-ca-certificates` reporting success.
+
+Because of this, "unset the var, see it fail" isn't achievable by omission —
+Gondolin's init has already set it before any exec runs. The genuine negative
+control is to override the var(s) to a bad path, done in
+`diag-negative-control.mjs`.
+
+### Per-tool evidence (bogus-override negative control vs. real bundle)
+
+All from `evidence-05-negative-control.log`, one VM boot, all four tools run
+twice: once with `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`,
+`REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `GIT_SSL_CAINFO` all pointed at
+`/nonexistent/definitely-not-a-cert.crt`, once with the applicable ones
+pointed at the real `/run/gondolin/ca-certificates.crt`.
+
+**node** (`NODE_EXTRA_CA_CERTS`):
+
+```
+--- node bogus --- exitCode=1 ok=false
+[stderr]
+Warning: Ignoring extra certs from `/nonexistent/definitely-not-a-cert.crt`, load failed: error:80000002:system library::No such file or directory
+NODE_FETCH_ERROR Error: self-signed certificate in certificate chain
+
+--- node real --- exitCode=0 ok=true
+[stdout]
+NODE_STATUS 401
+```
+
+**curl** (`CURL_CA_BUNDLE`):
+
+```
+--- curl bogus --- exitCode=77 ok=false
+[stderr]
+curl: (77) error adding trust anchors from file: /nonexistent/definitely-not-a-cert.crt
+
+--- curl real --- exitCode=0 ok=true
+[stdout]
+{"type":"error","error":{"type":"authentication_error","message":"x-api-key header is required"},"request_id":"req_011CeJ5b8aYH5QMipou958UR"}
+```
+
+**git** (`GIT_SSL_CAINFO`, plus the `SSL_CERT_FILE` git's libcurl backend
+consults directly):
+
+```
+--- git bogus --- exitCode=128 ok=false
+[stderr]
+fatal: unable to access 'https://github.com/octocat/Hello-World.git/': error adding trust anchors from file: /nonexistent/definitely-not-a-cert.crt
+
+--- git real --- exitCode=0 ok=true
+[stdout]
+7fd1a60b01f91b314f59955a4e4d4e80d8edf11d	HEAD
+... (full ref list for octocat/Hello-World)
+```
+
+**go** (`SSL_CERT_FILE`/`SSL_CERT_DIR`, read directly by `crypto/x509` on
+Linux):
+
+```
+--- go bogus --- exitCode=1 ok=false
+[stdout]
+GO_FETCH_ERROR: Post "https://api.anthropic.com/v1/messages": tls: failed to verify certificate: x509: certificate signed by unknown authority
+
+--- go real --- exitCode=0 ok=true
+[stdout]
+GO_STATUS: 401
+GO_BODY: {"type":"error","error":{"type":"authentication_error","message":"x-api-key header is required"},"request_id":"req_011CeJ5cdoihvSccANJp8oq7"}
+```
+
+Every "bogus" failure is a **certificate-trust error specifically**
+(`self-signed certificate in certificate chain`, `error adding trust anchors`,
+`x509: certificate signed by unknown authority`) — not a DNS failure, a
+network-unreachable error, or a protocol error. That isolates the cause
+precisely to CA trust, for all four tools.
+
+### Why the first ("bare", pre-negative-control) run is still useful evidence
+
+`evidence-01-full-run.log` is kept because it answers the practical question
+Corb actually cares about: *does a guest process launched the way Corb will
+actually launch it (inheriting Gondolin's default guest environment, with no
+special handling) get TLS trust for these four tools?* Answer: **yes, for all
+four, with zero extra configuration required from Corb.** The
+negative-control run in `evidence-05-negative-control.log` exists to prove
+*why* — to confirm this isn't an accident of the system trust store (it
+isn't — see the `update-ca-certificates` finding above) but a direct,
+reproducible effect of Gondolin's own env-var injection.
+
+### Reasoning per tool
+
+| Tool | Var(s) that matter | Auto-injected by Gondolin init? | Needs Corb to set it explicitly? |
+|---|---|---|---|
+| node | `NODE_EXTRA_CA_CERTS` | yes | no |
+| curl | `CURL_CA_BUNDLE` (also honours `SSL_CERT_FILE`, also auto-injected) | yes | no |
+| git | no git-specific var needed — its libcurl/OpenSSL backend reads `SSL_CERT_FILE` directly | yes (`SSL_CERT_FILE`) | no |
+| go | `SSL_CERT_FILE`/`SSL_CERT_DIR`, read directly by `crypto/x509` on Linux | yes (`SSL_CERT_FILE`) | no |
+
+This means `docs/design.md` §8's guest-env template (which sets
+`NODE_EXTRA_CA_CERTS` and `SSL_CERT_FILE` explicitly alongside `...env` from
+`createHttpHooks`) is **not wrong, but is redundant** — Gondolin already
+guarantees these before that `env` object is even applied. Setting them
+explicitly is harmless defensive belt-and-braces (and guards against a future
+Gondolin version changing this default), so no change to `design.md` is
+required by this finding, but it is worth the design doc's authors knowing the
+explicit vars are a safety net, not the mechanism actually carrying trust
+today.
+
+### Evidence files
+
+All under `spike/m0-2-mitm-ca/`:
+
+| File | Contents |
+|---|---|
+| `evidence-01-full-run.log` | Main driver run: all four tools, "no var mentioned" vs "var explicitly set to the real bundle" (both pass — the surprise that led to the rest) |
+| `evidence-02-env-diagnostic.log` | Full guest process env dump proving the CA vars are present even when `ExecOptions.env` doesn't mention them |
+| `evidence-03-env-source-diagnostic.log` | Rules out `createHttpHooks()`'s `env` and `VM.create()`'s `env` as the source (both absent/omitted, vars still present) |
+| `evidence-04-update-ca-certificates-diagnostic.log` | Confirms the guest's system trust store (`/etc/ssl/certs/ca-certificates.crt`) does **not** end up containing Gondolin's CA, despite `update-ca-certificates` reporting success |
+| `evidence-05-negative-control.log` | The rigorous fail-without/pass-with test: every CA env var forced to a nonexistent path (genuine failure, cert-trust errors only) vs. pointed at the real merged bundle (pass), all four tools, one VM boot |
+
+Left running: nothing. The VM was closed in a `finally` block on every run
+(`run-spike.mjs`, `diag-env.mjs`, `diag-env2.mjs`, `diag-ca-install.mjs`,
+`diag-negative-control.mjs` all follow this pattern); no lingering
+QEMU/`gondolin-krun-runner` processes after the session.

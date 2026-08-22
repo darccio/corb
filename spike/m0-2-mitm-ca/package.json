@@ -1,0 +1,10 @@
+{
+  "name": "m0-2-mitm-ca-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway spike: does trust in Gondolin's injected MITM CA propagate to node, curl, git and go inside the guest, with and without each tool's explicit CA env var?",
+  "dependencies": {
+    "@earendil-works/gondolin": "0.12.0"
+  }
+}

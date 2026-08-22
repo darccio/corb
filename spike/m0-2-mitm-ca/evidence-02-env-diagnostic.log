@@ -1,0 +1,116 @@
+VM booted: id=27f5a14d-722f-409b-a0a4-82aba3387638
+
+--- direct-exec /usr/bin/env with ONLY {PATH} passed in ExecOptions.env ---
+exitCode 0
+CURL_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+NODE_EXTRA_CA_CERTS=/etc/gondolin/mitm/ca.crt
+SHLVL=2
+XDG_CACHE_HOME=/tmp/.cache
+HOME=/root
+SSL_CERT_FILE=/run/gondolin/ca-certificates.crt
+TMPDIR=/tmp
+UV_SYSTEM_CERTS=true
+TERM=linux
+REQUESTS_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+UV_CACHE_DIR=/tmp/.cache/uv
+XDG_CONFIG_HOME=/tmp/.config
+XDG_DATA_HOME=/tmp/.local/share
+PWD=/
+PATH=/usr/bin:/bin
+
+[stderr] 
+
+--- direct-exec /usr/bin/env with NO env field at all (undefined) ---
+exitCode 0
+CURL_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+NODE_EXTRA_CA_CERTS=/etc/gondolin/mitm/ca.crt
+SHLVL=2
+XDG_CACHE_HOME=/tmp/.cache
+HOME=/root
+SSL_CERT_FILE=/run/gondolin/ca-certificates.crt
+TMPDIR=/tmp
+UV_SYSTEM_CERTS=true
+TERM=linux
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+REQUESTS_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+UV_CACHE_DIR=/tmp/.cache/uv
+XDG_CONFIG_HOME=/tmp/.config
+XDG_DATA_HOME=/tmp/.local/share
+PWD=/
+
+[stderr] 
+
+--- login-shell exec: env (string form, /bin/sh -lc) ---
+exitCode 0
+CURL_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+NODE_EXTRA_CA_CERTS=/etc/gondolin/mitm/ca.crt
+SHLVL=3
+XDG_CACHE_HOME=/tmp/.cache
+HOME=/root
+PAGER=less
+SSL_CERT_FILE=/run/gondolin/ca-certificates.crt
+TMPDIR=/tmp
+UV_SYSTEM_CERTS=true
+TERM=linux
+LC_COLLATE=C
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+REQUESTS_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+UV_CACHE_DIR=/tmp/.cache/uv
+LANG=C.UTF-8
+XDG_CONFIG_HOME=/tmp/.config
+XDG_DATA_HOME=/tmp/.local/share
+PWD=/
+CHARSET=UTF-8
+
+
+--- check for /etc/profile.d scripts and /etc/environment ---
+-- /etc/environment --
+cat: can't open '/etc/environment': No such file or directory
+-- /etc/profile.d --
+total 24
+drwxr-xr-x    2 1000     1000          4096 Aug 22 16:04 .
+drwxr-xr-x   22 1000     1000          4096 Aug 22 16:08 ..
+-rw-r--r--    1 1000     1000           402 Aug 22 16:04 00-bashrc.sh
+-rw-r--r--    1 1000     1000            97 Aug 22 16:04 20locale.sh
+-rw-r--r--    1 1000     1000           249 Aug 22 16:04 README
+-rw-r--r--    1 1000     1000           447 Aug 22 16:04 color_prompt.sh.disabled
+== /etc/profile.d/00-bashrc.sh ==
+if [ -n "$BASH_VERSION" ] && [ "$BASH" != "/bin/sh" ]; then
+	# if we're bash (and not /bin/sh bash), also source the bashrc
+	# by default, bash sources the bashrc for non-login,
+	# and only /etc/profile on login (-l). so, make it do both on login.
+	# this ensures that login-shell bash (e.g. -bash or bash -l) still sources the
+	# system bashrc, which e.g. loads bash-completion
+	. /etc/bash/bashrc
+fi
+== /etc/profile.d/20locale.sh ==
+export CHARSET=${CHARSET:-UTF-8}
+export LANG=${LANG:-C.UTF-8}
+export LC_COLLATE=${LC_COLLATE:-C}
+== /etc/profile.d/README ==
+This directory should contain shell scripts configuring system-wide
+environment on users' shells.
+
+Files with the .sh extension found in this directory are evaluated by
+Bourne-compatible shells (like ash, bash or zsh) when started as a
+login shell.
+== /etc/profile.d/color_prompt.sh.disabled ==
+# Setup a red prompt for root and a green one for users.
+# Symlink this file to color_prompt.sh to actually enable it.
+
+_normal=$'\e[0m'
+if [ "$USER" = root ]; then
+	_color=$'\e[1;31m'
+	_symbol='#'
+else
+	_color=$'\e[1;32m'
+	_symbol='$'
+fi
+if [ -n "$ZSH_VERSION" ]; then
+	PS1="%{$_color%}%m [%{$_normal%}%~%{$_color%}]$_symbol %{$_normal%}"
+else
+	PS1="\[$_color\]\h [\[$_normal\]\w\[$_color\]]$_symbol \[$_normal\]"
+fi
+unset _normal _color _symbol
+
+[stderr] 

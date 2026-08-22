@@ -1,0 +1,15 @@
+VM booted: id=91bca04b-0130-4957-8645-3fa4ee35abae
+exitCode 0
+-- update-ca-certificates present? --
+/usr/sbin/update-ca-certificates
+-- installed mitm cert in /usr/local/share/ca-certificates? --
+total 12
+drwxr-xr-x    2 1000     1000          4096 Aug 22 16:10 .
+drwxr-xr-x    3 1000     1000          4096 Aug 22 16:04 ..
+-rw-r--r--    1 root     root          1166 Aug 22 16:10 gondolin-mitm-ca.crt
+-- manual update-ca-certificates run --
+EXIT=0
+-- system bundle cert count after manual run --
+120
+
+[stderr] 

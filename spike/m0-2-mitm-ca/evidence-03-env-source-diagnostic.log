@@ -1,0 +1,23 @@
+--- createHttpHooks() returned env object ---
+{}
+VM booted: id=bfe3a13c-3f75-454e-9543-7639be0e01f1
+
+--- direct-exec /usr/bin/env, VM.create called with NO env field at all ---
+exitCode 0
+CURL_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+NODE_EXTRA_CA_CERTS=/etc/gondolin/mitm/ca.crt
+SHLVL=2
+XDG_CACHE_HOME=/tmp/.cache
+HOME=/root
+SSL_CERT_FILE=/run/gondolin/ca-certificates.crt
+TMPDIR=/tmp
+UV_SYSTEM_CERTS=true
+TERM=linux
+REQUESTS_CA_BUNDLE=/run/gondolin/ca-certificates.crt
+UV_CACHE_DIR=/tmp/.cache/uv
+XDG_CONFIG_HOME=/tmp/.config
+XDG_DATA_HOME=/tmp/.local/share
+PWD=/
+PATH=/usr/bin:/bin
+
+[stderr] 
