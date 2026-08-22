@@ -1,0 +1,25 @@
+
+======================================================================
+Booting VM
+======================================================================
+VM booted: id=8f19663e-0745-430b-bb91-137343c2476b
+
+======================================================================
+Check 1: SKIPPED (--skip-curl)
+======================================================================
+
+======================================================================
+Check 2: incremental streaming delivery from local test server (https://192.168.1.201:18443/stream)
+======================================================================
+--- node stream check exitCode=1 ok=false ---
+--- stream check stdout (per-chunk timestamps are here) ---
+
+--- stream check stderr ---
+[guest] fetch failed: TypeError: fetch failed
+[guest] cause: Error: 90AC13B0107F0000:error:0A000410:SSL routines:ssl3_read_bytes:ssl/tls alert handshake failure:ssl/record/rec_layer_s3.c:918:SSL alert number 40
+
+
+
+======================================================================
+Closing VM
+======================================================================

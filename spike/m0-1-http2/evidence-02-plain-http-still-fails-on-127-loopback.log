@@ -1,0 +1,25 @@
+
+======================================================================
+Booting VM
+======================================================================
+VM booted: id=f63c28be-408b-4cb5-a523-1401ffe7056d
+
+======================================================================
+Check 1: SKIPPED (--skip-curl)
+======================================================================
+
+======================================================================
+Check 2: incremental streaming delivery from local test server (http://127.0.0.1:18080/stream)
+======================================================================
+--- node stream check exitCode=1 ok=false ---
+--- stream check stdout (per-chunk timestamps are here) ---
+
+--- stream check stderr ---
+[guest] fetch failed: TypeError: fetch failed
+[guest] cause: Error: connect ECONNREFUSED 127.0.0.1:18080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1706:16)
+
+
+======================================================================
+Closing VM
+======================================================================

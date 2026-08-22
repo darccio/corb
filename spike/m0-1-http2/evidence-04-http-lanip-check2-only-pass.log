@@ -1,0 +1,29 @@
+
+======================================================================
+Booting VM
+======================================================================
+VM booted: id=cc93a6b5-19be-4fe2-9789-c928ff9faab1
+
+======================================================================
+Check 1: SKIPPED (--skip-curl)
+======================================================================
+
+======================================================================
+Check 2: incremental streaming delivery from local test server (http://192.168.1.201:18080/stream)
+======================================================================
+--- node stream check exitCode=0 ok=true ---
+--- stream check stdout (per-chunk timestamps are here) ---
+[guest] response status 200 at t+545ms
+[guest] chunk 0 at t+548ms bytes=14 text="data: chunk-0\n"
+[guest] chunk 1 at t+929ms bytes=14 text="data: chunk-1\n"
+[guest] chunk 2 at t+1329ms bytes=14 text="data: chunk-2\n"
+[guest] chunk 3 at t+1731ms bytes=14 text="data: chunk-3\n"
+[guest] chunk 4 at t+2132ms bytes=14 text="data: chunk-4\n"
+[guest] stream ended at t+2543ms, total chunks=5
+
+--- stream check stderr ---
+
+
+======================================================================
+Closing VM
+======================================================================

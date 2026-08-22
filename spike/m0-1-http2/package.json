@@ -1,0 +1,10 @@
+{
+  "name": "m0-1-http2-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway spike: does Gondolin's HTTP/1.x-only egress survive a real TLS handshake to api.anthropic.com, and does it preserve incremental (streaming) delivery end to end?",
+  "dependencies": {
+    "@earendil-works/gondolin": "0.12.0"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "arch": "x86_64",
+  "distro": "alpine",
+  "alpine": {
+    "version": "3.23.0",
+    "kernelPackage": "linux-virt",
+    "rootfsPackages": ["linux-virt", "nodejs", "curl", "ca-certificates", "bash"]
+  },
+  "rootfs": {
+    "label": "m0-1-root",
+    "sizeMb": 2048
+  }
+}

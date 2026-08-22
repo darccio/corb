@@ -1,0 +1,115 @@
+
+======================================================================
+Booting VM
+======================================================================
+VM booted: id=7b5f735b-d869-4229-a8d5-f8964ef8b7d4
+
+======================================================================
+Check 1: TLS/ALPN negotiation against api.anthropic.com (no API key)
+======================================================================
+--- curl exitCode=0 ok=true ---
+--- curl stdout ---
+{"type":"error","error":{"type":"authentication_error","message":"x-api-key header is required"},"request_id":"req_011CeHpC3eEwhCNJfGwoktfv"}
+--- curl stderr (verbose TLS/ALPN log is here) ---
+Note: Unnecessary use of -X or --request, POST is already inferred.
+*   Trying [2001:db8::1]:443...
+* Immediate connect fail for 2001:db8::1: Network unreachable
+* connect to 2001:db8::1 port 443 from :: port 0 failed: No error information
+* Host api.anthropic.com:443 was resolved.
+* IPv6: 2001:db8::1
+* IPv4: 198.19.0.1
+*   Trying 198.19.0.1:443...
+* ALPN: curl offers h2,http/1.1
+} [5 bytes data]
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+} [1563 bytes data]
+* SSL Trust Anchors:
+*   CAfile: /run/gondolin/ca-certificates.crt
+*   CApath: /etc/ssl/certs
+{ [5 bytes data]
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+{ [1210 bytes data]
+* TLSv1.3 (IN), TLS change cipher, Change cipher spec (1):
+{ [1 bytes data]
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+{ [21 bytes data]
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+{ [1677 bytes data]
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+{ [264 bytes data]
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+{ [52 bytes data]
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+} [1 bytes data]
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+} [52 bytes data]
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS
+* ALPN: server accepted http/1.1
+* Server certificate:
+*   subject: CN=api.anthropic.com
+*   start date: Aug 22 12:38:06 2026 GMT
+*   expire date: Nov 24 13:38:06 2028 GMT
+*   issuer: CN=gondolin-mitm-ca
+*   Certificate level 0: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+*   Certificate level 1: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+*   subjectAltName: "api.anthropic.com" matches cert's "api.anthropic.com"
+* OpenSSL verify result: 0
+* SSL certificate verified via OpenSSL.
+* Established connection to api.anthropic.com (198.19.0.1 port 443) from 192.168.127.3 port 58376 
+  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+                                 Dload  Upload  Total   Spent   Left   Speed
+  0      0   0      0   0      0      0      0                              0* using HTTP/1.x
+} [5 bytes data]
+> POST /v1/messages HTTP/1.1
+> Host: api.anthropic.com
+> User-Agent: curl/8.20.0
+> Accept: */*
+> Content-Length: 2
+> Content-Type: application/x-www-form-urlencoded
+> 
+} [2 bytes data]
+* upload completely sent off: 2 bytes
+{ [5 bytes data]
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+{ [233 bytes data]
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+{ [233 bytes data]
+< HTTP/1.1 401 Unauthorized
+< cf-cache-status: DYNAMIC
+< cf-ray: a2f1ff2a0923f56c-TXL
+< content-security-policy: default-src 'none'; frame-ancestors 'none'
+< content-type: application/json
+< date: Sat, 22 Aug 2026 12:49:18 GMT
+< request-id: req_011CeHpC3eEwhCNJfGwoktfv
+< server: cloudflare
+< strict-transport-security: max-age=31536000; includeSubDomains; preload
+< vary: Accept-Encoding
+< x-robots-tag: none
+< x-should-retry: false
+< connection: close
+< transfer-encoding: chunked
+< 
+{ [5 bytes data]
+100    143   0    141 100      2    146      2   00:01           00:01      0100    143   0    141 100      2    146      2   00:01           00:01      0100    143   0    141 100      2    146      2   00:01           00:01      0
+* shutting down connection #0
+
+
+======================================================================
+Check 2: incremental streaming delivery from local test server (http://192.168.1.201:18080/stream)
+======================================================================
+--- node stream check exitCode=0 ok=true ---
+--- stream check stdout (per-chunk timestamps are here) ---
+[guest] response status 200 at t+530ms
+[guest] chunk 0 at t+533ms bytes=14 text="data: chunk-0\n"
+[guest] chunk 1 at t+915ms bytes=14 text="data: chunk-1\n"
+[guest] chunk 2 at t+1316ms bytes=14 text="data: chunk-2\n"
+[guest] chunk 3 at t+1717ms bytes=14 text="data: chunk-3\n"
+[guest] chunk 4 at t+2118ms bytes=14 text="data: chunk-4\n"
+[guest] stream ended at t+2526ms, total chunks=5
+
+--- stream check stderr ---
+
+
+======================================================================
+Closing VM
+======================================================================
