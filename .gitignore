@@ -11,6 +11,8 @@ image/build/
 
 # Go build output
 guest/build/
+# stray binary from a bare `go build ./...` run at the module root
+/guest/dropcap
 
 # OS / editor
 .DS_Store
