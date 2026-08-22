@@ -33,7 +33,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import {
   buildAssets,
@@ -46,6 +46,37 @@ import {
   type ImageArch,
   type LocalImageRef,
 } from "@earendil-works/gondolin";
+
+// image/verify.ts (M1.4) lives outside src/ deliberately — it is not part
+// of tsc's compiled program (tsconfig.json's rootDir is "src", and a static
+// import of a file outside it fails to compile with TS6059). Loading it
+// through a dynamic import() whose specifier is a runtime-computed string
+// (never a string literal) keeps tsc from trying to resolve or include it
+// in the program at all, so it never hits that rootDir check; Node's own
+// native TypeScript support (the same "erasable syntax" support
+// `src/cli.ts` relies on for `npm run dev`) then loads and runs it directly,
+// whether corb is running from a dev checkout or from `dist/cli.js`.
+interface GateResult {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+interface VerifyReport {
+  ok: boolean;
+  gates: GateResult[];
+}
+
+type VerifyImageFn = (
+  assetDir: string,
+  options?: { allowedHosts?: string[]; sessionLabel?: string },
+) => Promise<VerifyReport>;
+
+async function loadVerifyImage(): Promise<VerifyImageFn> {
+  const verifyPath = path.join(packageRoot(), "image", "verify.ts");
+  const mod = (await import(pathToFileURL(verifyPath).href)) as { verifyImage: VerifyImageFn };
+  return mod.verifyImage;
+}
 
 function moduleDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
@@ -138,9 +169,29 @@ export interface ImageBuildReport {
   outputDir: string;
   buildId: string;
   buildMs: number;
+  verify: VerifyReport;
   primaryTag: LocalImageRef;
   aliasTag: LocalImageRef;
   imageStoreDirectory: string;
+}
+
+/**
+ * Thrown when the M1.4 in-VM gate suite (image/verify.ts) fails against
+ * freshly built assets. `gates` carries the full report so a caller can
+ * inspect which gate(s) failed and why, not just a flattened message.
+ */
+export class ImageVerificationError extends Error {
+  readonly gates: GateResult[];
+
+  constructor(gates: GateResult[]) {
+    const failed = gates.filter((g) => !g.ok);
+    const summary = failed.map((g) => `${g.name}: ${g.detail}`).join(" | ");
+    super(
+      `corb image build: image verification failed (${failed.length} of ${gates.length} gate${gates.length === 1 ? "" : "s"} failed): ${summary}`,
+    );
+    this.name = "ImageVerificationError";
+    this.gates = gates;
+  }
 }
 
 export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
@@ -179,6 +230,23 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
   });
   const buildMs = Date.now() - buildStart;
 
+  // Precondition of tagging (M1.4): boot the assets just written to disk —
+  // not yet imported into Gondolin's image store, not yet tagged — in a
+  // throwaway VM and run the gate suite against them. On any failure, the
+  // already-written buildAssets() output is left on disk (useful for
+  // debugging) but nothing gets imported or tagged.
+  process.stderr.write(`corb image build: verifying guest image at ${result.outputDir}\n`);
+  const verifyImage = await loadVerifyImage();
+  const verify = await verifyImage(result.outputDir, {
+    sessionLabel: `corb-image-verify:${config.arch}`,
+  });
+  for (const gate of verify.gates) {
+    process.stderr.write(`corb image build: verify [${gate.ok ? "PASS" : "FAIL"}] ${gate.name}: ${gate.detail}\n`);
+  }
+  if (!verify.ok) {
+    throw new ImageVerificationError(verify.gates);
+  }
+
   const imported = importImageFromDirectory(result.outputDir);
   const primaryTag = tagImage(imported.buildId, primaryReference, config.arch);
   const aliasTag = tagImage(imported.buildId, movingAlias, config.arch);
@@ -189,6 +257,7 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
     outputDir: result.outputDir,
     buildId: imported.buildId,
     buildMs,
+    verify,
     primaryTag,
     aliasTag,
     imageStoreDirectory: getImageStoreDirectory(),
@@ -200,6 +269,7 @@ export async function runImageCommand(argv: string[]): Promise<void> {
   if (sub === "build") {
     const report = await imageBuild(rest);
     console.log(`corb image build: done in ${(report.buildMs / 1000).toFixed(1)}s`);
+    console.log(`corb image build: verify passed (${report.verify.gates.length}/${report.verify.gates.length} gates)`);
     console.log(`corb image build: buildId=${report.buildId}`);
     console.log(
       `corb image build: tagged ${report.primaryTag.reference} (${JSON.stringify(report.primaryTag.targets)})`,
