@@ -31,18 +31,32 @@
 // mode. One consequence, matching that same note: moving a workspace to a
 // different path starts a fresh trust history.
 //
-// This module is read-only with respect to trust: it evaluates
-// (`evaluateTrust`) and returns the verdict, but never records an
-// acceptance (`recordAcceptance`) and never writes `trusted.json` back to
-// disk. Neither `corb explain` nor `corb run --dry-run` is "running"
-// anything — there is no session, and no interactive confirmation flow
-// exists yet (that is still a later milestone's job, once `corb run` for
-// real gates on this).
+// M2.6 update — two `EffectiveConfig` values, not one: `resolveWorkspace`
+// below produces a **persistent** config (built-in defaults + `config.toml`
+// + the synthesized single-dir layer for the positional `DIR` — exactly
+// what this module always computed) and a **full** config (the persistent
+// config with a caller-supplied CLI layer, e.g. `--dir`-derived entries,
+// merged on top). Only the persistent config ever participates in the trust
+// ratchet (`evaluateTrust`, and — new in M2.6 — `acceptWorkspace`'s write of
+// `recordAcceptance`'s result back to `trusted.json`): CLI flags are always
+// trusted, "the human typed them" (`trust.ts`'s own module comment), and
+// that invariant only holds if they never sneak into what gets hashed,
+// compared, or recorded. The full config is what an actual `corb run`
+// builds `RunSessionOptions` from, and what `corb explain`/`corb run
+// --dry-run` display as "what will actually happen" — see
+// `src/config/render.ts`.
+//
+// This module now does write `trusted.json` (`acceptWorkspace`), unlike
+// M2.5's read-only version — this may be the first file Corb ever writes
+// under `~/.config/corb/` for a given user, so `acceptWorkspace` creates the
+// config directory if needed. `resolveWorkspace` itself is still read-only;
+// only `acceptWorkspace` writes, and only when a caller (`src/commands/
+// run.ts`, on `--trust-config` or an already-trusted verdict) calls it.
 import fs from "node:fs";
 import path from "node:path";
 import { mergeConfigLayers, type EffectiveConfig } from "./load.ts";
 import { parseConfigLayer, type ConfigLayer } from "./schema.ts";
-import { evaluateTrust, type TrustEvaluation, type TrustStore, type TrustedWorkspaceRecord } from "./trust.ts";
+import { evaluateTrust, recordAcceptance, type TrustEvaluation, type TrustStore, type TrustedWorkspaceRecord } from "./trust.ts";
 import { configTomlPath, corbConfigDir, trustStorePath } from "./paths.ts";
 
 /** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
@@ -162,11 +176,15 @@ export interface ResolveWorkspaceOptions {
   configDir?: string;
 }
 
-/** Everything a renderer (`src/config/render.ts`) needs to describe one directory's effective config and trust status. */
+/** Everything a renderer (`src/config/render.ts`) or `corb run` needs to describe and act on one directory's config and trust status. */
 export interface ResolvedWorkspace {
   /** The resolved, absolute host directory this workspace describes. */
   dir: string;
-  effectiveConfig: EffectiveConfig;
+  /** Built-in defaults + `config.toml` + the synthesized single-dir layer for `dir` itself. The only config `trustEvaluation`/`acceptWorkspace` ever consider — see module comment. */
+  persistentConfig: EffectiveConfig;
+  /** `persistentConfig` with the caller's CLI layer (e.g. `--dir`-derived entries) merged on top. What a real run actually uses, and what a renderer should describe as "what will happen". Equals `persistentConfig` exactly when the CLI layer is `{}`. */
+  fullConfig: EffectiveConfig;
+  /** Evaluated against `persistentConfig` only — never influenced by CLI-added directories. */
   trustEvaluation: TrustEvaluation;
   /** The trust store key this resolution was evaluated against — the resolved absolute directory path itself (see module comment). */
   trustKey: string;
@@ -177,15 +195,24 @@ export interface ResolvedWorkspace {
 /**
  * Resolves `dir` into a `ResolvedWorkspace`: validates the directory exists
  * and is a directory, reads and merges `config.toml` (optional) with a
- * synthesized single-dir layer for `dir` itself, reads the trust store
- * (optional) and evaluates trust for `dir`'s own path-keyed record. Does no
- * writing — see the module comment's "read-only with respect to trust" note.
+ * synthesized single-dir layer for `dir` itself into `persistentConfig`,
+ * reads the trust store (optional) and evaluates trust for `dir`'s own
+ * path-keyed record against `persistentConfig`, then merges `cliLayer` on
+ * top of `persistentConfig` into `fullConfig`. Does no writing — see
+ * `acceptWorkspace` for recording an acceptance.
  *
  * `BUILTIN_DEFAULTS` is not passed explicitly here; `mergeConfigLayers`
  * folds it in automatically (see `load.ts`'s own doc comment on
- * `mergeConfigLayers`).
+ * `mergeConfigLayers`). Re-merging `persistentConfig` itself as a layer
+ * (`EffectiveConfig` is structurally assignable to `ConfigLayer`: every
+ * field on the former is a required/non-optional refinement of the
+ * same-named optional field on the latter) means `BUILTIN_DEFAULTS` gets
+ * folded in a second time when building `fullConfig` — harmless, since
+ * `persistentConfig` already reflects every value `BUILTIN_DEFAULTS` would
+ * set, so it just gets overwritten right back (verified in
+ * `resolve.test.ts`).
  */
-export function resolveWorkspaceForDirectory(dir: string, opts: ResolveWorkspaceOptions = {}): ResolvedWorkspace {
+export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: ResolveWorkspaceOptions = {}): ResolvedWorkspace {
   const resolvedDir = resolveWorkspaceDirectory(dir);
   const configDir = opts.configDir ?? corbConfigDir();
 
@@ -193,12 +220,37 @@ export function resolveWorkspaceForDirectory(dir: string, opts: ResolveWorkspace
   const dirLayer: ConfigLayer = {
     dir: [{ name: path.basename(resolvedDir), host: resolvedDir, mode: "rw" }],
   };
-  const effectiveConfig = mergeConfigLayers([configTomlLayer, dirLayer]);
+  const persistentConfig = mergeConfigLayers([configTomlLayer, dirLayer]);
 
   const trustStore = readTrustStore(configDir);
   const trustKey = resolvedDir;
   const priorRecord = trustStore[trustKey];
-  const trustEvaluation = evaluateTrust(priorRecord?.acceptedConfig, effectiveConfig);
+  const trustEvaluation = evaluateTrust(priorRecord?.acceptedConfig, persistentConfig);
 
-  return { dir: resolvedDir, effectiveConfig, trustEvaluation, trustKey, priorRecord };
+  const fullConfig = mergeConfigLayers([persistentConfig, cliLayer]);
+
+  return { dir: resolvedDir, persistentConfig, fullConfig, trustEvaluation, trustKey, priorRecord };
+}
+
+/**
+ * Records acceptance of `persistentConfig` for `trustKey` at `acceptedAt`
+ * (caller-supplied — this module doesn't call `Date.now()` itself, matching
+ * `trust.ts`'s own discipline) and writes the updated trust store back to
+ * `trusted.json`, creating the config directory first if this is the very
+ * first file Corb has ever written there for this user. Reads and validates
+ * the current store first (reusing `readTrustStore`'s existing logic) so a
+ * corrupted `trusted.json` fails loudly here too, rather than being silently
+ * clobbered.
+ */
+export function acceptWorkspace(
+  trustKey: string,
+  persistentConfig: EffectiveConfig,
+  acceptedAt: number,
+  opts: ResolveWorkspaceOptions = {},
+): void {
+  const configDir = opts.configDir ?? corbConfigDir();
+  const trustStore = readTrustStore(configDir);
+  const updated = recordAcceptance(trustStore, trustKey, persistentConfig, acceptedAt);
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(trustStorePath(configDir), JSON.stringify(updated, null, 2));
 }

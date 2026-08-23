@@ -5,6 +5,14 @@
 // trust" — a human must be able to tell at a glance whether a workspace
 // would require confirmation to run, and why.
 //
+// M2.6 update: `ResolvedWorkspace` now carries two configs. The directory/
+// vm/agent/egress/etc. sections below describe `fullConfig` — the
+// persistent config plus whatever `--dir` entries the caller passed, i.e.
+// "what will actually run". The trust section describes `trustEvaluation`,
+// which `resolve.ts` evaluates against `persistentConfig` only — it says so
+// explicitly (`renderTrust`'s "scope" line) so a reader doesn't mistake the
+// verdict for covering CLI-added directories, which it never does.
+//
 // Never prints a secret *value* — `EffectiveConfig.secrets` never holds one
 // (`PartialSecretConfig` is only `hosts`/`optional` host-binding metadata),
 // so there is nothing secret-valued for this module to accidentally leak.
@@ -162,9 +170,20 @@ function renderConfigChangeList(label: string, changes: readonly ConfigChange[])
   return lines;
 }
 
-function renderTrust(trust: TrustEvaluation, trustKey: string): string[] {
+/**
+ * Exported so `src/commands/run.ts` can reuse the exact same itemized
+ * widening/narrowing rendering when it fails a real (non-dry-run) `corb
+ * run` for `requires-confirmation` without `--trust-config` — the error
+ * message must not reinvent a second diff format.
+ */
+export function renderTrust(trust: TrustEvaluation, trustKey: string): string[] {
   const isNoOp = trust.verdict === "trusted" && trust.widened.length === 0 && trust.narrowed.length === 0;
-  const lines = ["trust:", `  key (directory path): ${trustKey}`, `  verdict: ${trust.verdict.toUpperCase()}`];
+  const lines = [
+    "trust:",
+    `  key (directory path): ${trustKey}`,
+    `  verdict: ${trust.verdict.toUpperCase()}`,
+    "  scope: config.toml + this workspace directory only (does not include any --dir-added directories)",
+  ];
   if (isNoOp) {
     lines.push("  (no changes since the last trusted run)");
     return lines;
@@ -182,7 +201,7 @@ function renderTrust(trust: TrustEvaluation, trustKey: string): string[] {
  * and why (see module comment).
  */
 export function renderText(resolved: ResolvedWorkspace): string {
-  const { effectiveConfig: config, trustEvaluation, trustKey, dir } = resolved;
+  const { fullConfig: config, trustEvaluation, trustKey, dir } = resolved;
   const lines: string[] = [
     // Neutral header — this rendering is shared by both `corb explain` and
     // `corb run --dry-run` (see `src/commands/run.ts`'s module comment), so
@@ -205,7 +224,7 @@ export function renderText(resolved: ResolvedWorkspace): string {
   return lines.join("\n");
 }
 
-/** The JSON payload `renderJson` serializes — round-trips through `JSON.parse` to structurally the same data. */
+/** The JSON payload `renderJson` serializes — round-trips through `JSON.parse` to structurally the same data. `config` is `fullConfig` (see module comment): what will actually run, not just the persistent layers. */
 export interface ExplainJson {
   dir: string;
   trustKey: string;
@@ -218,7 +237,7 @@ export function renderJson(resolved: ResolvedWorkspace): string {
   const payload: ExplainJson = {
     dir: resolved.dir,
     trustKey: resolved.trustKey,
-    config: resolved.effectiveConfig,
+    config: resolved.fullConfig,
     trust: resolved.trustEvaluation,
   };
   return JSON.stringify(payload, null, 2);

@@ -27,9 +27,11 @@ function baseConfig(): EffectiveConfig {
 }
 
 function noChangeWorkspace(): ResolvedWorkspace {
+  const config = baseConfig();
   return {
     dir: "/home/user/myproj",
-    effectiveConfig: baseConfig(),
+    persistentConfig: config,
+    fullConfig: config,
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
     trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
@@ -37,11 +39,13 @@ function noChangeWorkspace(): ResolvedWorkspace {
 }
 
 function wideningWorkspace(): ResolvedWorkspace {
-  const config = baseConfig();
-  config.egress.allow = ["api.anthropic.com", "example.com"];
+  const persistentConfig = baseConfig();
+  const fullConfig = baseConfig();
+  fullConfig.egress.allow = ["api.anthropic.com", "example.com"];
   return {
     dir: "/home/user/myproj",
-    effectiveConfig: config,
+    persistentConfig,
+    fullConfig,
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
     trustEvaluation: {
@@ -49,6 +53,21 @@ function wideningWorkspace(): ResolvedWorkspace {
       widened: [{ field: "egress.allow", description: "egress.allow gained 'example.com'" }],
       narrowed: [],
     },
+  };
+}
+
+/** A workspace whose `fullConfig` has a CLI-added dir the (persistent-only) trust evaluation knows nothing about. */
+function cliAddedDirWorkspace(): ResolvedWorkspace {
+  const persistentConfig = baseConfig();
+  const fullConfig = baseConfig();
+  fullConfig.dir = [...persistentConfig.dir, { name: "extra", host: "/tmp/extra", mode: "ro", rules: [] }];
+  return {
+    dir: "/home/user/myproj",
+    persistentConfig,
+    fullConfig,
+    trustKey: "/home/user/myproj",
+    priorRecord: undefined,
+    trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
   };
 }
 
@@ -82,6 +101,19 @@ describe("config/render: renderText", () => {
     expect(text).toContain("widened");
     expect(text).toContain("egress.allow gained 'example.com'");
   });
+
+  it("describes fullConfig (what will actually run), including CLI-added directories", () => {
+    const text = renderText(cliAddedDirWorkspace());
+    expect(text).toContain("myproj");
+    expect(text).toContain("extra");
+    expect(text).toContain("/tmp/extra");
+  });
+
+  it("the trust section states its scope and does not claim to cover CLI-added directories, even though one is present in fullConfig", () => {
+    const text = renderText(cliAddedDirWorkspace());
+    expect(text).toContain("verdict: TRUSTED");
+    expect(text).toContain("scope: config.toml + this workspace directory only");
+  });
 });
 
 describe("config/render: renderJson", () => {
@@ -92,7 +124,7 @@ describe("config/render: renderJson", () => {
     expect(parsed).toEqual({
       dir: resolved.dir,
       trustKey: resolved.trustKey,
-      config: resolved.effectiveConfig,
+      config: resolved.fullConfig,
       trust: resolved.trustEvaluation,
     });
   });
