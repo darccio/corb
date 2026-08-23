@@ -139,7 +139,6 @@ interface CorbImageJson {
   paths: {
     dropcapPath: string;
     home: string;
-    piConfigDir: string;
     sessionsDir: string;
   };
 }
@@ -171,19 +170,18 @@ function parseCorbImageJson(text: string): CorbImageJson {
   if (
     typeof p.dropcapPath !== "string" ||
     typeof p.home !== "string" ||
-    typeof p.piConfigDir !== "string" ||
     typeof p.sessionsDir !== "string"
   ) {
     throw new Error(
       "corb run: /etc/corb/image.json's 'paths' is missing one of the required string fields " +
-        "'dropcapPath', 'home', 'piConfigDir', 'sessionsDir'",
+        "'dropcapPath', 'home', 'sessionsDir'",
     );
   }
   return {
     user: obj.user,
     uid: obj.uid,
     gid: obj.gid,
-    paths: { dropcapPath: p.dropcapPath, home: p.home, piConfigDir: p.piConfigDir, sessionsDir: p.sessionsDir },
+    paths: { dropcapPath: p.dropcapPath, home: p.home, sessionsDir: p.sessionsDir },
   };
 }
 

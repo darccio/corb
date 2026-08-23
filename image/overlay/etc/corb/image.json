@@ -6,7 +6,6 @@
   "paths": {
     "dropcapPath": "/usr/local/bin/dropcap",
     "home": "/home/agent",
-    "piConfigDir": "/home/agent/.pi",
     "sessionsDir": "/home/agent/sessions"
   }
 }
