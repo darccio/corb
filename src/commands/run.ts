@@ -50,7 +50,9 @@ import { parseArgs } from "node:util";
 import { runSession, type WorkspaceDirSpec } from "../vm/session.ts";
 import { acceptWorkspace, resolveWorkspace, type ResolvedWorkspace } from "../config/resolve.ts";
 import { renderText, renderTrust } from "../config/render.ts";
-import type { ConfigLayer, DirMode, PartialDirConfig } from "../config/schema.ts";
+import { defaultAuditPath } from "../config/paths.ts";
+import { createAuditWriter } from "../policy/audit.ts";
+import type { ConfigLayer, DirMode, PartialAgentConfig, PartialDirConfig } from "../config/schema.ts";
 import type { DirConfig, EffectiveConfig } from "../config/load.ts";
 
 export interface RunCommandArgs {
@@ -240,6 +242,28 @@ export class DirHostMissingError extends Error {
   }
 }
 
+/**
+ * Prepends `--provider`/`--model` to `piArgs` when `agent.provider`/
+ * `agent.model` are configured, in that order (matching Pi's own examples —
+ * `docs/design.md` §8), so `runRunCommand` passes a fully-assembled arg list
+ * through to `runSession` rather than doing this translation inline. Neither
+ * flag is required: an entirely unset `agent` (or an `agent` present but with
+ * neither field set) leaves `piArgs` unchanged. This is the one piece
+ * `docs/design.md` §8 calls out as genuinely new for this item — Pi itself
+ * already understands both flags; nothing before this translated Corb's
+ * `[agent]` config into them.
+ */
+export function withProviderModelArgs(agent: PartialAgentConfig | undefined, piArgs: string[]): string[] {
+  const prefix: string[] = [];
+  if (agent?.provider !== undefined) {
+    prefix.push("--provider", agent.provider);
+  }
+  if (agent?.model !== undefined) {
+    prefix.push("--model", agent.model);
+  }
+  return [...prefix, ...piArgs];
+}
+
 function toWorkspaceDirSpec(entry: DirConfig): WorkspaceDirSpec {
   if (entry.host === undefined) {
     throw new DirHostMissingError(entry.name);
@@ -279,5 +303,14 @@ export async function runRunCommand(argv: string[]): Promise<void> {
   }
 
   const dirs = resolved.fullConfig.dir.map(toWorkspaceDirSpec);
-  await runSession({ dirs, primary, piArgs });
+  const fullPiArgs = withProviderModelArgs(resolved.fullConfig.agent, piArgs);
+  const audit = createAuditWriter({ path: resolved.fullConfig.audit?.path ?? defaultAuditPath() });
+  await runSession({
+    dirs,
+    primary,
+    piArgs: fullPiArgs,
+    egress: resolved.fullConfig.egress,
+    ...(resolved.fullConfig.secrets !== undefined ? { secrets: resolved.fullConfig.secrets } : {}),
+    audit,
+  });
 }

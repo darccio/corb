@@ -30,8 +30,10 @@ import {
   parseRunArgs,
   resolvePrimaryName,
   runRunCommand,
+  withProviderModelArgs,
 } from "../../../src/commands/run.ts";
 import type { EffectiveConfig } from "../../../src/config/load.ts";
+import type { AuditWriter } from "../../../src/policy/audit.ts";
 
 describe("commands/run: parseRunArgs --dry-run", () => {
   it("defaults dryRun to false when not passed", () => {
@@ -184,18 +186,67 @@ describe("commands/run: resolvePrimaryName", () => {
   });
 });
 
+describe("commands/run: withProviderModelArgs", () => {
+  it("leaves piArgs unchanged when agent is entirely unset", () => {
+    expect(withProviderModelArgs(undefined, ["--some-pi-flag"])).toEqual(["--some-pi-flag"]);
+  });
+
+  it("leaves piArgs unchanged when agent is set but neither provider nor model is", () => {
+    expect(withProviderModelArgs({}, ["--some-pi-flag"])).toEqual(["--some-pi-flag"]);
+  });
+
+  it("prepends --provider when only provider is set", () => {
+    expect(withProviderModelArgs({ provider: "openai" }, ["--foo"])).toEqual(["--provider", "openai", "--foo"]);
+  });
+
+  it("prepends --model when only model is set", () => {
+    expect(withProviderModelArgs({ model: "gpt-5" }, ["--foo"])).toEqual(["--model", "gpt-5", "--foo"]);
+  });
+
+  it("prepends both, provider before model, when both are set", () => {
+    expect(withProviderModelArgs({ provider: "openai", model: "gpt-5" }, ["--foo"])).toEqual([
+      "--provider",
+      "openai",
+      "--model",
+      "gpt-5",
+      "--foo",
+    ]);
+  });
+
+  it("works against an empty piArgs array", () => {
+    expect(withProviderModelArgs({ provider: "openai", model: "gpt-5" }, [])).toEqual([
+      "--provider",
+      "openai",
+      "--model",
+      "gpt-5",
+    ]);
+  });
+});
+
 describe("commands/run: runRunCommand", () => {
   let workDir: string;
   let configDir: string;
+  let stateDir: string;
   let previousConfigDir: string | undefined;
+  let previousStateDir: string | undefined;
   let previousApiKey: string | undefined;
   let logSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     workDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-run-work-"));
     configDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-run-config-"));
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-run-state-"));
     previousConfigDir = process.env.CORB_CONFIG_DIR;
     process.env.CORB_CONFIG_DIR = configDir;
+    // `createAuditWriter`'s default path (`defaultAuditPath()`) falls back
+    // to the real `~/.local/state/corb` if this isn't overridden — nothing
+    // in these tests ever calls `.flush()` (runSession is mocked below, and
+    // `flush()` only actually happens inside its real implementation), but
+    // pointing this at a throwaway temp dir avoids even constructing an
+    // `AuditWriter` that references the real user state dir, matching the
+    // same discipline as `CORB_CONFIG_DIR` above.
+    previousStateDir = process.env.CORB_STATE_DIR;
+    process.env.CORB_STATE_DIR = stateDir;
     previousApiKey = process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -209,6 +260,11 @@ describe("commands/run: runRunCommand", () => {
     } else {
       process.env.CORB_CONFIG_DIR = previousConfigDir;
     }
+    if (previousStateDir === undefined) {
+      delete process.env.CORB_STATE_DIR;
+    } else {
+      process.env.CORB_STATE_DIR = previousStateDir;
+    }
     if (previousApiKey === undefined) {
       delete process.env.ANTHROPIC_API_KEY;
     } else {
@@ -216,6 +272,7 @@ describe("commands/run: runRunCommand", () => {
     }
     fs.rmSync(workDir, { recursive: true, force: true });
     fs.rmSync(configDir, { recursive: true, force: true });
+    fs.rmSync(stateDir, { recursive: true, force: true });
   });
 
   describe("--dry-run", () => {
@@ -284,12 +341,34 @@ describe("commands/run: runRunCommand", () => {
       try {
         await runRunCommand([workDir, "--dir", `extra=${extraDir}:ro`, "--trust-config"]);
         expect(runSessionMock).toHaveBeenCalledTimes(1);
-        const [options] = runSessionMock.mock.calls[0] as [{ dirs: { name: string; hostPath: string; mode: string }[]; primary: string }];
+        const [options] = runSessionMock.mock.calls[0] as [
+          {
+            dirs: { name: string; hostPath: string; mode: string }[];
+            primary: string;
+            piArgs: string[];
+            egress: unknown;
+            secrets: Record<string, unknown> | undefined;
+            audit: AuditWriter;
+          },
+        ];
         expect(options.dirs).toEqual([
           { name: path.basename(fs.realpathSync(workDir)), hostPath: fs.realpathSync(workDir), mode: "rw" },
           { name: "extra", hostPath: extraDir, mode: "ro" },
         ]);
         expect(options.primary).toBe(path.basename(fs.realpathSync(workDir)));
+        // No `[agent]` configured for this workspace, so `piArgs` passes
+        // through unchanged (see the dedicated `withProviderModelArgs`
+        // suite above for the translation logic itself).
+        expect(options.piArgs).toEqual([]);
+        // No `config.toml` at all for this workspace, so `egress` is just
+        // `BUILTIN_DEFAULTS` and `secrets` stays entirely absent — matching
+        // `EffectiveConfig.egress`'s own always-present-but-mostly-default
+        // shape and `EffectiveConfig.secrets`'s own optionality.
+        expect(options.egress).toEqual({ "block-internal-ranges": true, websockets: false });
+        expect(options.secrets).toBeUndefined();
+        expect(options.audit).toBeDefined();
+        expect(typeof options.audit.record).toBe("function");
+        expect(typeof options.audit.flush).toBe("function");
       } finally {
         fs.rmSync(extraDir, { recursive: true, force: true });
       }
@@ -321,6 +400,77 @@ describe("commands/run: runRunCommand", () => {
       } finally {
         fs.rmSync(extraDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe("config.toml [agent]/[egress]/[secrets]/[audit] wiring into runSession", () => {
+    it("translates [agent].provider/.model into --provider/--model prepended to piArgs, and passes egress/secrets/audit through, with the audit writer actually targeting the configured [audit].path", async () => {
+      const customAuditPath = path.join(stateDir, "custom-audit.jsonl");
+      const configToml = [
+        "[agent]",
+        'provider = "openai"',
+        'model    = "gpt-5"',
+        "",
+        "[egress]",
+        'allow = ["api.openai.com"]',
+        "",
+        "[secrets.OPENAI_API_KEY]",
+        'hosts    = ["api.openai.com"]',
+        "optional = true",
+        "",
+        "[audit]",
+        `path = "${customAuditPath}"`,
+      ].join("\n");
+      fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
+
+      await runRunCommand([workDir, "--trust-config", "--", "--some-pi-flag"]);
+      expect(runSessionMock).toHaveBeenCalledTimes(1);
+      const [options] = runSessionMock.mock.calls[0] as [
+        {
+          piArgs: string[];
+          egress: unknown;
+          secrets: Record<string, unknown> | undefined;
+          audit: AuditWriter;
+        },
+      ];
+
+      // --provider before --model (Pi's own documented ordering), both
+      // ahead of whatever was forwarded after a literal `--`.
+      expect(options.piArgs).toEqual(["--provider", "openai", "--model", "gpt-5", "--some-pi-flag"]);
+      expect(options.egress).toEqual({
+        allow: ["api.openai.com"],
+        "block-internal-ranges": true,
+        websockets: false,
+      });
+      expect(options.secrets).toEqual({ OPENAI_API_KEY: { hosts: ["api.openai.com"], optional: true } });
+
+      // `AuditWriter` has no path getter, so the only way to prove
+      // `options.audit` is a real writer targeting `[audit].path` (not a
+      // stub, and not silently defaulting to `defaultAuditPath()`) is a
+      // black-box round-trip: record, flush, and read back the configured
+      // file.
+      expect(fs.existsSync(customAuditPath)).toBe(false);
+      options.audit.record({ channel: "session", decision: "allow", subject: "test-subject", sessionId: "test-session" });
+      options.audit.flush();
+      expect(fs.existsSync(customAuditPath)).toBe(true);
+      const lines = fs.readFileSync(customAuditPath, "utf8").trim().split("\n");
+      expect(JSON.parse(lines[lines.length - 1] as string)).toMatchObject({
+        channel: "session",
+        decision: "allow",
+        subject: "test-subject",
+        sessionId: "test-session",
+      });
+    });
+
+    it("falls back to defaultAuditPath() (under CORB_STATE_DIR) when [audit].path is not configured", async () => {
+      await runRunCommand([workDir, "--trust-config"]);
+      const [options] = runSessionMock.mock.calls[0] as [{ audit: AuditWriter }];
+
+      const expectedDefaultPath = path.join(stateDir, "audit.jsonl");
+      expect(fs.existsSync(expectedDefaultPath)).toBe(false);
+      options.audit.record({ channel: "session", decision: "allow", subject: "test-subject", sessionId: "test-session" });
+      options.audit.flush();
+      expect(fs.existsSync(expectedDefaultPath)).toBe(true);
     });
   });
 });

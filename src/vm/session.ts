@@ -8,11 +8,12 @@
 // leaving everything else (image resolution, secret binding, guest identity
 // read, `dropcap`/`pi` exec, shutdown, tty handling) conceptually unchanged.
 //
-// Deliberately still decoupled from the config system (M2), exactly like
-// `src/vm/image.ts` and `src/vm/tty.ts`: this file defines its own minimal
-// `WorkspaceDirSpec` shape for "what a mount needs" rather than importing
-// `src/config/load.ts`'s `DirConfig`. Wiring real config into `corb run` is
-// M2.6's job, not this one's.
+// Partially decoupled from the config system: `dirs`/`primary` still use
+// this file's own minimal `WorkspaceDirSpec` shape rather than importing
+// `src/config/load.ts`'s `DirConfig` (unchanged since M2.4/M2.6). M3.4
+// narrowed that decoupling for `egress`/`secrets` specifically — see the
+// import comment below for why those two consume `src/config/` types
+// directly instead of getting their own parallel shape.
 //
 // Composes M1.5's three modules rather than rebuilding any part of them:
 // `resolveRuntimeImage` (src/vm/image.ts) for image resolution, `acquire` /
@@ -25,10 +26,27 @@
 // primitive available.
 import fs from "node:fs";
 import path from "node:path";
-import { createHttpHooks, ReadonlyProvider, RealFSProvider, VM, type VirtualProvider } from "@earendil-works/gondolin";
+import { ReadonlyProvider, RealFSProvider, VM, type VirtualProvider } from "@earendil-works/gondolin";
 import { acquire, canRequestPty, type TtyHandle } from "./tty.ts";
 import { ShutdownController, type ExitFn, type ProcessLike } from "./shutdown.ts";
 import { resolveRuntimeImage } from "./image.ts";
+import { buildEgressConfig } from "./egress.ts";
+// `egress.ts` (M3.2/M3.3) already imports these same config types directly
+// rather than inventing its own decoupled shape, because it exists
+// specifically to consume `EffectiveConfig.egress`/`.secrets` and hand the
+// result straight to `createHttpHooks()`. `RunSessionOptions.egress`/
+// `.secrets` below are passed straight through to `buildEgressConfig()`
+// unchanged, so a redundant parallel type here would only be converted back
+// into these exact types immediately before that call — no decoupling
+// benefit, just an extra conversion step. This is different from `dirs`/
+// `primary` (this module's own `WorkspaceDirSpec`, deliberately not
+// `src/config/load.ts`'s `DirConfig` — see the module comment): those are
+// shaped and validated by this module itself (name safety, mount roots),
+// not merely forwarded to another module that already takes the config
+// type directly.
+import type { EffectiveEgressConfig } from "../config/load.ts";
+import type { PartialSecretConfig } from "../config/schema.ts";
+import type { AuditWriter } from "../policy/audit.ts";
 
 /**
  * Root all workspace directories are publicly visible under in the guest.
@@ -76,18 +94,6 @@ export const WORKSPACE_PUBLIC_ROOT = "/work";
  */
 export const WORKSPACE_RAW_ROOT = "/mnt/corb-raw";
 
-// TODO(M3.4, high priority): delete ANTHROPIC_HOST, requireApiKey, and
-// MissingApiKeyError below and replace this module's hardcoded
-// single-host/single-secret createHttpHooks() call with M3.3's
-// egress-config-derived allowedHosts/allowedInternalHosts plus
-// buildSecretBindings(fullConfig.secrets, hostEnv) (src/vm/egress.ts, already
-// generic — no new mechanism needed). Until this lands, every `corb run`
-// ignores [secrets]/[egress] config and is hardcoded to Anthropic regardless
-// of what a workspace configures. See docs/design.md §8 "Provider and model
-// selection" for the full decision record.
-/** The only host this session's egress is allowed to reach. */
-const ANTHROPIC_HOST = "api.anthropic.com";
-
 // No login shell for any exec here (array-form `exec` does not run one —
 // `docs/design.md` §5.4), so nothing can come from `/etc/profile`; PATH is
 // set explicitly everywhere, matching `image/verify.ts`'s own convention.
@@ -100,21 +106,6 @@ const GUEST_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 // recorded in `/etc/corb/image.json` (unlike uid/gid/dropcapPath/home,
 // which are, and are read from there below instead of hardcoded).
 const PI_PATH = "/usr/local/bin/pi";
-
-/**
- * Thrown before any VM is created when the host process environment has no
- * `ANTHROPIC_API_KEY` — never silently proceeds with an empty secret.
- */
-export class MissingApiKeyError extends Error {
-  constructor() {
-    super(
-      "corb run: ANTHROPIC_API_KEY is not set in the host environment.\n" +
-        "  Set it before running corb, e.g. `ANTHROPIC_API_KEY=sk-... corb run`.\n" +
-        "  The key is bound as a host-side secret (see docs/design.md §5) and never enters the guest.",
-    );
-    this.name = "MissingApiKeyError";
-  }
-}
 
 /** Thrown before any VM is created when a requested workspace directory is unusable. */
 export class WorkspaceDirectoryError extends Error {
@@ -214,14 +205,6 @@ async function readGuestIdentity(vm: VM): Promise<CorbImageJson> {
     );
   }
   return parseCorbImageJson(result.stdout);
-}
-
-function requireApiKey(env: NodeJS.ProcessEnv): string {
-  const key = env.ANTHROPIC_API_KEY;
-  if (!key) {
-    throw new MissingApiKeyError();
-  }
-  return key;
 }
 
 function resolveHostDir(dir: string): string {
@@ -338,7 +321,38 @@ export interface RunSessionOptions {
   image?: string;
   /** `VM.create()`'s `sessionLabel`. Defaults to a name derived from the primary directory. */
   sessionLabel?: string;
-  /** Host process environment to read `ANTHROPIC_API_KEY`/`TERM` from. Defaults to `process.env` — injectable for tests. */
+  /**
+   * A session's full effective egress config (`EffectiveConfig.egress`,
+   * always present — see `src/config/load.ts`), passed straight through to
+   * `buildEgressConfig()`. See the module-level import comment for why this
+   * module imports this config type directly rather than defining its own
+   * decoupled shape, unlike `dirs`/`primary` above.
+   */
+  egress: EffectiveEgressConfig;
+  /**
+   * A session's configured secrets (`EffectiveConfig.secrets`), optional to
+   * match that field's own optionality. Passed straight through to
+   * `buildEgressConfig()` — see the module-level import comment.
+   */
+  secrets?: Record<string, PartialSecretConfig>;
+  /**
+   * Where policy decisions for this session are recorded. Constructed by the
+   * caller (`src/commands/run.ts`) — this module does not resolve an audit
+   * path itself, matching its existing convention of taking already-resolved
+   * inputs rather than doing its own config-adjacent path resolution (see
+   * `dirs: WorkspaceDirSpec[]`, which is likewise never resolved from config
+   * by this module).
+   */
+  audit: AuditWriter;
+  /**
+   * Identifier correlating this session's audit events. Defaults to whatever
+   * this call computes for `sessionLabel` (see below) — there is no real
+   * session-id infrastructure yet (M8 builds that). Reusing `sessionLabel`'s
+   * value for both is a reasonable, explicitly *temporary* choice for this
+   * item; do not treat it as a permanent design decision.
+   */
+  sessionId?: string;
+  /** Host process environment to read configured secrets'/`TERM` from. Defaults to `process.env` — injectable for tests. */
   env?: NodeJS.ProcessEnv;
   /** Streams to attach the interactive exec to. Default `process.stdin/stdout/stderr`. */
   stdin?: NodeJS.ReadStream;
@@ -397,7 +411,6 @@ function findPrimaryEntry(dirs: ResolvedWorkspaceDir[], primary: string): Resolv
  */
 export async function runSession(options: RunSessionOptions): Promise<void> {
   const hostEnv = options.env ?? process.env;
-  const apiKey = requireApiKey(hostEnv);
 
   // Resolution and validation above all happen before any VM is created —
   // "error clearly and immediately... before attempting to boot anything".
@@ -405,11 +418,11 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   const primaryEntry = findPrimaryEntry(resolvedDirs, options.primary);
   const resolvedImage = resolveRuntimeImage(options.image);
 
-  const { httpHooks, env: secretEnv } = createHttpHooks({
-    allowedHosts: [ANTHROPIC_HOST],
-    allowedInternalHosts: [],
-    secrets: { ANTHROPIC_API_KEY: { hosts: [ANTHROPIC_HOST], value: apiKey } },
-  });
+  const sessionLabel = options.sessionLabel ?? `corb-run:${path.basename(primaryEntry.hostPath)}`;
+  // See `RunSessionOptions.sessionId`'s own doc comment: no real session-id
+  // infrastructure exists yet (M8), so this reuses `sessionLabel` as a
+  // temporary stand-in rather than minting anything new here.
+  const sessionId = options.sessionId ?? sessionLabel;
 
   const stdin = options.stdin ?? process.stdin;
   const stdout = options.stdout ?? process.stdout;
@@ -439,6 +452,17 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
           }
         },
       },
+      {
+        name: "flush-audit",
+        // Independent of the other two steps, same discipline (a flush
+        // failure — e.g. a full disk — must not prevent the VM from
+        // closing, and a VM-close failure must not prevent whatever's
+        // already buffered from reaching disk). Runs last, after the VM is
+        // closed: closing the VM is the time-sensitive cleanup (an
+        // un-closed VM leaves a real QEMU process running), while flushing
+        // the audit log is not, so there's no reason to risk delaying it.
+        run: () => options.audit.flush(),
+      },
     ],
     ...(options.shutdownProcess ? { process: options.shutdownProcess } : {}),
     ...(options.exit ? { exit: options.exit } : {}),
@@ -446,17 +470,35 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   controller.install();
 
   try {
+    // The `session` channel (`docs/design.md` §6/§8) has had no producer
+    // until this item — recorded here since the audit writer is already
+    // being threaded through this function for `buildEgressConfig()`'s own
+    // `http`-channel events. "start" is recorded before `buildEgressConfig`
+    // so a pre-boot validation failure (a `MissingSecretError`/
+    // `SecretHostsMissingError`) still lands in the buffer and, via the
+    // `catch` below, still reaches disk through the `flush-audit` step.
+    options.audit.record({
+      channel: "session",
+      decision: "allow",
+      subject: sessionLabel,
+      reason: "start",
+      sessionId,
+    });
+
+    const egressConfig = buildEgressConfig(options.egress, options.secrets, hostEnv, options.audit, sessionId);
+
     vm = await VM.create({
       sandbox: { imagePath: resolvedImage.assetDir },
       dns: { mode: "synthetic", syntheticHostMapping: "per-host" },
-      httpHooks,
-      env: secretEnv,
+      httpHooks: egressConfig.httpHooks,
+      env: egressConfig.env,
+      allowWebSockets: egressConfig.allowWebSockets,
       vfs: { mounts: vfsMounts },
-      sessionLabel: options.sessionLabel ?? `corb-run:${path.basename(primaryEntry.hostPath)}`,
+      sessionLabel,
     });
 
     const identity = await readGuestIdentity(vm);
-    const guestEnv = buildGuestEnv(secretEnv, hostEnv, identity);
+    const guestEnv = buildGuestEnv(egressConfig.env, hostEnv, identity);
 
     const requestPty = canRequestPty(stdin, stdout);
     if (requestPty) {
@@ -477,8 +519,22 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     proc.attach(stdin, stdout, stderr);
 
     const result = await proc;
+    options.audit.record({
+      channel: "session",
+      decision: "allow",
+      subject: sessionLabel,
+      reason: `exit:${result.exitCode}`,
+      sessionId,
+    });
     await controller.trigger("exit", result.exitCode);
   } catch (err) {
+    options.audit.record({
+      channel: "session",
+      decision: "allow",
+      subject: sessionLabel,
+      reason: "error",
+      sessionId,
+    });
     await controller.trigger("error", 1, err);
     throw err;
   }
