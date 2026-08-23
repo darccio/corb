@@ -22,13 +22,24 @@
 // scheme (`docs/design.md` §3), not a regression. Wiring `--dir`/`--primary`
 // flags to let a caller configure more than one directory from the CLI is
 // M2.6's job, once the config system is wired in.
+//
+// M2.5 adds `--dry-run`: it shares the exact `resolve.ts`/`render.ts`
+// pipeline `corb explain` (`src/commands/explain.ts`) uses, against the same
+// directory `runSession` would otherwise use, and returns without ever
+// calling `runSession` — no VM is created, and (this matters)
+// `ANTHROPIC_API_KEY` is not required, since no secret binding or VM boot
+// happens on this path. When `--dry-run` is not passed, the non-dry-run
+// code path below is unchanged from what M2.4 left.
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { runSession } from "../vm/session.ts";
+import { resolveWorkspaceForDirectory } from "../config/resolve.ts";
+import { renderText } from "../config/render.ts";
 
 export interface RunCommandArgs {
   dir: string;
   piArgs: string[];
+  dryRun: boolean;
 }
 
 /**
@@ -46,7 +57,12 @@ function splitPiArgs(argv: string[]): { corbArgs: string[]; piArgs: string[] } {
 
 export function parseRunArgs(argv: string[]): RunCommandArgs {
   const { corbArgs, piArgs } = splitPiArgs(argv);
-  const { positionals } = parseArgs({ args: corbArgs, allowPositionals: true, strict: true });
+  const { values, positionals } = parseArgs({
+    args: corbArgs,
+    options: { "dry-run": { type: "boolean" } },
+    allowPositionals: true,
+    strict: true,
+  });
 
   if (positionals.length > 1) {
     throw new Error(
@@ -55,11 +71,21 @@ export function parseRunArgs(argv: string[]): RunCommandArgs {
   }
 
   const dir = positionals[0] !== undefined ? path.resolve(positionals[0]) : process.cwd();
-  return { dir, piArgs };
+  return { dir, piArgs, dryRun: values["dry-run"] ?? false };
 }
 
 export async function runRunCommand(argv: string[]): Promise<void> {
-  const { dir, piArgs } = parseRunArgs(argv);
+  const { dir, piArgs, dryRun } = parseRunArgs(argv);
+
+  // `--dry-run`: describe what a real run would do and stop — never call
+  // `runSession`, so no VM is created and no secret is required. Shares the
+  // exact pipeline `corb explain` uses (see module comment).
+  if (dryRun) {
+    const resolved = resolveWorkspaceForDirectory(dir);
+    console.log(renderText(resolved));
+    return;
+  }
+
   const name = path.basename(dir);
   await runSession({ dirs: [{ name, hostPath: dir, mode: "rw" }], primary: name, piArgs });
 }
