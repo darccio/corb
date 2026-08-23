@@ -620,9 +620,13 @@ One host TypeScript program is the entire host side. In outline:
 
 1. Resolve configuration: workspace directories, allowed hosts, allowed
    repositories, whether push is permitted, session limits.
-2. Bind secrets host-side. The model API key comes from **one host environment
-   variable**, bound through `createHttpHooks({ secrets })` with
-   `api.anthropic.com` as its allowed host. The guest receives a placeholder.
+2. Bind secrets host-side. Each `[secrets.NAME]` entry in config names a host
+   environment variable and the host(s) it may be sent to; every configured
+   secret is bound through `createHttpHooks({ secrets })` the same way,
+   regardless of provider. The guest receives a placeholder for each. A secret
+   name is chosen by the user to match whatever their model provider's SDK
+   (or Pi itself) expects as an environment variable — Corb does not hardcode
+   any one provider's key name or API host.
 3. Build the mount table: one `GlobPolicyProvider`-wrapped `RealFSProvider` per
    workspace directory at `/work/<name>`, a `MemoryProvider` for the agent's
    configuration so nothing is written to host disk even transiently, and a
@@ -645,6 +649,54 @@ env: {
   SSL_CERT_FILE:       "/run/gondolin/ca-certificates.crt",
 }
 ```
+
+### Provider and model selection
+
+Pi (`@earendil-works/pi-coding-agent`) already has full multi-provider support
+built in — over two dozen providers, each authenticated via its own named
+environment variable, `auth.json` entry, or OAuth subscription (see the
+installed package's own `docs/providers.md`). Corb's job is narrow: pass the
+user's choice through, not reimplement provider logic.
+
+- **Model/provider choice.** Pi selects a provider and model via its own
+  `--provider`/`--model` CLI flags (also settable interactively via `/model`).
+  Corb's `[agent].provider`/`[agent].model` config fields (`src/config/
+  schema.ts`) exist to be translated into those two flags, prepended to the
+  `piArgs` a real (non-dry-run) `corb run` passes to `pi` — nothing does this
+  translation yet. `RunSessionOptions.piArgs` is exactly where they belong;
+  `session.ts` doesn't need to know what a "provider" is beyond passing the
+  string through.
+- **Credential binding.** Pi resolves a provider's credential in this order:
+  CLI `--api-key`, `auth.json` (under `PI_CODING_AGENT_DIR`, default
+  `~/.pi/agent`), a provider-specific environment variable, then `models.json`.
+  Corb only ever supplies the third. `buildSecretBindings()` (`src/vm/
+  egress.ts`, M3.2) is already fully generic, and `buildGuestEnv`'s
+  `...secretEnv` spread already forwards whatever `createHttpHooks()` mints
+  into the guest's real environment under its own literal name — **no new
+  mechanism is needed**. The only requirement is naming discipline: a
+  workspace's `[secrets.NAME]` must be spelled exactly as Pi's own table
+  expects (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, …).
+  Corb must not maintain its own copy of that name-to-provider table — it
+  would just drift from Pi's.
+- **M3.4's job — high priority, do this as soon as M3.3 lands:** delete
+  `session.ts`'s `ANTHROPIC_HOST` constant, `requireApiKey`, and
+  `MissingApiKeyError` outright, replacing the current hardcoded
+  single-host/single-secret `createHttpHooks()` call with M3.3's
+  egress-config-derived `allowedHosts`/`allowedInternalHosts` plus
+  `buildSecretBindings(fullConfig.secrets, hostEnv)`. This is a deletion, not
+  a generalization — the generic mechanism it's deleted in favor of already
+  exists. Every session `corb run` starts today is still hardcoded to
+  `api.anthropic.com`/`ANTHROPIC_API_KEY` regardless of what `config.toml`
+  says, which silently makes the entire `[secrets]`/`[egress]` config surface
+  a no-op for anyone using a different provider — this should not sit for
+  more than one more milestone.
+- **Zero-config failure mode.** `buildSecretBindings` returning `{}` for an
+  unconfigured `[secrets]` is correct (M3.2's own decision — no fallback), but
+  left alone it means a VM boots and only then fails inside Pi's own
+  no-credentials UX — worse than failing on the host before boot. M3.5's `corb
+  doctor` should add a soft, provider-neutral check: warn (not hard-block) when
+  no `[secrets.*]` entry is configured at all, pointing at `corb explain` and
+  Pi's own provider docs rather than guessing which provider the user wants.
 
 ---
 
