@@ -23,6 +23,7 @@
   "container": { "force": true, "runtime": "docker" },
   "rootfs": { "label": "corb-root", "sizeMb": 3072 },
   "env": { "LANG": "C.UTF-8", "CORB_IMAGE_KIND": "default" },
+  "init": { "rootfsInitExtra": "overlay/init-extra.sh" },
   "postBuild": {
     "copy": [
       { "src": "../guest/build/dropcap", "dest": "/usr/local/bin/dropcap" },
@@ -30,6 +31,11 @@
       { "src": "overlay/etc/corb/image.json", "dest": "/etc/corb/image.json" }
     ],
     "commands": [
+      "apk add --no-cache build-base linux-headers fuse3-dev fuse3-libs libstdc++ libgcc zstd-libs",
+      "cd /tmp && curl -fsSL -o bindfs.tar.gz https://bindfs.org/downloads/bindfs-1.18.4.tar.gz && echo '1fedfcd082980180ccdd684478cc5308f4ea3fa541af12b5aef0b75fb0ec5b285009c4b783fc3cd5550505a83baf015e243f88eb322540d0f82e1952babc799a  bindfs.tar.gz' | sha512sum -c - && tar xzf bindfs.tar.gz",
+      "cd /tmp/bindfs-1.18.4 && ./configure --prefix=/usr --sysconfdir=/etc --mandir=/usr/share/man --localstatedir=/var && make && make install",
+      "rm -rf /tmp/bindfs.tar.gz /tmp/bindfs-1.18.4",
+      "apk del build-base linux-headers fuse3-dev",
       "npm i -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@0.84.2",
       "addgroup -g 1000 agent && adduser -D -u 1000 -G agent -h /home/agent -s /bin/sh agent",
       "mkdir -p /work /home/agent/.pi /home/agent/sessions && chown -R 1000:1000 /home/agent /work",
