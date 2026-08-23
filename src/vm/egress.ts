@@ -29,6 +29,7 @@ import { createHttpHooks, type HttpHooks } from "@earendil-works/gondolin";
 import type { EffectiveEgressConfig } from "../config/load.ts";
 import type { PartialSecretConfig } from "../config/schema.ts";
 import type { AuditWriter } from "../policy/audit.ts";
+import { githubApiGate } from "../policy/github.ts";
 
 /** The real secret value plus the hosts Gondolin is allowed to send it to. Matches `createHttpHooks({ secrets })`'s per-entry shape (docs/gondolin-notes.md §5). */
 export interface SecretBinding {
@@ -157,15 +158,25 @@ export interface EgressConfig {
 
 /**
  * Composes `buildSecretBindings` with the rest of `egress` into one
- * `createHttpHooks()` call, and wires its `onResponse` hook to the unified
- * audit log (`src/policy/audit.ts`, M3.1).
+ * `createHttpHooks()` call, wires its `onResponse` hook to the unified audit
+ * log (`src/policy/audit.ts`, M3.1), and wires its `onRequest` hook to the
+ * GitHub API method/path gate (`egress.github-api`, `src/policy/github.ts`,
+ * M4.2) — the mechanism that makes `gh api -X DELETE` refusable.
+ * `githubApiGate()` is itself a complete no-op whenever
+ * `egress["github-api"]` is `undefined` (no `[egress.github-api]` table
+ * configured at all), so this wiring costs nothing for a workspace that
+ * doesn't use it.
  *
- * Deliberately passes none of `onRequest`/`isRequestAllowed`/`isIpAllowed`:
- * there is nothing in scope for this item for them to gate. The sentinel-host
- * short-circuit (`policy.corb.invalid`) is M7's job and the GitHub API
- * method/path gate (`egress.github-api`) is M4's — both would need
- * `onRequest`, and adding a no-op passthrough for any of the three now would
- * be dead code with nothing exercising it.
+ * Still deliberately passes neither `isRequestAllowed` nor `isIpAllowed`:
+ * nothing in scope for this codebase needs them yet. **Forward pointer for
+ * whoever wires up M7's sentinel-host content-check handler
+ * (`policy.corb.invalid`, `docs/design.md` §5):** `createHttpHooks()` takes
+ * exactly one `onRequest`, not a list, so adding the sentinel hook alongside
+ * `githubApiGate()`'s here will need some form of composition (e.g. try each
+ * hook in turn, first non-`undefined` result short-circuits) — that
+ * composition mechanism does not exist yet and is not built by this item;
+ * this comment is only the pointer, matching how M3.3's own version of this
+ * comment pointed forward to this milestone.
  *
  * Also registers every bound secret's real value with `audit` via
  * `addRedactedSecrets()` before doing anything else with it, so the audit
@@ -217,6 +228,7 @@ export function buildEgressConfig(
     allowedInternalHosts,
     blockInternalRanges: egress["block-internal-ranges"],
     secrets: secretBindings,
+    onRequest: githubApiGate(egress["github-api"], audit, sessionId),
     onResponse: (res, req) => {
       audit.record({
         channel: "http",

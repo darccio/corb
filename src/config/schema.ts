@@ -63,6 +63,16 @@ export interface PartialSecretConfig {
 }
 
 export interface PartialEgressGithubApiConfig {
+  /**
+   * The host(s) this gate targets. Parsed the same way as `methods`/
+   * `deny-paths` — a plain string array, no special validation beyond that.
+   * Absent within a present `[egress.github-api]` table is meaningful and is
+   * NOT resolved here: `src/policy/github.ts` (M4.2) is what defaults it to
+   * `["api.github.com"]`, and only once the table itself is present — see
+   * that module's own doc comment for why the default deliberately does not
+   * live in `src/config/load.ts`'s `BUILTIN_DEFAULTS`.
+   */
+  hosts?: string[];
   methods?: string[];
   "deny-paths"?: string[];
 }
@@ -349,12 +359,15 @@ function parseSecretsConfig(value: unknown, sourceLabel: string): Record<string,
   return result;
 }
 
-const EGRESS_GITHUB_API_KEYS = ["methods", "deny-paths"] as const;
+const EGRESS_GITHUB_API_KEYS = ["hosts", "methods", "deny-paths"] as const;
 
 function parseEgressGithubApi(value: unknown, sourceLabel: string): PartialEgressGithubApiConfig {
   const table = expectTable(value, "egress.github-api", sourceLabel);
   assertKnownKeys(table, EGRESS_GITHUB_API_KEYS, "egress.github-api", sourceLabel);
   const result: PartialEgressGithubApiConfig = {};
+  if (table.hosts !== undefined) {
+    result.hosts = expectStringArray(table.hosts, "egress.github-api.hosts", sourceLabel);
+  }
   if (table.methods !== undefined) {
     result.methods = expectStringArray(table.methods, "egress.github-api.methods", sourceLabel);
   }

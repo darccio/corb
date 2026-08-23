@@ -38,6 +38,7 @@ block-internal-ranges = true
 websockets = false
 
 [egress.github-api]
+hosts      = ["api.github.com"]
 methods    = ["GET", "POST", "PATCH"]
 deny-paths = ["**/actions/secrets/**", "**/actions/variables/**", "/user/keys**"]
 
@@ -129,6 +130,7 @@ describe("config/schema", () => {
         "block-internal-ranges": true,
         websockets: false,
         "github-api": {
+          hosts: ["api.github.com"],
           methods: ["GET", "POST", "PATCH"],
           "deny-paths": ["**/actions/secrets/**", "**/actions/variables/**", "/user/keys**"],
         },
@@ -212,6 +214,56 @@ limits = {}
 `;
     const layer = parseConfigLayer(toml, "workspace.toml");
     expect(layer.vm).toEqual({ limits: {} });
+  });
+
+  describe("[egress.github-api].hosts", () => {
+    it("parses a hosts list alongside methods/deny-paths", () => {
+      const toml = `
+[egress.github-api]
+hosts      = ["ghe.example.com"]
+methods    = ["GET"]
+deny-paths = ["/user/keys**"]
+`;
+      const layer = parseConfigLayer(toml, "config.toml");
+      expect(layer.egress?.["github-api"]).toEqual({
+        hosts: ["ghe.example.com"],
+        methods: ["GET"],
+        "deny-paths": ["/user/keys**"],
+      });
+    });
+
+    it("leaves hosts absent when not set, without defaulting it (defaulting is src/policy/github.ts's job, not the parser's)", () => {
+      const toml = `
+[egress.github-api]
+methods = ["GET"]
+`;
+      const layer = parseConfigLayer(toml, "config.toml");
+      expect(layer.egress?.["github-api"]).toEqual({ methods: ["GET"] });
+      expect(layer.egress?.["github-api"]?.hosts).toBeUndefined();
+    });
+
+    it("hosts alone (no methods/deny-paths) is valid", () => {
+      const toml = `
+[egress.github-api]
+hosts = ["ghe.example.com"]
+`;
+      const layer = parseConfigLayer(toml, "config.toml");
+      expect(layer.egress?.["github-api"]).toEqual({ hosts: ["ghe.example.com"] });
+    });
+
+    it("rejects a non-array hosts value the same way methods/deny-paths already reject one", () => {
+      const err = expectConfigParseError(() =>
+        parseConfigLayer(`[egress.github-api]\nhosts = "api.github.com"`, "config.toml"),
+      );
+      expect(err.message).toContain("field 'egress.github-api.hosts' must be an array");
+    });
+
+    it("rejects a typo'd key alongside a valid hosts entry — unknown-key rejection still catches typos", () => {
+      const err = expectConfigParseError(() =>
+        parseConfigLayer(`[egress.github-api]\nhosts = ["api.github.com"]\nhotss = ["oops"]`, "config.toml"),
+      );
+      expect(err.message).toContain("unknown key 'egress.github-api.hotss'");
+    });
   });
 
   describe("rejects unknown keys", () => {

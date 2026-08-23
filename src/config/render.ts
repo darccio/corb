@@ -101,6 +101,11 @@ function renderEgress(egress: EffectiveConfig["egress"]): string[] {
   } else {
     lines.push(
       "  github-api:",
+      // `src/policy/github.ts`'s `githubApiGate` defaults an unset `hosts`
+      // to `api.github.com` at enforcement time — say so here too, or an
+      // operator reading "(unset)" would wrongly conclude nothing is being
+      // gated at all, when in fact the gate is live against the default host.
+      `    hosts: ${githubApi.hosts === undefined ? "(unset, defaults to api.github.com)" : fmtArray(githubApi.hosts)}`,
       `    methods: ${fmtArray(githubApi.methods)}`,
       `    deny-paths: ${fmtArray(githubApi["deny-paths"])}`,
     );

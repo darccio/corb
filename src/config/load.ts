@@ -9,9 +9,10 @@
 // Merge rules (decided; see the M2.2 brief, not re-litigated here):
 //   1. List-valued security settings are additive across layers, deduplicated
 //      insertion-order: egress.allow, egress.allow-internal,
-//      egress.github-api.methods, egress.github-api.deny-paths,
-//      git.allow-hosts, git.allow-repos, agent.extensions, and a dir's own
-//      `rules` list (concatenated per same-named dir, no dedup — see 2).
+//      egress.github-api.hosts, egress.github-api.methods,
+//      egress.github-api.deny-paths, git.allow-hosts, git.allow-repos,
+//      agent.extensions, and a dir's own `rules` list (concatenated per
+//      same-named dir, no dedup — see 2).
 //   2. `dir` merges name-keyed at every layer boundary: a later layer's
 //      entry for an existing name replaces every field wholesale (following
 //      rule 3's scalar-replace) EXCEPT `rules`, which append. A new name
@@ -273,6 +274,10 @@ function mergeGithubApiConfig(
     return undefined;
   }
   const result: PartialEgressGithubApiConfig = {};
+  const hosts = mergeAdditiveArray(base?.hosts, next?.hosts);
+  if (hosts !== undefined) {
+    result.hosts = hosts;
+  }
   const methods = mergeAdditiveArray(base?.methods, next?.methods);
   if (methods !== undefined) {
     result.methods = methods;

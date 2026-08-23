@@ -284,12 +284,42 @@ describe("vm/egress buildEgressConfig", () => {
     expect(result.env).toEqual({ PLACEHOLDER: "abc" });
   });
 
-  it("does not pass onRequest, isRequestAllowed, or isIpAllowed — no dead-code hooks for out-of-scope M4/M7 gates", () => {
+  it("does not pass isRequestAllowed or isIpAllowed — no dead-code hooks for the still-out-of-scope M7 sentinel", () => {
     buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
     const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect("onRequest" in callArgs).toBe(false);
     expect("isRequestAllowed" in callArgs).toBe(false);
     expect("isIpAllowed" in callArgs).toBe(false);
+  });
+
+  it("passes onRequest as the githubApiGate() wired to egress['github-api']/audit/sessionId — a request the gate denies is short-circuited with a 403", () => {
+    const audit = fakeAudit();
+    buildEgressConfig(egress({ "github-api": { methods: ["GET"] } }), undefined, {}, audit, "session-gh");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
+      onRequest: (req: Request) => Response | undefined;
+    };
+    expect(typeof callArgs.onRequest).toBe("function");
+
+    const req = new Request("https://api.github.com/repos/dario/corb", { method: "DELETE" });
+    const result = callArgs.onRequest(req);
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(403);
+    expect(audit.record).toHaveBeenCalledWith({
+      channel: "http",
+      decision: "deny",
+      subject: "DELETE api.github.com/repos/dario/corb",
+      reason: "method not allowed",
+      sessionId: "session-gh",
+    });
+  });
+
+  it("onRequest passes a request through (returns undefined) when egress['github-api'] is undefined", () => {
+    buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
+      onRequest: (req: Request) => Response | undefined;
+    };
+    const req = new Request("https://api.github.com/repos/dario/corb", { method: "DELETE" });
+    expect(callArgs.onRequest(req)).toBeUndefined();
   });
 
   it("wires onResponse to record an 'allow' AuditEvent with the exact expected shape, including sessionId", async () => {

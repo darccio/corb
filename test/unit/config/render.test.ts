@@ -114,6 +114,33 @@ describe("config/render: renderText", () => {
     expect(text).toContain("verdict: TRUSTED");
     expect(text).toContain("scope: config.toml + this workspace directory only");
   });
+
+  it("shows github-api as (unset) when no [egress.github-api] table is configured at all", () => {
+    const text = renderText(noChangeWorkspace());
+    expect(text).toContain("github-api: (unset)");
+  });
+
+  it("makes an unset github-api.hosts' live default (api.github.com) visible, not just '(unset)'", () => {
+    // A workspace enforcement gap this project cares about (`docs/design.md`
+    // "policy you can't read is policy you won't trust"): `src/policy/github.ts`
+    // defaults an unset `hosts` to `api.github.com` at enforcement time, so a
+    // bare "(unset)" here would misleadingly read as "nothing is being
+    // gated", when a `methods`/`deny-paths` restriction is actually live
+    // against that default host.
+    const workspace = noChangeWorkspace();
+    workspace.fullConfig.egress["github-api"] = { methods: ["GET", "POST", "PATCH"] };
+    const text = renderText(workspace);
+    expect(text).toContain("hosts: (unset, defaults to api.github.com)");
+    expect(text).toContain("methods: [GET, POST, PATCH]");
+  });
+
+  it("shows an explicitly configured github-api.hosts verbatim, not the default", () => {
+    const workspace = noChangeWorkspace();
+    workspace.fullConfig.egress["github-api"] = { hosts: ["ghes.example.com"] };
+    const text = renderText(workspace);
+    expect(text).toContain("hosts: [ghes.example.com]");
+    expect(text).not.toContain("api.github.com");
+  });
 });
 
 describe("config/render: renderJson", () => {

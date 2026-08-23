@@ -132,6 +132,46 @@ describe("config/load", () => {
     expect(effective.egress.allow).toEqual(["api.anthropic.com", "api.github.com", "registry.npmjs.org"]);
   });
 
+  it("egress.github-api.hosts merges additively across layers, deduplicated, exactly like .methods and .deny-paths", () => {
+    const first: ConfigLayer = {
+      egress: {
+        "github-api": {
+          hosts: ["api.github.com", "ghe.example.com"],
+          methods: ["GET"],
+          "deny-paths": ["**/actions/secrets/**"],
+        },
+      },
+    };
+    const second: ConfigLayer = {
+      egress: {
+        "github-api": {
+          hosts: ["ghe.example.com", "ghe2.example.com"],
+          methods: ["POST"],
+          "deny-paths": ["/user/keys**"],
+        },
+      },
+    };
+    const effective = mergeConfigLayers([first, second]);
+    expect(effective.egress["github-api"]).toEqual({
+      hosts: ["api.github.com", "ghe.example.com", "ghe2.example.com"],
+      methods: ["GET", "POST"],
+      "deny-paths": ["**/actions/secrets/**", "/user/keys**"],
+    });
+  });
+
+  it("egress.github-api.hosts: a later layer setting only hosts leaves an earlier layer's methods/deny-paths untouched (nested scalar-object merge, field-by-field)", () => {
+    const first: ConfigLayer = {
+      egress: { "github-api": { methods: ["GET", "POST", "PATCH"], "deny-paths": ["/user/keys**"] } },
+    };
+    const second: ConfigLayer = { egress: { "github-api": { hosts: ["ghe.example.com"] } } };
+    const effective = mergeConfigLayers([first, second]);
+    expect(effective.egress["github-api"]).toEqual({
+      hosts: ["ghe.example.com"],
+      methods: ["GET", "POST", "PATCH"],
+      "deny-paths": ["/user/keys**"],
+    });
+  });
+
   it("dir: same name in two layers replaces host/mode wholesale from the later layer, but rules from both layers are present", () => {
     const first: ConfigLayer = {
       dir: [{ name: "corb", host: "~/Code/corb", mode: "rw", rules: [{ glob: "a", mode: "hidden" }] }],
