@@ -1,11 +1,32 @@
-// Unit tests for `src/vm/egress.ts`'s `buildSecretBindings`. `env` is always
-// a plain injected object literal here, never `process.env` itself — this
-// module's whole contract is "no I/O beyond the `env` object it's handed",
-// and mutating the real environment in tests would both violate that and
-// risk leaking state across tests.
-import { describe, expect, it } from "vitest";
-import { buildSecretBindings, MissingSecretError, SecretHostsMissingError } from "../../../src/vm/egress.ts";
+// Unit tests for `src/vm/egress.ts`. `env` is always a plain injected object
+// literal here, never `process.env` itself — this module's whole contract is
+// "no I/O beyond the `env` object it's handed", and mutating the real
+// environment in tests would both violate that and risk leaking state across
+// tests.
+//
+// The `buildSecretBindings` suite below is unchanged from M3.2. M3.3 adds
+// `createHttpHooks` mocking (`vi.hoisted`, matching
+// `test/unit/commands/run.test.ts`'s house style for mocking an SDK/module
+// boundary) plus suites for `safeSubject` and `buildEgressConfig`.
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PartialSecretConfig } from "../../../src/config/schema.ts";
+import type { AuditEvent, AuditWriter } from "../../../src/policy/audit.ts";
+
+const { createHttpHooksMock } = vi.hoisted(() => ({
+  createHttpHooksMock: vi.fn(),
+}));
+vi.mock("@earendil-works/gondolin", () => ({
+  createHttpHooks: createHttpHooksMock,
+}));
+
+import {
+  buildEgressConfig,
+  buildSecretBindings,
+  MissingSecretError,
+  safeSubject,
+  SecretHostsMissingError,
+} from "../../../src/vm/egress.ts";
+import type { EffectiveEgressConfig } from "../../../src/config/load.ts";
 
 describe("vm/egress buildSecretBindings", () => {
   it("returns {} without error when secrets is undefined", () => {
@@ -110,5 +131,186 @@ describe("vm/egress buildSecretBindings", () => {
     const env = { REQUIRED_PRESENT: "value-a" };
     expect(() => buildSecretBindings(secrets, env)).toThrow(MissingSecretError);
     expect(() => buildSecretBindings(secrets, env)).toThrow(/REQUIRED_MISSING/);
+  });
+});
+
+describe("vm/egress safeSubject", () => {
+  it("returns exactly `${method} ${hostname}${pathname}`, nothing else", () => {
+    const req = new Request("https://api.example.com/v1/widgets", { method: "POST" });
+    expect(safeSubject(req)).toBe("POST api.example.com/v1/widgets");
+  });
+
+  it("a fake secret planted in the query string and in a header never appears in the result", () => {
+    const req = new Request("https://api.example.com/v1/widgets?token=totally-a-secret-value", {
+      method: "GET",
+      headers: { "X-My-Header": "totally-a-secret-value" },
+    });
+    const subject = safeSubject(req);
+    expect(subject).toBe("GET api.example.com/v1/widgets");
+    expect(subject).not.toContain("totally-a-secret-value");
+    expect(subject).not.toContain("?");
+    expect(subject).not.toContain("token");
+  });
+
+  it("root path renders as an empty pathname suffix (no trailing garbage)", () => {
+    const req = new Request("https://example.com", { method: "GET" });
+    expect(safeSubject(req)).toBe("GET example.com/");
+  });
+});
+
+describe("vm/egress buildEgressConfig", () => {
+  function egress(overrides: Partial<EffectiveEgressConfig> = {}): EffectiveEgressConfig {
+    return {
+      "block-internal-ranges": true,
+      websockets: false,
+      ...overrides,
+    };
+  }
+
+  function fakeAudit(): AuditWriter & { record: ReturnType<typeof vi.fn> } {
+    return { record: vi.fn(), flush: vi.fn() };
+  }
+
+  beforeEach(() => {
+    createHttpHooksMock.mockReset();
+    createHttpHooksMock.mockReturnValue({
+      httpHooks: { onResponse: undefined },
+      env: { SOME_SECRET: "placeholder-value" },
+      allowedHosts: [],
+      secretManager: {},
+    });
+  });
+
+  it("egress.allow unset produces allowedHosts: [] passed to createHttpHooks — never undefined, never omitted", () => {
+    buildEgressConfig(egress(), undefined, {}, fakeAudit(), "session-1");
+    expect(createHttpHooksMock).toHaveBeenCalledTimes(1);
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect("allowedHosts" in callArgs).toBe(true);
+    expect(callArgs.allowedHosts).toEqual([]);
+    expect(callArgs.allowedHosts).not.toBeUndefined();
+  });
+
+  it("egress.allow with real hosts passes them through unchanged", () => {
+    buildEgressConfig(egress({ allow: ["api.anthropic.com", "*.github.com"] }), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArgs.allowedHosts).toEqual(["api.anthropic.com", "*.github.com"]);
+  });
+
+  it("egress['allow-internal'] unset produces [] the same way", () => {
+    buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArgs.allowedInternalHosts).toEqual([]);
+  });
+
+  it("egress['allow-internal'] with real hosts passes them through unchanged", () => {
+    buildEgressConfig(egress({ "allow-internal": ["internal.example.com"] }), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArgs.allowedInternalHosts).toEqual(["internal.example.com"]);
+  });
+
+  it("passes block-internal-ranges through unchanged (true)", () => {
+    buildEgressConfig(egress({ "block-internal-ranges": true }), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArgs.blockInternalRanges).toBe(true);
+  });
+
+  it("passes block-internal-ranges through unchanged (false)", () => {
+    buildEgressConfig(egress({ "block-internal-ranges": false }), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArgs.blockInternalRanges).toBe(false);
+  });
+
+  it("delegates secrets to buildSecretBindings and passes the resulting map through as 'secrets'", () => {
+    const secrets: Record<string, PartialSecretConfig> = {
+      ANTHROPIC_API_KEY: { hosts: ["api.anthropic.com"] },
+    };
+    buildEgressConfig(egress(), secrets, { ANTHROPIC_API_KEY: "sk-real" }, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(callArgs.secrets).toEqual({
+      ANTHROPIC_API_KEY: { hosts: ["api.anthropic.com"], value: "sk-real" },
+    });
+  });
+
+  it("propagates a MissingSecretError thrown by buildSecretBindings rather than swallowing it", () => {
+    const secrets: Record<string, PartialSecretConfig> = {
+      ANTHROPIC_API_KEY: { hosts: ["api.anthropic.com"] },
+    };
+    expect(() => buildEgressConfig(egress(), secrets, {}, fakeAudit(), "s")).toThrow(MissingSecretError);
+    expect(createHttpHooksMock).not.toHaveBeenCalled();
+  });
+
+  it("allowWebSockets in the return value reflects egress.websockets (true) and is not passed to createHttpHooks", () => {
+    const result = buildEgressConfig(egress({ websockets: true }), undefined, {}, fakeAudit(), "s");
+    expect(result.allowWebSockets).toBe(true);
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect("websockets" in callArgs).toBe(false);
+    expect("allowWebSockets" in callArgs).toBe(false);
+  });
+
+  it("allowWebSockets in the return value reflects egress.websockets (false)", () => {
+    const result = buildEgressConfig(egress({ websockets: false }), undefined, {}, fakeAudit(), "s");
+    expect(result.allowWebSockets).toBe(false);
+  });
+
+  it("returns the httpHooks/env createHttpHooks produced, unmodified", () => {
+    const httpHooksSentinel = { onResponse: undefined };
+    createHttpHooksMock.mockReturnValue({
+      httpHooks: httpHooksSentinel,
+      env: { PLACEHOLDER: "abc" },
+      allowedHosts: [],
+      secretManager: {},
+    });
+    const result = buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
+    expect(result.httpHooks).toBe(httpHooksSentinel);
+    expect(result.env).toEqual({ PLACEHOLDER: "abc" });
+  });
+
+  it("does not pass onRequest, isRequestAllowed, or isIpAllowed — no dead-code hooks for out-of-scope M4/M7 gates", () => {
+    buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect("onRequest" in callArgs).toBe(false);
+    expect("isRequestAllowed" in callArgs).toBe(false);
+    expect("isIpAllowed" in callArgs).toBe(false);
+  });
+
+  it("wires onResponse to record an 'allow' AuditEvent with the exact expected shape, including sessionId", async () => {
+    const audit = fakeAudit();
+    buildEgressConfig(egress(), undefined, {}, audit, "session-42");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
+      onResponse: (res: Response, req: Request) => unknown;
+    };
+
+    const req = new Request("https://api.anthropic.com/v1/messages?leak=totally-a-secret-value", {
+      method: "POST",
+      headers: { Authorization: "totally-a-secret-value" },
+    });
+    const res = new Response(null, { status: 200 });
+
+    await callArgs.onResponse(res, req);
+
+    expect(audit.record).toHaveBeenCalledTimes(1);
+    const recorded = audit.record.mock.calls[0]?.[0] as Omit<AuditEvent, "ts">;
+    expect(recorded).toEqual({
+      channel: "http",
+      decision: "allow",
+      subject: "POST api.anthropic.com/v1/messages",
+      reason: "200",
+      sessionId: "session-42",
+    });
+  });
+
+  it("onResponse's reason reflects the actual response status", async () => {
+    const audit = fakeAudit();
+    buildEgressConfig(egress(), undefined, {}, audit, "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
+      onResponse: (res: Response, req: Request) => unknown;
+    };
+    const req = new Request("https://example.com/", { method: "GET" });
+    const res = new Response(null, { status: 404 });
+
+    await callArgs.onResponse(res, req);
+
+    const recorded = audit.record.mock.calls[0]?.[0] as Omit<AuditEvent, "ts">;
+    expect(recorded.reason).toBe("404");
   });
 });
