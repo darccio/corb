@@ -55,6 +55,17 @@ export interface AuditWriter {
   /** Stamps `ts` via the injected clock, applies the redaction scrub (if configured), and buffers the event. Does not touch disk. */
   record(event: Omit<AuditEvent, "ts">): void;
   /**
+   * Adds more known-sensitive values to the redaction list `record()`
+   * consults, on top of whatever `redactSecrets` was passed at construction
+   * time. Exists because the real secret values (`buildSecretBindings()`,
+   * `src/vm/egress.ts`) aren't known yet at the point `createAuditWriter()`
+   * is called (`src/commands/run.ts`) — a caller that learns them later
+   * (`buildEgressConfig()`) registers them here instead. Only affects events
+   * recorded *after* this call; does not retroactively scrub anything
+   * already buffered.
+   */
+  addRedactedSecrets(values: readonly string[]): void;
+  /**
    * Appends every buffered event as one JSON line each to the configured
    * path (creating its parent directory if needed), then clears the
    * buffer. Always appends — never truncates or clobbers existing content,
@@ -66,13 +77,14 @@ export interface AuditWriter {
 /** Creates a new, empty `AuditWriter` targeting `options.path`. */
 export function createAuditWriter(options: AuditWriterOptions): AuditWriter {
   const filePath = options.path;
-  const redactSecrets = options.redactSecrets ?? [];
+  const redactSecrets = new Set(options.redactSecrets ?? []);
   const now = options.now ?? Date.now;
   const buffer: AuditEvent[] = [];
 
   function record(event: Omit<AuditEvent, "ts">): void {
-    const subject = redactKnownSecrets(event.subject, redactSecrets);
-    const reason = event.reason === undefined ? undefined : redactKnownSecrets(event.reason, redactSecrets);
+    const secrets = [...redactSecrets];
+    const subject = redactKnownSecrets(event.subject, secrets);
+    const reason = event.reason === undefined ? undefined : redactKnownSecrets(event.reason, secrets);
     const stamped: AuditEvent = {
       ts: now(),
       channel: event.channel,
@@ -82,6 +94,12 @@ export function createAuditWriter(options: AuditWriterOptions): AuditWriter {
       sessionId: event.sessionId,
     };
     buffer.push(stamped);
+  }
+
+  function addRedactedSecrets(values: readonly string[]): void {
+    for (const value of values) {
+      redactSecrets.add(value);
+    }
   }
 
   function flush(): void {
@@ -94,5 +112,5 @@ export function createAuditWriter(options: AuditWriterOptions): AuditWriter {
     buffer.length = 0;
   }
 
-  return { record, flush };
+  return { record, addRedactedSecrets, flush };
 }

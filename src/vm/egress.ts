@@ -167,6 +167,15 @@ export interface EgressConfig {
  * `onRequest`, and adding a no-op passthrough for any of the three now would
  * be dead code with nothing exercising it.
  *
+ * Also registers every bound secret's real value with `audit` via
+ * `addRedactedSecrets()` before doing anything else with it, so the audit
+ * log's defense-in-depth redaction pass (`src/policy/audit.ts`, M3.1) —
+ * previously built but never fed any values, since the real secret values
+ * don't exist yet at `createAuditWriter()`'s own call site
+ * (`src/commands/run.ts`) — actually has something to scrub for the rest of
+ * this session, on top of the primary mechanism (`safeSubject()` below never
+ * constructing an unsafe `subject`/`reason` in the first place).
+ *
  * `onResponse` is the only hook this item wires up, and only the "allow"
  * case is observable through it. Read against the installed SDK's own
  * `createHttpHooks()` implementation
@@ -190,6 +199,7 @@ export function buildEgressConfig(
   sessionId: string,
 ): EgressConfig {
   const secretBindings = buildSecretBindings(secrets, env);
+  audit.addRedactedSecrets(Object.values(secretBindings).map((binding) => binding.value));
 
   // `allowedHosts` sentinels are asymmetric (docs/gondolin-notes.md §4):
   // omitting the field to createHttpHooks() means "allow all"; an explicit

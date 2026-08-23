@@ -362,4 +362,36 @@ describe.skipIf(!process.env.CORB_E2E)("egress e2e (real VM boot)", () => {
     // Never a raw URL, header, or query string — `docs/design.md` §6.
     expect(httpAllow?.subject).not.toContain(REAL_SECRET_VALUE);
   });
+
+  it("defense-in-depth: the real secret value buildEgressConfig() bound is registered with the audit writer, so a hypothetical leak into a reason string is still caught", () => {
+    // `beforeAll` already called the exact production `buildEgressConfig()`
+    // with `REAL_SECRET_VALUE` sourced from `hostEnv`, exactly as
+    // `session.ts`'s `runSession()` does — proving this against that same
+    // call (rather than a fresh one) is what makes this a wiring test, not a
+    // re-proof of `redactKnownSecrets()` itself (already covered by
+    // `test/unit/util/redact.test.ts`). No other channel in this codebase
+    // actually puts a raw secret into a `subject`/`reason` today (the `http`
+    // channel's `safeSubject()` is structurally incapable of it) — this
+    // plants one deliberately to prove the second, independent safety net
+    // would still catch it if that ever changed.
+    audit.record({
+      channel: "gate",
+      decision: "deny",
+      subject: "hypothetical-leak",
+      reason: `denied: value contained ${REAL_SECRET_VALUE}`,
+      sessionId: SESSION_ID,
+    });
+    audit.flush();
+
+    const raw = fs.readFileSync(auditPath, "utf8");
+    expect(raw).not.toContain(REAL_SECRET_VALUE);
+
+    const lines = raw
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as AuditEvent);
+    const leak = lines.find((event) => event.subject === "hypothetical-leak");
+    expect(leak, `no matching hypothetical-leak entry in: ${JSON.stringify(lines)}`).toBeDefined();
+    expect(leak?.reason).toBe("denied: value contained [REDACTED]");
+  });
 });

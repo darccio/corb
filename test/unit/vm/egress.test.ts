@@ -167,8 +167,8 @@ describe("vm/egress buildEgressConfig", () => {
     };
   }
 
-  function fakeAudit(): AuditWriter & { record: ReturnType<typeof vi.fn> } {
-    return { record: vi.fn(), flush: vi.fn() };
+  function fakeAudit(): AuditWriter & { record: ReturnType<typeof vi.fn>; addRedactedSecrets: ReturnType<typeof vi.fn> } {
+    return { record: vi.fn(), addRedactedSecrets: vi.fn(), flush: vi.fn() };
   }
 
   beforeEach(() => {
@@ -237,6 +237,25 @@ describe("vm/egress buildEgressConfig", () => {
     };
     expect(() => buildEgressConfig(egress(), secrets, {}, fakeAudit(), "s")).toThrow(MissingSecretError);
     expect(createHttpHooksMock).not.toHaveBeenCalled();
+  });
+
+  it("registers every bound secret's real value with audit.addRedactedSecrets before returning", () => {
+    const secrets: Record<string, PartialSecretConfig> = {
+      ANTHROPIC_API_KEY: { hosts: ["api.anthropic.com"] },
+      OTHER_TOKEN: { hosts: ["example.com"] },
+    };
+    const audit = fakeAudit();
+    buildEgressConfig(egress(), secrets, { ANTHROPIC_API_KEY: "sk-real", OTHER_TOKEN: "tok-real" }, audit, "s");
+
+    expect(audit.addRedactedSecrets).toHaveBeenCalledTimes(1);
+    const registered = audit.addRedactedSecrets.mock.calls[0]?.[0] as string[];
+    expect(registered.sort()).toEqual(["sk-real", "tok-real"]);
+  });
+
+  it("calls audit.addRedactedSecrets with an empty list when no secrets are configured, rather than skipping the call", () => {
+    const audit = fakeAudit();
+    buildEgressConfig(egress(), undefined, {}, audit, "s");
+    expect(audit.addRedactedSecrets).toHaveBeenCalledWith([]);
   });
 
   it("allowWebSockets in the return value reflects egress.websockets (true) and is not passed to createHttpHooks", () => {

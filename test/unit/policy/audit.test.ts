@@ -120,4 +120,44 @@ describe("policy/audit AuditWriter", () => {
     const lines = readLines() as AuditEvent[];
     expect(lines[0]?.reason).toBe(reason);
   });
+
+  it("addRedactedSecrets() registers values a caller learns after construction, applied to later record() calls", () => {
+    const secret = "sk-late-bound-secret";
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    writer.addRedactedSecrets([secret]);
+    writer.record({ channel: "http", decision: "allow", subject: "op", reason: `bearer ${secret}`, sessionId: "s1" });
+    writer.flush();
+
+    const lines = readLines() as AuditEvent[];
+    expect(lines[0]?.reason).toBe("bearer [REDACTED]");
+  });
+
+  it("addRedactedSecrets() adds to, rather than replaces, values passed at construction time", () => {
+    const constructorSecret = "ctor-secret";
+    const laterSecret = "later-secret";
+    const writer = createAuditWriter({ path: logPath, now: () => 1, redactSecrets: [constructorSecret] });
+    writer.addRedactedSecrets([laterSecret]);
+    writer.record({
+      channel: "gate",
+      decision: "deny",
+      subject: "op",
+      reason: `${constructorSecret} and ${laterSecret}`,
+      sessionId: "s1",
+    });
+    writer.flush();
+
+    const lines = readLines() as AuditEvent[];
+    expect(lines[0]?.reason).toBe("[REDACTED] and [REDACTED]");
+  });
+
+  it("addRedactedSecrets() does not retroactively redact events already recorded before it was called", () => {
+    const secret = "not-yet-registered";
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    writer.record({ channel: "gate", decision: "deny", subject: "op", reason: secret, sessionId: "s1" });
+    writer.addRedactedSecrets([secret]);
+    writer.flush();
+
+    const lines = readLines() as AuditEvent[];
+    expect(lines[0]?.reason).toBe(secret);
+  });
 });
