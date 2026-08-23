@@ -28,3 +28,19 @@ export function configTomlPath(configDir: string = corbConfigDir()): string {
 export function trustStorePath(configDir: string = corbConfigDir()): string {
   return path.join(configDir, "trusted.json");
 }
+
+/**
+ * Corb's own state directory — distinct from `corbConfigDir()` because
+ * `~/.config` and `~/.local/state` are conventionally different XDG
+ * categories (config is user-edited intent, state is Corb-generated
+ * output, e.g. the audit log). Overridable via `CORB_STATE_DIR`, same
+ * pattern as `CORB_CONFIG_DIR`.
+ */
+export function corbStateDir(): string {
+  return process.env.CORB_STATE_DIR ?? path.join(os.homedir(), ".local", "state", "corb");
+}
+
+/** Default path to the unified audit log (`docs/design.md` §3/§6) inside `stateDir` (defaults to `corbStateDir()`). This is only ever a default a caller may pass on to `src/policy/audit.ts` — that module takes a plain path and does not import this file. */
+export function defaultAuditPath(stateDir: string = corbStateDir()): string {
+  return path.join(stateDir, "audit.jsonl");
+}
