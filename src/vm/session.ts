@@ -76,6 +76,15 @@ export const WORKSPACE_PUBLIC_ROOT = "/work";
  */
 export const WORKSPACE_RAW_ROOT = "/mnt/corb-raw";
 
+// TODO(M3.4, high priority): delete ANTHROPIC_HOST, requireApiKey, and
+// MissingApiKeyError below and replace this module's hardcoded
+// single-host/single-secret createHttpHooks() call with M3.3's
+// egress-config-derived allowedHosts/allowedInternalHosts plus
+// buildSecretBindings(fullConfig.secrets, hostEnv) (src/vm/egress.ts, already
+// generic — no new mechanism needed). Until this lands, every `corb run`
+// ignores [secrets]/[egress] config and is hardcoded to Anthropic regardless
+// of what a workspace configures. See docs/design.md §8 "Provider and model
+// selection" for the full decision record.
 /** The only host this session's egress is allowed to reach. */
 const ANTHROPIC_HOST = "api.anthropic.com";
 
