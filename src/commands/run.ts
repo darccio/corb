@@ -1,5 +1,5 @@
 // `corb run` — M1.6: argv parsing and wiring only. The actual session
-// assembly (image resolution, VFS mount, secret binding, exec, teardown)
+// assembly (image resolution, VFS mounts, secret binding, exec, teardown)
 // lives in `src/vm/session.ts`; this file's only job is turning `argv` into
 // a `RunSessionOptions`.
 //
@@ -10,6 +10,18 @@
 // untouched. `--dir` was considered (the M1.6 brief left the choice open)
 // but the positional form is what the plan's own CLI surface already
 // specifies, so there is no real fork to make here.
+//
+// M2.4 generalized `runSession` from a single `dir: string` to an explicit
+// `dirs`/`primary` shape (N named directories, each `ro`/`rw`), but this
+// file's own CLI surface is deliberately unchanged — no new flags. The one
+// positional workspace directory this command has always accepted becomes a
+// single-entry `dirs` array, named the same way `session.ts` already derived
+// `sessionLabel` before this change (`path.basename(hostDir)`), mounted
+// `rw`, and set as `primary`. Its guest mount path therefore moves from the
+// old `/work` to `/work/<name>` — an intentional consequence of the new
+// scheme (`docs/design.md` §3), not a regression. Wiring `--dir`/`--primary`
+// flags to let a caller configure more than one directory from the CLI is
+// M2.6's job, once the config system is wired in.
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { runSession } from "../vm/session.ts";
@@ -48,5 +60,6 @@ export function parseRunArgs(argv: string[]): RunCommandArgs {
 
 export async function runRunCommand(argv: string[]): Promise<void> {
   const { dir, piArgs } = parseRunArgs(argv);
-  await runSession({ dir, piArgs });
+  const name = path.basename(dir);
+  await runSession({ dirs: [{ name, hostPath: dir, mode: "rw" }], primary: name, piArgs });
 }

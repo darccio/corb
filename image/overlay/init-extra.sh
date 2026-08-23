@@ -1,4 +1,4 @@
-# corb: re-export the raw, root-only workspace mount at a path the
+# corb: re-export every raw, root-only workspace mount at a path the
 # dropped-privilege `agent` uid can actually use.
 #
 # Why this exists: Gondolin's own `sandboxfs` mounts every `vfs.mounts` guest
@@ -16,23 +16,45 @@
 # docs/gondolin-notes.md's risk register (R5/R12, closed by this fix) and
 # docs/design.md for the fuller writeup.
 #
-# The fix: `src/vm/session.ts` mounts the host workspace directory's
-# `RealFSProvider` at an internal-only guest path (`CORB_RAW_WORK_MOUNT`
-# below), never referenced again after boot, instead of at the public
-# `/work` the rest of the system expects. This script — spliced into
-# Gondolin's own rootfs init script via `init.rootfsInitExtra`
-# (corb-image.json), which runs after `sandboxfs` has mounted and performed
-# every configured bind (confirmed: `injectBeforeSandboxdExec` splices this
-# right before `exec /usr/bin/sandboxd`, i.e. strictly after the
+# The fix: `src/vm/session.ts` mounts each workspace directory's
+# `RealFSProvider`/`ReadonlyProvider` at an internal-only guest path under
+# `CORB_RAW_ROOT` below (one subdirectory per directory, named after its
+# guest-safe `name`), never referenced again after boot, instead of at the
+# public `CORB_PUBLIC_ROOT/<name>` the rest of the system expects. This
+# script — spliced into Gondolin's own rootfs init script via
+# `init.rootfsInitExtra` (corb-image.json), which runs after `sandboxfs` has
+# mounted and performed every configured bind (confirmed:
+# `injectBeforeSandboxdExec` splices this right before
+# `exec /usr/bin/sandboxd`, i.e. strictly after the
 # `wait_for_sandboxfs`/bind-mount block earlier in the same script) and
-# before `sandboxd` starts accepting exec requests — re-exports that raw
-# mount at the public `/work` through `bindfs`, whose `--force-user`/
-# `--force-group` squash the workspace uid/gid (read from
+# before `sandboxd` starts accepting exec requests — re-exports each raw
+# mount at its public `CORB_PUBLIC_ROOT/<name>` through `bindfs`, whose
+# `--force-user`/`--force-group` squash the workspace uid/gid (read from
 # `/etc/corb/image.json`, never hardcoded here — the same principle
 # `image/verify.ts`'s gates already follow for the agent uid/gid and pinned
 # Pi version) onto every path seen through the re-export. Nothing in this
-# process — nor Pi, nor `dropcap` — ever talks to the raw mount directly;
-# only this boot-time re-export does.
+# process — nor Pi, nor `dropcap` — ever talks to a raw mount directly; only
+# this boot-time re-export does.
+#
+# M2.4 generalized this script from exactly one hardcoded directory
+# (formerly CORB_RAW_WORK_MOUNT="/mnt/corb-raw/work" ->
+# CORB_PUBLIC_WORK_MOUNT="/work") to however many directories are actually
+# configured for a given session: Gondolin's own init creates one
+# subdirectory under CORB_RAW_ROOT per configured `vfs.mounts` guest path
+# *before* this script runs (the same mechanism the single-dir version's
+# "[ ! -d ... ]" check already relied on as an "is a workspace even
+# configured" signal), so the directories under CORB_RAW_ROOT are discovered
+# by listing it rather than assumed. Read-only (`ro`-mode) directories are
+# re-exported through the exact same `bindfs` invocation as read-write ones
+# — no read-only-specific bindfs flag is added. That enforcement is the
+# host-side `ReadonlyProvider`'s job (`src/vm/session.ts`): the RPC layer
+# denies a write before `bindfs` is even involved, so a second, guest-side
+# FUSE read-only flag would only duplicate that enforcement with no
+# corresponding UX benefit (contrast with `policygate`, which duplicates
+# git/gh policy deliberately as a UX guardrail — see docs/design.md §4). This
+# was verified empirically in a real booted VM (M2.4's e2e suite,
+# test/e2e/workspace-mounts.e2e.ts): a write attempt through a `ro`-mode
+# directory's public path fails.
 #
 # bindfs, not fuse-overlayfs: bindfs is purpose-built for exactly this job
 # (`--force-user`/`--force-group`/`allow_other`, no overlay semantics at
@@ -55,7 +77,7 @@
 # BENEFIT OVER THE PREVIOUS fuse-overlayfs IMPLEMENTATION: bindfs has no
 # workdir concept, because it isn't a copy-up filesystem — it never needs
 # scratch space on the same device as the mount, so there is no
-# artifact directory of any kind left behind inside the host workspace
+# artifact directory of any kind left behind inside any host workspace
 # directory. The previous implementation had a documented, visible cost
 # here (`.corb-fuse-overlay-workdir` appearing inside every host workspace
 # directory Corb mounts); this implementation does not have that cost at
@@ -68,22 +90,29 @@
 # numbers; not repeated here.
 set -eu
 
-CORB_RAW_WORK_MOUNT="/mnt/corb-raw/work"
-CORB_PUBLIC_WORK_MOUNT="/work"
+CORB_RAW_ROOT="/mnt/corb-raw"
+CORB_PUBLIC_ROOT="/work"
 CORB_IMAGE_JSON="/etc/corb/image.json"
 
 # `wait_for_sandboxfs` (defined earlier in this same script, before this
 # snippet is spliced in) already guarantees the fuseBinds loop — which
-# creates and bind-mounts every `vfs.mounts` guest path, including
-# CORB_RAW_WORK_MOUNT — has completed by the time control reaches here.
-# Polling again anyway, rather than trusting that ordering blindly, is the
-# same discipline the parent script itself applies before touching its own
-# sandboxfs mount, and it is what makes this script correct independently
-# of exactly how Gondolin's init happens to be sequenced in a future
-# release.
+# creates and bind-mounts every `vfs.mounts` guest path, including every
+# subdirectory under CORB_RAW_ROOT — has completed by the time control
+# reaches here. Polling again anyway, per directory, rather than trusting
+# that ordering blindly, is the same discipline the parent script itself
+# applies before touching its own sandboxfs mount, and it is what makes this
+# script correct independently of exactly how Gondolin's init happens to be
+# sequenced in a future release.
+#
+# Takes the specific raw mount path to wait for as a parameter (generalized
+# from the single-directory version's implicit global) because, with N
+# directories, each one's underlying sandboxfs bind can become ready at a
+# slightly different moment — waiting for one arbitrary directory and
+# assuming the rest are ready too would be an unfounded assumption.
 corb_wait_for_raw_mount() {
+  raw_mount_path="$1"
   for i in $(seq 1 300); do
-    if grep -q " ${CORB_RAW_WORK_MOUNT} fuse\.sandboxfs " /proc/mounts; then
+    if grep -q " ${raw_mount_path} fuse\.sandboxfs " /proc/mounts; then
       return 0
     fi
     sleep 0.1
@@ -91,10 +120,53 @@ corb_wait_for_raw_mount() {
   return 1
 }
 
-if [ ! -d "${CORB_RAW_WORK_MOUNT}" ]; then
-  log "[corb] raw workspace mount ${CORB_RAW_WORK_MOUNT} not present (no workspace configured for this session); skipping re-export"
-elif ! corb_wait_for_raw_mount; then
-  log "[corb] raw workspace mount ${CORB_RAW_WORK_MOUNT} never became ready; agent will have no workspace access"
+# Re-exports one already-ready raw mount at its public path. Failure here is
+# logged loudly but does not abort the rest of the boot — one directory's
+# `bindfs` failure must not take down every other directory's workspace
+# access, matching this script's pre-existing "log and degrade gracefully"
+# discipline.
+corb_export_one_dir() {
+  dir_name="$1"
+  raw_mount_path="${CORB_RAW_ROOT}/${dir_name}"
+  public_mount_path="${CORB_PUBLIC_ROOT}/${dir_name}"
+
+  if ! corb_wait_for_raw_mount "${raw_mount_path}"; then
+    log "[corb] raw workspace mount ${raw_mount_path} never became ready; agent will have no access to '${dir_name}'"
+    return 0
+  fi
+
+  mkdir -p "${public_mount_path}"
+  log "[corb] re-exporting ${raw_mount_path} at ${public_mount_path} (uid=${corb_agent_uid} gid=${corb_agent_gid}, allow_other)"
+  # allow_other is bindfs's default (--no-allow-other is the flag to
+  # disable it), so it is not passed explicitly here — this mount always
+  # runs as root during boot (this script runs before sandboxd starts,
+  # entirely within Gondolin's own root-owned init sequence), and relying
+  # on a documented default rather than restating it keeps this invocation
+  # minimal. If bindfs ever changes that default, the "agent can't reach a
+  # workspace directory" failure mode would surface immediately and loudly
+  # via image/verify.ts's own read/write gates and this milestone's e2e
+  # suite against a real booted VM, not silently. No read-only-specific
+  # flag is added for a `ro`-mode directory — see this file's header
+  # comment for why that enforcement belongs to the host-side
+  # `ReadonlyProvider`, not here.
+  if bindfs "--force-user=${corb_agent_uid}" "--force-group=${corb_agent_gid}" "${raw_mount_path}" "${public_mount_path}"; then
+    log "[corb] workspace re-export ready at ${public_mount_path}"
+  else
+    log "[corb] bindfs re-export mount FAILED for '${dir_name}'; agent will have no access to it"
+  fi
+}
+
+# POSIX `sh` glob caveat: `for d in "${CORB_RAW_ROOT}"/*/; do` on a
+# nonexistent or empty directory does NOT safely produce zero iterations —
+# it iterates once with the literal, unexpanded glob pattern as a string,
+# unlike bash with `nullglob`. Guarded against explicitly below: first by
+# checking CORB_RAW_ROOT exists at all (the pre-existing "no workspace
+# configured for this session" signal, generalized from a single directory
+# to a root), then by checking each loop candidate is a real directory
+# before using it, which is what actually protects against the
+# no-match-literal-glob case regardless of shell.
+if [ ! -d "${CORB_RAW_ROOT}" ]; then
+  log "[corb] ${CORB_RAW_ROOT} not present (no workspace directories configured for this session); skipping re-export"
 elif [ ! -r "${CORB_IMAGE_JSON}" ]; then
   log "[corb] ${CORB_IMAGE_JSON} missing; cannot determine workspace uid/gid, skipping re-export"
 else
@@ -103,21 +175,22 @@ else
   if [ -z "${corb_agent_uid}" ] || [ -z "${corb_agent_gid}" ]; then
     log "[corb] could not read a numeric uid/gid from ${CORB_IMAGE_JSON}; skipping re-export"
   else
-    mkdir -p "${CORB_PUBLIC_WORK_MOUNT}"
-    log "[corb] re-exporting ${CORB_RAW_WORK_MOUNT} at ${CORB_PUBLIC_WORK_MOUNT} (uid=${corb_agent_uid} gid=${corb_agent_gid}, allow_other)"
-    # allow_other is bindfs's default (--no-allow-other is the flag to
-    # disable it), so it is not passed explicitly here — this mount always
-    # runs as root during boot (this script runs before sandboxd starts,
-    # entirely within Gondolin's own root-owned init sequence), and
-    # relying on a documented default rather than restating it keeps this
-    # invocation minimal. If bindfs ever changes that default, the "agent
-    # can't reach /work" failure mode would surface immediately and
-    # loudly via image/verify.ts's own read/write gates against a real
-    # booted VM, not silently.
-    if bindfs "--force-user=${corb_agent_uid}" "--force-group=${corb_agent_gid}" "${CORB_RAW_WORK_MOUNT}" "${CORB_PUBLIC_WORK_MOUNT}"; then
-      log "[corb] workspace re-export ready at ${CORB_PUBLIC_WORK_MOUNT}"
-    else
-      log "[corb] bindfs re-export mount FAILED; agent will have no workspace access"
+    corb_found_any=0
+    for d in "${CORB_RAW_ROOT}"/*/; do
+      # Strips the trailing slash the trailing-slash glob form adds, so
+      # dir_name is the bare directory-entry name (e.g. "corb"), not
+      # "corb/". Guards the literal-glob-string case: if nothing matched,
+      # $d is the pattern itself, which is not a real directory, so this
+      # `[ -d ]` check (against the *unstripped* candidate, before trusting
+      # it enough to strip anything) skips it cleanly.
+      [ -d "${d}" ] || continue
+      corb_found_any=1
+      dir_name="${d%/}"
+      dir_name="${dir_name##*/}"
+      corb_export_one_dir "${dir_name}"
+    done
+    if [ "${corb_found_any}" -eq 0 ]; then
+      log "[corb] ${CORB_RAW_ROOT} exists but is empty (no workspace directories configured for this session); skipping re-export"
     fi
   fi
 fi
