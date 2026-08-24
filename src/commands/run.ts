@@ -311,6 +311,7 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     piArgs: fullPiArgs,
     egress: resolved.fullConfig.egress,
     ...(resolved.fullConfig.secrets !== undefined ? { secrets: resolved.fullConfig.secrets } : {}),
+    git: resolved.fullConfig.git,
     audit,
   });
 }

@@ -418,6 +418,9 @@ describe("commands/run: runRunCommand", () => {
         'hosts    = ["api.openai.com"]',
         "optional = true",
         "",
+        "[git]",
+        'allow-repos = ["dario/corb"]',
+        "",
         "[audit]",
         `path = "${customAuditPath}"`,
       ].join("\n");
@@ -430,6 +433,7 @@ describe("commands/run: runRunCommand", () => {
           piArgs: string[];
           egress: unknown;
           secrets: Record<string, unknown> | undefined;
+          git: unknown;
           audit: AuditWriter;
         },
       ];
@@ -443,6 +447,11 @@ describe("commands/run: runRunCommand", () => {
         websockets: false,
       });
       expect(options.secrets).toEqual({ OPENAI_API_KEY: { hosts: ["api.openai.com"], optional: true } });
+      expect(options.git).toEqual({
+        "ssh-agent": true,
+        "allow-push": false,
+        "allow-repos": ["dario/corb"],
+      });
 
       // `AuditWriter` has no path getter, so the only way to prove
       // `options.audit` is a real writer targeting `[audit].path` (not a
@@ -460,6 +469,12 @@ describe("commands/run: runRunCommand", () => {
         subject: "test-subject",
         sessionId: "test-session",
       });
+    });
+
+    it("passes git through unconditionally (built-in defaults) when no [git] block is configured at all", async () => {
+      await runRunCommand([workDir, "--trust-config"]);
+      const [options] = runSessionMock.mock.calls[0] as [{ git: unknown }];
+      expect(options.git).toEqual({ "ssh-agent": true, "allow-push": false });
     });
 
     it("falls back to defaultAuditPath() (under CORB_STATE_DIR) when [audit].path is not configured", async () => {

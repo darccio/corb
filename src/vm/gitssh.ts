@@ -19,18 +19,27 @@
 //     `VM.create({ ssh })`.
 //
 // Matches `src/vm/egress.ts`'s (M3.2/M3.3) own discipline exactly: pure
-// functions, no I/O beyond the `env` object handed in, `NodeJS.ProcessEnv`
-// injected rather than read from `process.env` directly (so tests never
-// touch real environment state), dedicated `Error` subclasses with
-// actionable messages. Like `buildSecretBindings` (M3.2) before
-// `buildEgressConfig` (M3.3) added audit wiring one item later, this module
-// takes no `AuditWriter` parameter — wiring `execPolicy`'s allow/deny
-// decisions into the unified audit log (`src/policy/audit.ts`) is M4.3's
-// job, once this module is actually threaded into `src/vm/session.ts`
-// alongside `buildEgressConfig`. Nothing here is called from `session.ts`
-// yet.
+// functions, no I/O beyond the `env`/`audit` objects handed in,
+// `NodeJS.ProcessEnv` injected rather than read from `process.env` directly
+// (so tests never touch real environment state), dedicated `Error`
+// subclasses with actionable messages.
+//
+// M4.3 threads this module into `src/vm/session.ts` for real (alongside
+// `buildEgressConfig`) and, in the same step, extends `buildGitSshOptions`'s
+// signature to take `audit: AuditWriter, sessionId: string` — the same
+// evolution `buildSecretBindings` (M3.2) went through one item later when
+// `buildEgressConfig` (M3.3) added its own audit wiring. Unlike the `http`
+// channel (which records early denials in `onRequest` and the eventual real
+// allow separately in `onResponse`, per `docs/design.md` §6 and
+// `src/policy/github.ts`'s own module comment), `SshOptions` has no separate
+// "the connection actually succeeded" callback at all — confirmed against
+// `node_modules/@earendil-works/gondolin/dist/src/qemu/ssh.d.ts`, which
+// exposes only `execPolicy` as a decision point. So `execPolicy` below is
+// the single, complete decision point for the `ssh` audit channel: it
+// records both the allow and every deny outcome itself, not just denials.
 import { getInfoFromSshExecRequest, type SshExecDecision, type SshExecRequest, type SshOptions } from "@earendil-works/gondolin";
 import type { EffectiveGitConfig } from "../config/load.ts";
+import type { AuditWriter } from "../policy/audit.ts";
 
 /**
  * Thrown by `normalizeRepo` when `repo` contains `..`. A `..` segment is
@@ -158,8 +167,23 @@ const GIT_UPLOAD_PACK = "git-upload-pack";
 const GIT_RECEIVE_PACK = "git-receive-pack";
 
 /**
- * Assembles the real `SshOptions` (`@earendil-works/gondolin`) a later item
- * (M4.3) will pass to `VM.create({ ssh })`. Three deliberate departures from
+ * Audit subject used for the `ssh` channel whenever a safe, parsed
+ * `${service} ${repo}` subject cannot be constructed: either
+ * `getInfoFromSshExecRequest` returned `null` (the guest sent something that
+ * doesn't parse as a recognized git-over-ssh command at all), or — the
+ * defense-in-depth branch documented below, believed unreachable from any
+ * real SSH request — `normalizeRepo` rejected the parsed `repo` string.
+ * Fixed and generic rather than embedding any part of the raw, unparsed (or
+ * unnormalizable) guest input, matching `docs/design.md` §1's "no raw
+ * request content in logs" discipline — the same discipline
+ * `src/policy/github.ts`'s `githubApiGate` follows for malformed/adversarial
+ * HTTP requests, applied here to the SSH side.
+ */
+const UNPARSEABLE_SSH_COMMAND_SUBJECT = "unparseable ssh command";
+
+/**
+ * Assembles the real `SshOptions` (`@earendil-works/gondolin`) `session.ts`
+ * (M4.3) passes to `VM.create({ ssh })`. Three deliberate departures from
  * the plan's own §5.2 sketch, each verified against the shipped SDK rather
  * than trusted from the sketch — see the inline comments at each departure:
  *
@@ -175,45 +199,99 @@ const GIT_RECEIVE_PACK = "git-receive-pack";
  *    Corb actually intends to support is finite, and defaulting an
  *    unrecognized-but-still-`git-*`-shaped service to *allow* would be the
  *    blocklist failure mode the rule warns against.
+ *
+ * `execPolicy` also records one `channel: "ssh"` audit event
+ * (`src/policy/audit.ts`) per decision — see the module comment for why it,
+ * unlike `githubApiGate`'s `onRequest`, must record allows as well as
+ * denies. `subject` is built as `` `${info.service} ${normalizedRepo}` ``
+ * (e.g. `"git-upload-pack dario/corb"`) once `info` has been parsed and
+ * `info.repo` has gone through this module's own `normalizeRepo` — the same
+ * canonicalized form the allowlist below actually compares against, not the
+ * raw `info.repo` — so the audit trail can never disagree with what was
+ * actually checked. When no such subject can be safely built (parsing
+ * failed entirely, or — unreachably in practice —`normalizeRepo` itself
+ * rejects the parsed repo), `UNPARSEABLE_SSH_COMMAND_SUBJECT` is used
+ * instead; `req.command` itself is never included in an audit event. Every
+ * `reason` on a deny event reuses the exact guest-facing `message` string
+ * for that branch (no second, parallel vocabulary of category strings) —
+ * all five are pre-existing, parser-validated, and contain no secrets. The
+ * allow event omits `reason`: `subject` (service + repo) together with
+ * `decision: "allow"` already says everything there is to say about an
+ * allow, unlike the `session` channel's events, which share one constant
+ * `subject` (the session label) across all three of its own record() calls
+ * and rely on `reason` (`"start"`/`` `exit:${code}` ``/`"error"`) to tell
+ * them apart.
  */
-export function buildGitSshOptions(git: EffectiveGitConfig, env: NodeJS.ProcessEnv): SshOptions {
+export function buildGitSshOptions(
+  git: EffectiveGitConfig,
+  env: NodeJS.ProcessEnv,
+  audit: AuditWriter,
+  sessionId: string,
+): SshOptions {
   const execPolicy = (req: SshExecRequest): SshExecDecision => {
     const info = getInfoFromSshExecRequest(req);
     if (!info) {
-      return {
-        allow: false,
-        message: "corb git: not a recognized git-over-ssh command (expected 'git-upload-pack' or 'git-receive-pack' against a single repo argument).",
-      };
-    }
-
-    if (info.service !== GIT_UPLOAD_PACK && info.service !== GIT_RECEIVE_PACK) {
-      return {
-        allow: false,
-        message: `corb git: ssh service '${info.service}' is not permitted (only fetch/clone and push are allowed).`,
-      };
+      const message =
+        "corb git: not a recognized git-over-ssh command (expected 'git-upload-pack' or 'git-receive-pack' against a single repo argument).";
+      audit.record({
+        channel: "ssh",
+        decision: "deny",
+        subject: UNPARSEABLE_SSH_COMMAND_SUBJECT,
+        reason: message,
+        sessionId,
+      });
+      return { allow: false, message };
     }
 
     let repo: string;
     try {
       repo = normalizeRepo(info.repo);
     } catch (err) {
-      return { allow: false, message: err instanceof Error ? err.message : String(err) };
+      // Defense in depth only, not a reachable path from a real SSH
+      // request: `getInfoFromSshExecRequest` already rejects any repo
+      // argument containing '..' before `execPolicy` ever runs — see
+      // `RepoTraversalError`'s own doc comment. `repo` here is exactly the
+      // string that failed to normalize safely, so — same as the
+      // couldn't-parse-at-all case above — it is not used to build the
+      // audit subject either.
+      const message = err instanceof Error ? err.message : String(err);
+      audit.record({
+        channel: "ssh",
+        decision: "deny",
+        subject: UNPARSEABLE_SSH_COMMAND_SUBJECT,
+        reason: message,
+        sessionId,
+      });
+      return { allow: false, message };
+    }
+
+    // Safe from here on: `info.service` already passed
+    // `getInfoFromSshExecRequest`'s own conservative charset check, and
+    // `repo` is `normalizeRepo`'s canonicalized output — exactly what the
+    // allowlist checks below compare against, so the audit trail is never
+    // one canonicalization step out of sync with the actual decision.
+    const subject = `${info.service} ${repo}`;
+
+    if (info.service !== GIT_UPLOAD_PACK && info.service !== GIT_RECEIVE_PACK) {
+      const message = `corb git: ssh service '${info.service}' is not permitted (only fetch/clone and push are allowed).`;
+      audit.record({ channel: "ssh", decision: "deny", subject, reason: message, sessionId });
+      return { allow: false, message };
     }
 
     if (!matchAnyGlob(git["allow-repos"], repo)) {
-      return {
-        allow: false,
-        message: `corb git: repository '${info.repo}' is not in git.allow-repos.`,
-      };
+      const message = `corb git: repository '${info.repo}' is not in git.allow-repos.`;
+      audit.record({ channel: "ssh", decision: "deny", subject, reason: message, sessionId });
+      return { allow: false, message };
     }
 
     if (info.service === GIT_RECEIVE_PACK && !git["allow-push"]) {
-      return {
-        allow: false,
-        message: "corb git: push is disabled for this session (set git.allow-push = true in config.toml to enable it).",
-      };
+      const message =
+        "corb git: push is disabled for this session (set git.allow-push = true in config.toml to enable it).";
+      audit.record({ channel: "ssh", decision: "deny", subject, reason: message, sessionId });
+      return { allow: false, message };
     }
 
+    audit.record({ channel: "ssh", decision: "allow", subject, sessionId });
     return { allow: true };
   };
 

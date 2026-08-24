@@ -31,6 +31,7 @@ import { acquire, canRequestPty, type TtyHandle } from "./tty.ts";
 import { ShutdownController, type ExitFn, type ProcessLike } from "./shutdown.ts";
 import { resolveRuntimeImage } from "./image.ts";
 import { buildEgressConfig } from "./egress.ts";
+import { buildGitSshOptions } from "./gitssh.ts";
 // `egress.ts` (M3.2/M3.3) already imports these same config types directly
 // rather than inventing its own decoupled shape, because it exists
 // specifically to consume `EffectiveConfig.egress`/`.secrets` and hand the
@@ -38,13 +39,17 @@ import { buildEgressConfig } from "./egress.ts";
 // `.secrets` below are passed straight through to `buildEgressConfig()`
 // unchanged, so a redundant parallel type here would only be converted back
 // into these exact types immediately before that call — no decoupling
-// benefit, just an extra conversion step. This is different from `dirs`/
-// `primary` (this module's own `WorkspaceDirSpec`, deliberately not
+// benefit, just an extra conversion step. M4.3 adds `RunSessionOptions.git`
+// to this same group for the identical reason: `buildGitSshOptions()`
+// (`./gitssh.ts`) already takes `EffectiveGitConfig` directly and hands its
+// result straight to `VM.create({ ssh })`, so `git` is passed through
+// unconverted exactly like `egress`/`secrets` are. This is different from
+// `dirs`/`primary` (this module's own `WorkspaceDirSpec`, deliberately not
 // `src/config/load.ts`'s `DirConfig` — see the module comment): those are
 // shaped and validated by this module itself (name safety, mount roots),
 // not merely forwarded to another module that already takes the config
 // type directly.
-import type { EffectiveEgressConfig } from "../config/load.ts";
+import type { EffectiveEgressConfig, EffectiveGitConfig } from "../config/load.ts";
 import type { PartialSecretConfig } from "../config/schema.ts";
 import type { AuditWriter } from "../policy/audit.ts";
 
@@ -336,6 +341,14 @@ export interface RunSessionOptions {
    */
   secrets?: Record<string, PartialSecretConfig>;
   /**
+   * A session's full effective git config (`EffectiveConfig.git`, always
+   * present — see `src/config/load.ts`), passed straight through to
+   * `buildGitSshOptions()`. See the module-level import comment for why this
+   * module imports this config type directly rather than defining its own
+   * decoupled shape, unlike `dirs`/`primary` above.
+   */
+  git: EffectiveGitConfig;
+  /**
    * Where policy decisions for this session are recorded. Constructed by the
    * caller (`src/commands/run.ts`) — this module does not resolve an audit
    * path itself, matching its existing convention of taking already-resolved
@@ -486,6 +499,14 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     });
 
     const egressConfig = buildEgressConfig(options.egress, options.secrets, hostEnv, options.audit, sessionId);
+    // `ssh` is always passed, never conditionally omitted: `SshOptions.allowedHosts`
+    // is a required `string[]`, and `buildGitSshOptions` itself already
+    // normalizes an absent `git["allow-hosts"]` to `[]` — which, per that
+    // function's own doc comment (verified against
+    // `node_modules/@earendil-works/gondolin/dist/src/qemu/ssh.js`), cleanly
+    // disables SSH egress entirely rather than requiring `ssh` to be left
+    // unset for the same effect.
+    const gitSshOptions = buildGitSshOptions(options.git, hostEnv, options.audit, sessionId);
 
     vm = await VM.create({
       sandbox: { imagePath: resolvedImage.assetDir },
@@ -494,6 +515,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       env: egressConfig.env,
       allowWebSockets: egressConfig.allowWebSockets,
       vfs: { mounts: vfsMounts },
+      ssh: gitSshOptions,
       sessionLabel,
     });
 
