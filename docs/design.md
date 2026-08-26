@@ -245,7 +245,7 @@ and prefix matching.
 ### Rule model
 
 ```ts
-export type GlobRuleMode = "deny-write" | "deny-read" | "hidden";
+export type GlobRuleMode = "deny-write" | "deny-read" | "hidden" | "shadow-write";
 
 export interface GlobRule {
   glob: string;    // "**/*_test.go" — ** matches across path segments
@@ -268,20 +268,20 @@ new GlobPolicyProvider(new RealFSProvider(hostPath), [
 
 ### Semantics matrix
 
-| Operation | no rule | `deny-write` | `deny-read` | `hidden` |
-|---|---|---|---|---|
-| `stat` / `lstat` | allow | allow | allow | `ENOENT` |
-| appears in `readdir` | yes | yes | yes | no |
-| `open` for read | allow | allow | `EACCES` | `ENOENT` |
-| `open` for write / create / truncate / append | allow | `EACCES` | `EACCES` | `ENOENT` |
-| `readFile` | allow | allow | `EACCES` | `ENOENT` |
-| `writeFile` / `appendFile` | allow | `EACCES` | `EACCES` | `ENOENT` |
-| `mkdir` / `rmdir` / `unlink` | allow | `EACCES` | `EACCES` | `ENOENT` |
-| `rename`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` |
-| `rename` of a directory containing a matched path | allow | `EACCES` | `EACCES` | `EACCES` |
-| `copyFile` source | allow | allow | `EACCES` | `ENOENT` |
-| `copyFile` destination | allow | `EACCES` | `EACCES` | `ENOENT` |
-| `link` / `symlink`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` |
+| Operation | no rule | `deny-write` | `deny-read` | `hidden` | `shadow-write` |
+|---|---|---|---|---|---|
+| `stat` / `lstat` | allow | allow | allow | `ENOENT` | allow |
+| appears in `readdir` | yes | yes | yes | no | yes |
+| `open` for read | allow | allow | `EACCES` | `ENOENT` | allow |
+| `open` for write / create / truncate / append | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
+| `readFile` | allow | allow | `EACCES` | `ENOENT` | allow |
+| `writeFile` / `appendFile` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
+| `mkdir` / `rmdir` / `unlink` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
+| `rename`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
+| `rename` of a directory containing a matched path | allow | `EACCES` | `EACCES` | `EACCES` | `EACCES` |
+| `copyFile` source | allow | allow | `EACCES` | `ENOENT` | allow |
+| `copyFile` destination | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
+| `link` / `symlink`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
 
 `deny-read` implies deny-write. A path the agent must not read but may
 overwrite is worse than useless: it is blind-clobberable, and losing the content
@@ -291,6 +291,21 @@ permitting writes.
 `hidden` reports `ENOENT` rather than `EACCES` everywhere, and is filtered out
 of directory listings, so the path does not merely fail to open — it does not
 appear to exist.
+
+`shadow-write` lets every operation appear to succeed from the guest's point of
+view, but anything that would mutate the real backend — a write, a create, a
+directory removal, a rename endpoint, a copy destination, a link or symlink
+endpoint — is redirected instead to ephemeral, session-scoped storage
+(`ShadowProvider(writeMode: "tmpfs")`) and never reaches the real file. Reads,
+`stat`, and directory listings keep reflecting the real backend unchanged.
+`link`/`symlink` are shadowed rather than merely allowed even though one of
+`link`'s two arguments is nominally a read: letting the call reach the real
+backend would create a second, real name for the same inode that no rule
+covers, and a write through that name would land on the real backend for real,
+defeating the redirect. Renaming a directory that contains a shadow-write path
+is denied outright, not shadowed, for the same reason it is denied under every
+other mode: relocating the subtree would move it out from under its own rule,
+so the next write to it would no longer be shadowed at all.
 
 `deny-write` still permits reads, deliberately. The agent can read a test file
 to understand what is expected of the code; it just cannot edit or create one.
