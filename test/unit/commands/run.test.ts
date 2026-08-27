@@ -17,9 +17,16 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { runSessionMock } = vi.hoisted(() => ({ runSessionMock: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("../../../src/vm/session.ts", () => ({
-  runSession: runSessionMock,
-}));
+// Only `runSession` itself is mocked (no real VM boot) — everything else
+// this module exports, including `toGlobRules`/`InvalidDirRuleError` (M5.4),
+// stays the real implementation via `importOriginal`, so `toWorkspaceDirSpec`'s
+// own eager `toGlobRules` validation call (see `src/commands/run.ts`) still
+// actually validates in these tests rather than silently no-op'ing against a
+// stub.
+vi.mock("../../../src/vm/session.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/vm/session.ts")>();
+  return { ...actual, runSession: runSessionMock };
+});
 
 import {
   DirFlagError,
@@ -34,6 +41,7 @@ import {
 } from "../../../src/commands/run.ts";
 import type { EffectiveConfig } from "../../../src/config/load.ts";
 import type { AuditWriter } from "../../../src/policy/audit.ts";
+import { InvalidDirRuleError } from "../../../src/vm/session.ts";
 
 describe("commands/run: parseRunArgs --dry-run", () => {
   it("defaults dryRun to false when not passed", () => {
@@ -352,8 +360,8 @@ describe("commands/run: runRunCommand", () => {
           },
         ];
         expect(options.dirs).toEqual([
-          { name: path.basename(fs.realpathSync(workDir)), hostPath: fs.realpathSync(workDir), mode: "rw" },
-          { name: "extra", hostPath: extraDir, mode: "ro" },
+          { name: path.basename(fs.realpathSync(workDir)), hostPath: fs.realpathSync(workDir), mode: "rw", rules: [] },
+          { name: "extra", hostPath: extraDir, mode: "ro", rules: [] },
         ]);
         expect(options.primary).toBe(path.basename(fs.realpathSync(workDir)));
         // No `[agent]` configured for this workspace, so `piArgs` passes
@@ -486,6 +494,64 @@ describe("commands/run: runRunCommand", () => {
       options.audit.record({ channel: "session", decision: "allow", subject: "test-subject", sessionId: "test-session" });
       options.audit.flush();
       expect(fs.existsSync(expectedDefaultPath)).toBe(true);
+    });
+  });
+
+  describe("config.toml [[dir]].rules wiring into runSession (M5.4)", () => {
+    it("a [[dir]].rules entry reaches runSession as part of the resolved WorkspaceDirSpec", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      const configToml = [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        "rules = [",
+        '  { glob = "secrets/**", mode = "hidden", reason = "keep secrets out of view" },',
+        "]",
+      ].join("\n");
+      fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
+
+      await runRunCommand([workDir, "--trust-config"]);
+      expect(runSessionMock).toHaveBeenCalledTimes(1);
+      const [options] = runSessionMock.mock.calls[0] as [
+        { dirs: { name: string; hostPath: string; mode: string; rules: unknown[] }[] },
+      ];
+      expect(options.dirs).toEqual([
+        {
+          name: dirName,
+          hostPath: fs.realpathSync(workDir),
+          mode: "rw",
+          rules: [{ glob: "secrets/**", mode: "hidden", reason: "keep secrets out of view" }],
+        },
+      ]);
+    });
+
+    it("a [[dir]].rules entry missing 'glob' or 'mode' throws InvalidDirRuleError before runSession is ever called", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      const configToml = [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        "rules = [",
+        '  { reason = "incomplete rule, has neither glob nor mode" },',
+        "]",
+      ].join("\n");
+      fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
+
+      await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow(InvalidDirRuleError);
+      expect(runSessionMock).not.toHaveBeenCalled();
+    });
+
+    it("a [[dir]].rules entry missing only 'mode' (glob present) still throws InvalidDirRuleError", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      const configToml = [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        "rules = [",
+        '  { glob = "secrets/**" },',
+        "]",
+      ].join("\n");
+      fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
+
+      await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow(InvalidDirRuleError);
+      expect(runSessionMock).not.toHaveBeenCalled();
     });
   });
 });

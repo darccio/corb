@@ -32,6 +32,13 @@ import { ShutdownController, type ExitFn, type ProcessLike } from "./shutdown.ts
 import { resolveRuntimeImage } from "./image.ts";
 import { buildEgressConfig } from "./egress.ts";
 import { buildGitSshOptions } from "./gitssh.ts";
+// M5.4: the outermost VFS layer for every mount (see the mount-building loop
+// inside `runSession`). `GlobRule` (`src/vfs/policy.ts`, M5.2) is the fully-
+// required rule shape `withGlobPolicy` (`src/vfs/glob-policy.ts`, M5.3)
+// consumes; `toGlobRules` below is this module's own conversion from the
+// config system's still-partial `DirRuleConfig` into that shape.
+import { withGlobPolicy, type GlobPolicyDenyEvent } from "../vfs/glob-policy.ts";
+import type { GlobRule } from "../vfs/policy.ts";
 // `egress.ts` (M3.2/M3.3) already imports these same config types directly
 // rather than inventing its own decoupled shape, because it exists
 // specifically to consume `EffectiveConfig.egress`/`.secrets` and hand the
@@ -49,7 +56,7 @@ import { buildGitSshOptions } from "./gitssh.ts";
 // shaped and validated by this module itself (name safety, mount roots),
 // not merely forwarded to another module that already takes the config
 // type directly.
-import type { EffectiveEgressConfig, EffectiveGitConfig } from "../config/load.ts";
+import type { DirRuleConfig, EffectiveEgressConfig, EffectiveGitConfig } from "../config/load.ts";
 import type { PartialSecretConfig } from "../config/schema.ts";
 import type { AuditWriter } from "../policy/audit.ts";
 
@@ -133,6 +140,33 @@ export class InvalidWorkspaceNameError extends Error {
   constructor(name: string, reason: string) {
     super(`corb run: workspace directory name '${name}' ${reason}`);
     this.name = "InvalidWorkspaceNameError";
+  }
+}
+
+/**
+ * Thrown before any VM is created when a workspace directory's `rules[]`
+ * entry (`src/config/load.ts`'s `DirRuleConfig`, itself `src/config/
+ * schema.ts`'s `PartialDirRuleConfig` — `glob`/`mode`/`reason` all optional
+ * at that parse/merge layer) is missing `glob` or `mode`. This is the first
+ * place in the codebase that ever converts a parsed rule into `src/vfs/
+ * policy.ts`'s fully-required `GlobRule` shape (see `toGlobRules` below),
+ * and nothing before this item validated that the conversion is actually
+ * possible — a rule table entry that names neither a pattern nor a mode is
+ * meaningless (there is nothing to match, or nothing to do once matched), so
+ * this fails the same way `WorkspaceDirectoryError`/`InvalidWorkspaceNameError`
+ * already do for their own "config entry is missing a field it needs" cases:
+ * a dedicated `Error` subclass, thrown eagerly, before any VM is created.
+ * `reason` is deliberately not one of these hard-error cases — see
+ * `toGlobRules`'s own doc comment for why a missing `reason` gets a fallback
+ * string instead.
+ */
+export class InvalidDirRuleError extends Error {
+  constructor(dirName: string, index: number, missingField: "glob" | "mode") {
+    super(
+      `corb run: workspace directory '${dirName}' rules[${index}] is missing required field '${missingField}' ` +
+        "(both 'glob' and 'mode' must be set for a rule to have any effect)",
+    );
+    this.name = "InvalidDirRuleError";
   }
 }
 
@@ -245,6 +279,49 @@ function assertValidWorkspaceName(name: string): void {
   }
 }
 
+/**
+ * Placeholder `reason` substituted for a `rules[]` entry that omits it.
+ * Unlike `glob`/`mode` (see `InvalidDirRuleError`), an absent `reason` does
+ * not make a rule meaningless — it still has a pattern to match and a mode
+ * to apply — so this is a defensible default rather than a third hard-error
+ * case. Deliberately worded so it reads as obviously synthetic wherever it
+ * surfaces (a denial error message, an audit log `reason` field): an
+ * operator who left `reason` unset should see that plainly, not a blank
+ * string or a value that looks like it was actually configured.
+ */
+const DEFAULT_RULE_REASON = "no reason configured for this rule";
+
+/**
+ * Converts one workspace directory's parsed `rules[]`
+ * (`src/config/load.ts`'s `DirConfig.rules`, always an array — possibly
+ * empty, never `undefined`, per that module's own comment — of still-partial
+ * `DirRuleConfig` entries) into `src/vfs/policy.ts`'s fully-required
+ * `GlobRule[]`, throwing `InvalidDirRuleError` for any entry missing `glob`
+ * or `mode`. See `InvalidDirRuleError`'s own doc comment for why those two
+ * fields are hard errors and `DEFAULT_RULE_REASON`'s for why a missing
+ * `reason` is not.
+ *
+ * Exported (unlike this module's other internal `resolveWorkspaceDirs`
+ * helpers) so `src/commands/run.ts`'s `toWorkspaceDirSpec` can call it
+ * eagerly too, purely for its validating side effect (discarding the
+ * result), so a malformed `rules[]` entry fails before `runSession` is ever
+ * invoked — see that call site's own comment. `resolveWorkspaceDirs` below
+ * still performs the authoritative, non-discarded conversion again on every
+ * `runSession` call, for any caller that reaches this module directly
+ * without going through `run.ts` first.
+ */
+export function toGlobRules(dirName: string, rules: readonly DirRuleConfig[]): GlobRule[] {
+  return rules.map((rule, index): GlobRule => {
+    if (rule.glob === undefined) {
+      throw new InvalidDirRuleError(dirName, index, "glob");
+    }
+    if (rule.mode === undefined) {
+      throw new InvalidDirRuleError(dirName, index, "mode");
+    }
+    return { glob: rule.glob, mode: rule.mode, reason: rule.reason ?? DEFAULT_RULE_REASON };
+  });
+}
+
 function assertNoDuplicateNames(dirs: readonly WorkspaceDirSpec[]): void {
   const seen = new Set<string>();
   for (const dir of dirs) {
@@ -313,6 +390,21 @@ export interface WorkspaceDirSpec {
   mode: "ro" | "rw";
   /** If true and `hostPath` doesn't exist, create it (`mkdir -p`) before validating/mounting. */
   create?: boolean;
+  /**
+   * This directory's configured `[[dir]].rules[]`, straight from
+   * `src/config/load.ts`'s `DirConfig.rules` (still partial — `glob`/`mode`/
+   * `reason` all optional at that layer). `resolveWorkspaceDirs` converts
+   * this into `src/vfs/policy.ts`'s fully-required `GlobRule[]` via
+   * `toGlobRules`, throwing `InvalidDirRuleError` for any entry missing
+   * `glob` or `mode`. Reusing `DirRuleConfig` here (rather than this
+   * module inventing a fourth, parallel copy of the same three optional
+   * fields) matches this module's own `mode`/`hostPath` precedent of taking
+   * an already-shaped-elsewhere input and validating it itself, not
+   * re-deriving its shape from scratch — see the module comment's
+   * `dirs`/`primary` discussion. Defaults to `[]` (no rules configured) when
+   * omitted.
+   */
+  rules?: DirRuleConfig[];
 }
 
 export interface RunSessionOptions {
@@ -380,13 +472,18 @@ interface ResolvedWorkspaceDir {
   name: string;
   hostPath: string;
   mode: "ro" | "rw";
+  /** Fully validated, `GlobRule`-shaped form of `WorkspaceDirSpec.rules` — see `toGlobRules`. */
+  rules: GlobRule[];
 }
 
 /**
  * Validates and resolves every `dirs` entry: name safety, no duplicate
- * names, `create`-if-missing, then existence/directory-ness — in that order,
- * so a bad name is caught before any path arithmetic or filesystem mutation,
- * and `create` runs before the existence check it would otherwise fail.
+ * names, `create`-if-missing, existence/directory-ness, then rule-table
+ * validation — in that order, so a bad name is caught before any path
+ * arithmetic or filesystem mutation, `create` runs before the existence
+ * check it would otherwise fail, and an invalid `rules[]` entry
+ * (`InvalidDirRuleError`, via `toGlobRules`) is still caught before any VM
+ * is created even though it has no bearing on the host-path checks above it.
  */
 function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] {
   for (const dir of dirs) {
@@ -402,7 +499,8 @@ function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] 
       }
     }
     const hostPath = resolveHostDir(dir.hostPath);
-    return { name: dir.name, hostPath, mode: dir.mode };
+    const rules = toGlobRules(dir.name, dir.rules ?? []);
+    return { name: dir.name, hostPath, mode: dir.mode, rules };
   });
 }
 
@@ -441,10 +539,43 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
 
+  // The `vfs` channel (`docs/design.md` §6/§8) has had no producer until this
+  // item, same gap `ssh`/`http`/`session` each had before their own wiring
+  // items (M4.3/M3.2-3/this function's own "start"/"exit"/"error" events
+  // above). `event.path` is already mount-relative (`src/vfs/glob-policy.ts`'s
+  // own doc comment on `GlobPolicyDenyEvent.path` — never a raw host path or
+  // guest absolute path), so it is safe to fold directly into `subject`
+  // alongside `event.op`, matching `buildGitSshOptions`'s own
+  // `` `${info.service} ${repo}` `` precedent for building a safe subject
+  // from two already-safe pieces. A `"shadowed"` outcome is still recorded as
+  // `decision: "deny"` (`AuditEvent.decision` is a fixed `"allow" | "deny"`
+  // union — adding a third value for one caller is out of scope for this
+  // item) because it is still a policy intervention, not a plain pass-through;
+  // `reason` is prefixed to tell a human reading the log that this call was
+  // silently redirected rather than refused outright.
+  const onVfsDeny = (event: GlobPolicyDenyEvent): void => {
+    const subject = event.path === "" ? event.op : `${event.op} ${event.path}`;
+    const reason =
+      event.outcome.kind === "shadowed"
+        ? `shadowed (redirected to ephemeral storage): ${event.reason}`
+        : event.reason;
+    options.audit.record({ channel: "vfs", decision: "deny", subject, reason, sessionId });
+  };
+
   const vfsMounts: Record<string, VirtualProvider> = {};
   for (const dir of resolvedDirs) {
     const base = new RealFSProvider(dir.hostPath);
-    vfsMounts[rawWorkspacePath(dir.name)] = dir.mode === "ro" ? new ReadonlyProvider(base) : base;
+    // `withGlobPolicy` is layered *outermost* regardless of `ro`/`rw`
+    // (`docs/design.md` §3, the top-level plan's §5.3 sketch): a `hidden`
+    // rule must yield `ENOENT` on a `ro` mount exactly as it would on `rw`,
+    // which only holds if the glob policy wrapper sees every call first.
+    // `ReadonlyProvider`'s own write-rejection for `ro` dirs still applies
+    // underneath, independently of anything the rule table says — a `ro` dir
+    // with a `shadow-write` rule still shadows (the glob policy layer
+    // intercepts before the call ever reaches `ReadonlyProvider`), matching
+    // that plan sketch's own wording exactly.
+    const roOrRw: VirtualProvider = dir.mode === "ro" ? new ReadonlyProvider(base) : base;
+    vfsMounts[rawWorkspacePath(dir.name)] = withGlobPolicy(roOrRw, { rules: dir.rules, onDeny: onVfsDeny });
   }
 
   let vm: VM | undefined;

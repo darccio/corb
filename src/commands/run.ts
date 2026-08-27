@@ -47,7 +47,7 @@
 // gate below — only an actual run does.
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { runSession, type WorkspaceDirSpec } from "../vm/session.ts";
+import { runSession, toGlobRules, type WorkspaceDirSpec } from "../vm/session.ts";
 import { acceptWorkspace, resolveWorkspace, type ResolvedWorkspace } from "../config/resolve.ts";
 import { renderText, renderTrust } from "../config/render.ts";
 import { defaultAuditPath } from "../config/paths.ts";
@@ -268,7 +268,23 @@ function toWorkspaceDirSpec(entry: DirConfig): WorkspaceDirSpec {
   if (entry.host === undefined) {
     throw new DirHostMissingError(entry.name);
   }
-  const spec: WorkspaceDirSpec = { name: entry.name, hostPath: entry.host, mode: entry.mode ?? "rw" };
+  // Validated here, eagerly, purely for `toGlobRules`'s side effect (the
+  // fully-resolved `GlobRule[]` result is discarded) — a `rules[]` entry
+  // missing `glob` or `mode` throws `InvalidDirRuleError` from this call,
+  // before `runSession` is ever invoked, the same "error clearly and
+  // immediately" discipline `DirHostMissingError` above already follows.
+  // `resolveWorkspaceDirs` (`src/vm/session.ts`) performs the authoritative,
+  // non-discarded conversion again on every `runSession` call, for any
+  // caller that reaches that module directly without going through this
+  // function first — this is a deliberate, harmless duplicate check, not a
+  // substitute for it.
+  toGlobRules(entry.name, entry.rules);
+  // `entry.rules` is always an array (possibly empty), never `undefined` —
+  // `src/config/load.ts`'s own `DirConfig.rules` comment — so this is a
+  // plain pass-through, not a defaulting step; `WorkspaceDirSpec.rules`'s own
+  // optionality exists for callers other than this one (e.g. direct
+  // `runSession` callers in tests), not because this one ever omits it.
+  const spec: WorkspaceDirSpec = { name: entry.name, hostPath: entry.host, mode: entry.mode ?? "rw", rules: entry.rules };
   if (entry.create !== undefined) {
     spec.create = entry.create;
   }
