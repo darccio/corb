@@ -109,19 +109,52 @@ describe("withGlobPolicy: link()/symlink() gated at creation time, both endpoint
     await expectErrno(wrapped.link("/other.txt", "/decoy"), "EACCES");
   });
 
-  it("denies symlink(anything, deniedPath) — only the new entry's own path is gated, never the arbitrary target string", async () => {
+  it("denies symlink(anything, deniedPath) — the new entry's own path is gated regardless of what the (here, nonexistent) target resolves to", async () => {
     const rules: GlobRule[] = [{ glob: "decoy", mode: "hidden", reason: "hidden name" }];
     const { wrapped } = setup(rules);
 
     await expectErrno(wrapped.symlink("/this/target/string/is/never/checked/../../..", "/decoy"), "ENOENT");
   });
 
-  it("allows symlink() whose target string happens to look like a denied path — the target is never itself checked", async () => {
+  it("allows symlink() whose target string happens to look like a denied path, when the target's rule mode does not gate stat() (deny-read)", async () => {
     const rules: GlobRule[] = [{ glob: "secret.txt", mode: "deny-read", reason: "secret" }];
     const { wrapped, backend } = setup(rules);
 
+    // `TABLE.stat["deny-read"]` is `ALLOW` — creation succeeds cleanly, and
+    // only a later `readFile`/`open` through this link would be denied (see
+    // the "symlink-bypass defense" describe block above). This is the case
+    // that must keep working even after the "hidden"-target pre-creation
+    // check below is added: that check is scoped to the `stat` category
+    // specifically, not to "target matches any rule at all."
     await expect(wrapped.symlink("secret.txt", "/ok-name")).resolves.toBeUndefined();
     expect(await backend.readlinkSync("/ok-name")).toBe("secret.txt");
+  });
+
+  it("denies symlink() creation itself (not just a later read) when the target resolves into a hidden path, and never creates a real backend entry", async () => {
+    // Regression test for a real bug found while investigating M5.5's e2e
+    // suite: `rpc-service.js`'s `handleSymlink` calls `provider.symlink()`
+    // (previously allowed here, since only the new entry's own name was
+    // checked) and only afterward calls `provider.lstat()` on the new entry
+    // to build the FUSE reply — which is what used to deny a hidden target,
+    // but *after* a real symlink had already been created on the backend.
+    // That left a real, RPC-service-ino-less entry behind that corrupted the
+    // guest-visible directory listing once its readdir cache entry expired
+    // (confirmed empirically against a real VM boot, not just theorized).
+    // `TABLE.stat["hidden"]` is `ENOENT`, so this must now be denied before
+    // `backend.symlink()` is ever called at all.
+    const rules: GlobRule[] = [{ glob: "secret.txt", mode: "hidden", reason: "secret" }];
+    const { wrapped, backend } = setup(rules);
+    await backend.writeFile("/secret.txt", "sssh");
+
+    await expectErrno(wrapped.symlink("secret.txt", "/decoy"), "ENOENT");
+    expect(backend.existsSync("/decoy")).toBe(false);
+  });
+
+  it("allows a dangling symlink whose target does not exist at all — a nonexistent target is not a policy concern", async () => {
+    const rules: GlobRule[] = [{ glob: "secret.txt", mode: "hidden", reason: "secret" }];
+    const { wrapped } = setup(rules);
+
+    await expect(wrapped.symlink("does-not-exist.txt", "/dangling")).resolves.toBeUndefined();
   });
 });
 

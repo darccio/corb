@@ -941,12 +941,113 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     return (target.readlinkSync as AnyFn)(normalized, options);
   }
 
+  /**
+   * Resolves a `symlink()` call's raw `target` argument into the normalized-
+   * absolute VFS path it would point to, for `checkSymlinkTargetPolicy`
+   * below. Deliberately *not* run through `normalizeGuestPath`: `target` is
+   * not "a path as received by a `VirtualProvider` method" the way every
+   * other raw argument in this file is (see the doc comment below on why
+   * only `path` is gated) — a relative target legitimately containing `..`
+   * (`ln -s ../shared/lib.so`) is ordinary POSIX symlink usage, not a
+   * traversal attempt, so `normalizeGuestPath`'s fail-closed `..` rejection
+   * does not apply here. `path.posix.normalize` resolves it the same way the
+   * guest kernel's own dereference eventually would (and, like the guest
+   * kernel, clamps a `..`-above-root target to the root rather than escaping
+   * it).
+   */
+  function resolveSymlinkTargetAbs(normalizedSymlinkPath: string, target: string): string {
+    let raw = target;
+    if (fuseMount !== "/" && (raw === fuseMount || raw.startsWith(`${fuseMount}/`))) {
+      raw = raw.slice(fuseMount.length) || "/";
+    }
+    const abs = raw.startsWith("/") ? raw : path.posix.join(path.posix.dirname(normalizedSymlinkPath), raw);
+    return path.posix.normalize(abs);
+  }
+
+  /**
+   * Verified empirically (a fresh scratch-VM boot, `onDeny` wired to
+   * `console.log`) that leaving this to the RPC layer's own post-creation
+   * `lstat` is not just a cosmetic gap: `rpc-service.js`'s `handleSymlink`
+   * calls `provider.symlink()` first — which this module's own `decide()`
+   * call below *allows* for a `hidden`-target case, since only the new
+   * entry's own name (not what it points to) is checked there, so a real
+   * symlink lands on the real backend — and only then calls
+   * `this.provider.lstat(entryPath)` to build the FUSE reply, which is what
+   * actually denies (via this module's own resolved-path recheck following
+   * the now-real symlink to its hidden target). That throw happens *before*
+   * `rpc-service.js`'s own `ensureIno()`/`invalidateReaddirCacheEntries()`
+   * calls one line later, leaving a real, ino-less symlink on the backend
+   * that the RPC service's own bookkeeping never learned about. Once that
+   * directory's `readdirCache` entry naturally expires (`READDIR_CACHE_TTL_MS`,
+   * 5s) and a fresh `readdir` re-enumerates it, this orphaned entry corrupts
+   * the guest-visible `readdir`/`lookup` handshake: every subsequent `ls` of
+   * that directory returns permanently empty (confirmed: 0 bytes, exit 0,
+   * does not self-heal, survives a brand-new file being added directly on
+   * the host) until the VM is recreated.
+   *
+   * The fix is to make the same decision `rpc-service.js`'s post-creation
+   * `lstat` would make, but *before* ever calling `backend.symlink()`, so a
+   * denied target never gets a real backend entry created for it at all —
+   * exactly like `link()` already gates its existing endpoint before ever
+   * creating a real hard link (see that function's own comment). Checked
+   * against the `"stat"` category specifically, because that is the actual
+   * operation the RPC layer's post-creation fetch performs — this is why a
+   * `deny-read`-covered target (`TABLE.stat` is `ALLOW`) still creates
+   * cleanly here, matching the already-documented, already-tested "creation
+   * succeeds, the *read* is what's denied" behavior for that case; only a
+   * `hidden` target (`TABLE.stat` is `ENOENT`) is caught by this check.
+   * `resolveForRecheck` returning `undefined` (a dangling target, or a
+   * target whose parent doesn't exist) means there is nothing to deny —
+   * dangling symlinks are ordinary and harmless, matching every other
+   * ENOENT-from-realpath case in this file.
+   */
+  async function checkSymlinkTargetPolicy(normalizedSymlinkPath: string, target: string, syscall: string): Promise<void> {
+    const targetAbs = resolveSymlinkTargetAbs(normalizedSymlinkPath, target);
+    const targetRulePath = await resolveForRecheck(targetAbs, false, "stat", syscall);
+    if (targetRulePath === undefined) {
+      return;
+    }
+    const targetDecision = decideFsAccessForPath(rules, targetRulePath, "stat");
+    if (targetDecision.outcome.kind === "deny") {
+      auditAndThrow(
+        "stat",
+        syscall,
+        targetRulePath,
+        targetDecision.outcome,
+        targetDecision.rule,
+        `${targetDecision.rule?.reason ?? "denied by policy"} (symlink target resolves into a policy-denied path)`,
+      );
+    }
+  }
+  function checkSymlinkTargetPolicySync(normalizedSymlinkPath: string, target: string, syscall: string): void {
+    const targetAbs = resolveSymlinkTargetAbs(normalizedSymlinkPath, target);
+    const targetRulePath = resolveForRecheckSync(targetAbs, false, "stat", syscall);
+    if (targetRulePath === undefined) {
+      return;
+    }
+    const targetDecision = decideFsAccessForPath(rules, targetRulePath, "stat");
+    if (targetDecision.outcome.kind === "deny") {
+      auditAndThrow(
+        "stat",
+        syscall,
+        targetRulePath,
+        targetDecision.outcome,
+        targetDecision.rule,
+        `${targetDecision.rule?.reason ?? "denied by policy"} (symlink target resolves into a policy-denied path)`,
+      );
+    }
+  }
+
   async function symlink(target: string, rawPath: string, type?: string): Promise<unknown> {
     // `target` is an arbitrary string the provider never resolves as a VFS
     // path (`src/vfs/policy.ts`'s own doc comment on the `"link"` category)
-    // — only `path`, where the new symlink entry is created, is gated.
+    // — only `path`, where the new symlink entry is created, is gated
+    // against its own name by `decide()` below. `checkSymlinkTargetPolicy`
+    // additionally gates what `target` resolves *into* — see that function's
+    // own doc comment for why this is not redundant with `decide()`.
     const normalized = normalizeGuestPath(rawPath, fuseMount);
     const decision = await decide("link", "symlink", normalized, true);
+    await checkSymlinkTargetPolicy(normalized, target, "symlink");
     if (decision === "shadowed") {
       return (shadowAny.symlink as AnyFn)(target, normalized, type);
     }
@@ -955,6 +1056,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   function symlinkSync(target: string, rawPath: string, type?: string): unknown {
     const normalized = normalizeGuestPath(rawPath, fuseMount);
     const decision = decideSync("link", "symlinkSync", normalized, true);
+    checkSymlinkTargetPolicySync(normalized, target, "symlinkSync");
     if (decision === "shadowed") {
       return (shadowAny.symlinkSync as AnyFn)(target, normalized, type);
     }

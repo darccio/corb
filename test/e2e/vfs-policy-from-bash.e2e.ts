@@ -106,21 +106,33 @@
 //   - Target covered by a `hidden` rule (`secrets/key.pem`, via `secrets/**`):
 //     `ln -s secrets/key.pem decoy` itself fails
 //     (`ln: decoy: No such file or directory`), *before* any `cat` is ever
-//     attempted. The observed `onDeny` event was `{"path":"decoy","op":"stat",
-//     ...,"reason":"hidden (via resolved path 'secrets/key.pem')"}` — the RPC
-//     layer performs its own post-creation `lstat`/`getattr` on the just-created
-//     symlink (to populate the FUSE reply's attributes), and that internal
-//     call goes through the *same* policy wrapper as any guest-initiated
-//     `stat`, which denies it because `TABLE.stat.hidden` is `ENOENT`. A real,
-//     inaccessible symlink file *is* left behind on the host filesystem by
-//     this sequence (confirmed via a direct host-side `fs.lstatSync`/
-//     `fs.readlinkSync` check in that scratch VM) — the guest-visible
-//     `symlink()` call still reports failure to the guest, and no subsequent
-//     guest operation (a fresh `ls -la` in the same script did not list the
-//     name at all) can see or read it, so no guest-visible bypass exists, but
-//     it is worth recording as a real, if inconsequential, discrepancy
-//     between "the guest was told this failed" and "a file object exists on
-//     the real backend" — see this suite's own report for the fuller writeup.
+//     attempted. `withGlobPolicy`'s `symlink()` now resolves what the target
+//     would point to and checks it against the `stat` category *before ever
+//     calling the real backend's own `symlink()`* (`checkSymlinkTargetPolicy`
+//     in `src/vfs/glob-policy.ts`), so the observed `onDeny` event fires at
+//     that point: `{"path":"secrets/key.pem","op":"stat",...,"reason":"hidden
+//     (symlink target resolves into a policy-denied path)"}`, and no real
+//     symlink object is ever created on the host backend (confirmed via a
+//     direct host-side `fs.existsSync` check in that scratch VM).
+//
+//     This was *not* always true: earlier, this same case was denied only by
+//     the RPC layer's own post-creation `lstat`/`getattr` fetch on the
+//     just-created symlink (needed to populate the FUSE reply's attributes),
+//     which happens *after* the real backend's `symlink()` had already
+//     succeeded — leaving a real, inaccessible symlink object on the host
+//     that the RPC service's own ino-tracking never learned about (its
+//     `ensureIno`/`invalidateReaddirCacheEntries` calls, one line after that
+//     `lstat`, were never reached). That was not just a cosmetic discrepancy:
+//     confirmed via a second scratch-VM boot that once that orphaned entry's
+//     parent directory's `readdirCache` entry naturally expired
+//     (`READDIR_CACHE_TTL_MS`, 5s of guest inactivity) and a fresh `readdir`
+//     re-enumerated it, every subsequent `ls` of that directory returned
+//     permanently empty (0 bytes, exit 0, did not self-heal) until VM
+//     recreation — see `src/vfs/glob-policy.ts`'s own `checkSymlinkTargetPolicy`
+//     doc comment for the full mechanism and the fix. The "hidden: ... ls"
+//     test below no longer needs to run before the symlink/hard-link/`mv`
+//     scenarios for this reason — re-confirmed via a fresh VM boot running
+//     the exact denied-ops-without-`ls` sequence that used to trigger it.
 //   - Target covered by a `deny-read` rule (`readable-secret.txt`): creation
 //     succeeds cleanly (`TABLE.stat.deny-read` is `ALLOW`, so the same
 //     post-creation getattr is not denied), and it is the *subsequent*
@@ -298,30 +310,26 @@ describe.skipIf(!process.env.CORB_E2E)("vfs-policy-from-bash e2e (real VM boot)"
     expect(hostContent, "the host file's content changed despite the write being denied").toBe(FROZEN_CONTENT);
   });
 
-  // Deliberately runs *before* any of the symlink/hard-link/`mv` scenarios
-  // below, on a still-pristine directory. Empirically confirmed while
-  // building this suite: issuing several consecutive denied mutating guest
-  // operations (a denied `ln -s` into a hidden path, a denied hard link, a
-  // denied `mv`) *without* an intervening `ls` in between leaves the guest
-  // kernel's own directory cache for this mount in a state where every
-  // subsequent `ls`/`readdir` of the directory — of *any* form (`ls -a .`,
-  // `ls .`, `ls -la .`, `ls -1 .`) — returns completely empty (`exit 0`, zero
-  // bytes of output, not an error) until the VM is recreated. Reproduced
-  // deterministically in a standalone scratch VM (discarded after use) by
-  // varying only the presence/absence and placement of intermediate `ls`
-  // calls between the same sequence of denied operations — an `ls` right
-  // after *each* denied operation never triggers it, while the same
-  // operations back-to-back without one always does. This looks like a
-  // guest-kernel or `sandboxfs` directory-cache staleness/invalidation issue
-  // triggered by a failed guest-visible create (the real backend can end up
-  // with an entry the kernel was told creation failed for — see the
-  // "ln -s indirection into a hidden path" test below), not a bug in this
-  // milestone's own policy code (`decideFsAccessForPath`/`isEntryHidden`
-  // never see a directory listing at all, let alone one for a *different*
-  // directory state) — but it is a real, load-bearing constraint on this
-  // suite's own test ordering, documented here rather than silently avoided,
-  // per this project's own "verify assumptions, don't discover them by
-  // accident" discipline.
+  // No longer a load-bearing ordering constraint — see the module comment's
+  // "Symlink/hard-link indirection" section above for the full history. This
+  // test was originally required to run *before* any of the symlink/hard-
+  // link/`mv` scenarios below: issuing several consecutive denied mutating
+  // guest operations (a denied `ln -s` into a hidden path, a denied hard
+  // link, a denied `mv`) *without* an intervening `ls` used to leave a real,
+  // RPC-service-ino-less symlink entry orphaned on the backend (created by
+  // `provider.symlink()` before the *following* `lstat` denied it), which
+  // corrupted every subsequent `ls` of this directory to completely empty
+  // (`exit 0`, zero bytes) once that directory's readdir cache next expired
+  // — not a guest-kernel caching quirk, as originally guessed, but a real
+  // bug in `src/vfs/glob-policy.ts`'s `symlink()` (fixed: it now checks the
+  // resolved target's policy *before* ever calling the real backend's own
+  // `symlink()`, so no orphaned entry is created in the first place).
+  // Re-verified with a fresh VM boot running this exact denied-ops-without-
+  // `ls` sequence after the fix: `ls` stays correct throughout, including
+  // after an idle gap long enough for the readdir cache to expire. This
+  // test's own position relative to the others below is no longer load-
+  // bearing, but is left unchanged rather than reordered as a separate,
+  // unrelated diff.
   it("hidden: the secrets directory is absent from ls, while unrelated fixtures remain listed", async () => {
     const result = await guestShell(`ls -a .`);
     expect(result.ok, `exit ${result.exitCode}: ${result.stderr}`).toBe(true);
