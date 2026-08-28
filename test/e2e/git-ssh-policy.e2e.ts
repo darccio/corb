@@ -145,6 +145,25 @@
 // It's included in `egress.allow` anyway below for scenario realism (a real
 // workspace using this gate would also need the host allowlisted for the
 // methods it *does* permit), not because the denial depends on it.
+//
+// ## `gate.json` mount: required since M7, not part of this suite's original scope
+//
+// This suite predates M7's git/gh shim (`image/corb-image.json`'s
+// `postBuild.commands` moves the real binaries to `/usr/local/libexec/
+// real-git`/`real-gh` and installs `policygate` at `/usr/local/bin/git`/`gh`)
+// — every `git`/`gh` invocation on `PATH` now goes through `policygate`
+// first, unconditionally, in every booted image, not just sessions that
+// opt into M7. Without a `gate.json` mounted and `CORB_GATE_CONFIG` set,
+// `policygate`'s `LoadConfig` fails closed (`guest/internal/gate/
+// policy.go`), so every `git clone`/`git push`/`gh api` call in this suite
+// would exit 78 ("local policy table unavailable") before ever reaching the
+// SSH/HTTP policy layers this suite actually tests — confirmed empirically
+// (this exact failure mode) after M7 landed in this branch. `guestShell()`
+// below sets `CORB_GATE_CONFIG` and `VM.create()` mounts `buildGateConfigMount()`'s
+// exact production provider, matching `test/e2e/policygate-content.e2e.ts`'s
+// own precedent, so this suite exercises `git.allow-hosts`/`git.allow-repos`/
+// `git.allow-push`/`githubApiGate` exactly as before, just with `policygate`
+// as an added (and, for every scenario here, transparent) hop in front.
 import crypto from "node:crypto";
 import dns from "node:dns";
 import fs from "node:fs";
@@ -158,6 +177,7 @@ import ssh2 from "ssh2";
 import { resolveRuntimeImage } from "../../src/vm/image.ts";
 import { buildEgressConfig } from "../../src/vm/egress.ts";
 import { buildGitSshOptions } from "../../src/vm/gitssh.ts";
+import { buildGateConfigMount, GATE_CONFIG_GUEST_PATH, GATE_CONFIG_RAW_ROOT } from "../../src/vm/session.ts";
 import { createAuditWriter, type AuditEvent, type AuditWriter } from "../../src/policy/audit.ts";
 import type { EffectiveEgressConfig, EffectiveGitConfig } from "../../src/config/load.ts";
 
@@ -552,6 +572,10 @@ describe.skipIf(!process.env.CORB_E2E)("git-ssh-policy e2e (real VM boot)", () =
         env: egressConfig.env,
         allowWebSockets: egressConfig.allowWebSockets,
         ssh: gitSshOptions,
+        // See the module comment's "`gate.json` mount" section: every
+        // `git`/`gh` call below goes through `policygate` first since M7,
+        // which fails closed without this.
+        vfs: { mounts: { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() } },
         sessionLabel: SESSION_LABEL,
       });
     } finally {
@@ -588,10 +612,10 @@ describe.skipIf(!process.env.CORB_E2E)("git-ssh-policy e2e (real VM boot)", () =
     return vm;
   }
 
-  /** Runs a shell script as the dropped-privilege `agent` uid via `dropcap`, with `GIT_SSH_COMMAND` set (module comment point 5). */
+  /** Runs a shell script as the dropped-privilege `agent` uid via `dropcap`, with `GIT_SSH_COMMAND` set (module comment point 5) and `CORB_GATE_CONFIG` set (module comment's "`gate.json` mount" section). */
   async function guestShell(script: string) {
     return requireVm().exec([DROPCAP_PATH, String(AGENT_UID), String(AGENT_GID), "/bin/sh", "-c", script], {
-      env: { PATH: BASE_PATH, HOME: GUEST_HOME, GIT_SSH_COMMAND },
+      env: { PATH: BASE_PATH, HOME: GUEST_HOME, GIT_SSH_COMMAND, CORB_GATE_CONFIG: GATE_CONFIG_GUEST_PATH },
       stdout: "buffer",
       stderr: "buffer",
     });

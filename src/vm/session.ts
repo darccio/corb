@@ -108,12 +108,12 @@ export const WORKSPACE_PUBLIC_ROOT = "/work";
 export const WORKSPACE_RAW_ROOT = "/mnt/corb-raw";
 
 /**
- * Guest mount point (and, spelled out via `GATE_CONFIG_MOUNT_ROOT` below, the
- * `CORB_GATE_CONFIG` env var value) for `policygate`'s (`guest/internal/gate/
- * policy.go`) per-tool shim config, generated fresh every `runSession` call
- * (see `GATE_CONFIG` and the `vfsMounts` construction below) — a *runtime*
- * artifact, unlike `/etc/corb/image.json`, which is baked into the rootfs at
- * image-build time.
+ * Guest-visible, public mount point (and, spelled out via `GATE_CONFIG_MOUNT_ROOT`
+ * below, the `CORB_GATE_CONFIG` env var value) for `policygate`'s
+ * (`guest/internal/gate/policy.go`) per-tool shim config, generated fresh
+ * every `runSession` call (see `GATE_CONFIG`/`buildGateConfigMount()` below) —
+ * a *runtime* artifact, unlike `/etc/corb/image.json`, which is baked into
+ * the rootfs at image-build time.
  *
  * Deliberately **not** `/etc/corb` (the plan's own early sketch): `/etc/corb`
  * already holds `image.json`, baked into `rootfs.ext4` by `image/corb-image.json`'s
@@ -131,11 +131,36 @@ export const WORKSPACE_RAW_ROOT = "/mnt/corb-raw";
  * `corb-image.json`'s `postBuild` touches `/run`, so this mounts a path that
  * doesn't pre-exist in the rootfs at all — the same situation
  * `WORKSPACE_RAW_ROOT` is already in, which is already proven to work.
+ *
+ * Like every workspace directory, this is a *public* path, not where the
+ * provider is actually mounted — see `WORKSPACE_RAW_ROOT`'s doc comment for
+ * why: Gondolin's `sandboxfs` mounts every `vfs.mounts` guest path root-only
+ * (`user_id=0`, no `allow_other`), so the dropped-privilege `agent` uid gets
+ * `EACCES` on anything mounted directly here. Confirmed empirically against
+ * a real booted image (2026-08-28): before this fix, `dropcap 1000 1000 cat
+ * /run/corb/gate.json` failed with "Permission denied" even though the file
+ * itself is world-readable, and `policygate` failed closed on every
+ * invocation ("local policy table unavailable, refusing to proceed", exit
+ * 78) — the entire M7 git/gh gate was non-functional end to end. `runSession()`
+ * now mounts `buildGateConfigMount()`'s provider at the internal-only
+ * `GATE_CONFIG_RAW_ROOT` instead, and `image/overlay/init-extra.sh`
+ * re-exports it here via the same `bindfs --force-user`/`--force-group`
+ * mechanism `WORKSPACE_RAW_ROOT` already uses, generalized to also cover this
+ * one always-present mount alongside the 0..N optional workspace ones.
  */
-const GATE_CONFIG_MOUNT_ROOT = "/run/corb";
+export const GATE_CONFIG_MOUNT_ROOT = "/run/corb";
+
+/**
+ * Internal-only, root-only raw guest mount point for the `gate.json`
+ * provider `buildGateConfigMount()` builds — see `GATE_CONFIG_MOUNT_ROOT`'s
+ * doc comment for why this indirection exists. Never referenced again after
+ * boot except by `image/overlay/init-extra.sh`'s re-export to
+ * `GATE_CONFIG_MOUNT_ROOT`.
+ */
+export const GATE_CONFIG_RAW_ROOT = "/mnt/corb-raw-gate";
 
 /** Guest-visible path to the generated `gate.json` — see `GATE_CONFIG_MOUNT_ROOT`. Matches `CORB_GATE_CONFIG` in `buildGuestEnv()`. */
-const GATE_CONFIG_GUEST_PATH = `${GATE_CONFIG_MOUNT_ROOT}/gate.json`;
+export const GATE_CONFIG_GUEST_PATH = `${GATE_CONFIG_MOUNT_ROOT}/gate.json`;
 
 /**
  * Fixed, host-authored `policygate` shim config (`guest/internal/gate/policy.go`'s
@@ -143,25 +168,68 @@ const GATE_CONFIG_GUEST_PATH = `${GATE_CONFIG_MOUNT_ROOT}/gate.json`;
  * config-schema surface for per-tool blocked-subcommand/flag lists.
  * `blockedSubcommands`/`blockedFlags` values match `docs/design.md` §4's
  * table; `real` paths match `image/corb-image.json`'s `postBuild.commands`
- * shim installation exactly (`git`/`gh` moved to `git-real`/`gh-real` under
+ * shim installation exactly (`git`/`gh` moved to `real-git`/`real-gh` under
  * `/usr/local/libexec`) — keeping image wiring and this content consistent
  * with each other is entirely this module's own responsibility, nothing
  * upstream enforces it.
+ *
+ * Deliberately named `real-git`/`real-gh`, not `git-real`/`gh-real` (an
+ * earlier version of this fix): git's own `cmd_main()` (git.c) strips a
+ * literal `git-` prefix from its own invoked basename and treats the
+ * remainder as a builtin subcommand name — the mechanism that makes
+ * `git-upload-pack`/`git-receive-pack`/`git-shell` work as directly
+ * executable multicall entry points. A binary renamed to `git-real` hits
+ * that same path and fails immediately with `fatal: cannot handle real as a
+ * builtin`, confirmed by actually invoking it inside a real booted guest via
+ * `image/verify.ts`'s `ca-trust` gate before this rename — not a
+ * `policygate`-specific bug, but one that would have made policygate's own
+ * `exec` of the "real" git fail on every single non-blocked git invocation.
+ * `gh` doesn't share git's argv[0]-dispatch convention, so `real-gh` isn't
+ * strictly required to avoid this same failure, but is named to match
+ * anyway — an asymmetric `real-git`/`gh-real` pairing would only invite a
+ * future reader to wonder whether the difference was intentional.
  */
-const GATE_CONFIG = {
+export const GATE_CONFIG = {
   tools: {
     git: {
-      real: "/usr/local/libexec/git-real",
+      real: "/usr/local/libexec/real-git",
       blockedSubcommands: ["config", "credential", "filter-branch", "init"],
       blockedFlags: ["-c", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign"],
     },
     gh: {
-      real: "/usr/local/libexec/gh-real",
+      real: "/usr/local/libexec/real-gh",
       blockedSubcommands: ["auth", "secret", "ssh-key", "gpg-key", "config"],
       blockedFlags: ["--with-token"],
     },
   },
 };
+
+/**
+ * Builds the exact, populated, read-only `gate.json` mount `runSession()`
+ * mounts at `GATE_CONFIG_RAW_ROOT` — extracted so a caller that needs the
+ * *exact* production mount (rather than a hand-duplicated copy of
+ * `GATE_CONFIG` risking drift) can build one directly. `test/e2e/
+ * policygate-content.e2e.ts` is the first such caller: it drives `VM.create()`
+ * itself rather than `runSession()` (matching every other e2e suite's own
+ * reasoning), but still needs `policygate` inside the guest to see the same
+ * `gate.json` it would see in a real session. `runSession()` below calls this
+ * same function rather than duplicating the `MemoryProvider`/`writeFileSync`/
+ * `setReadOnly`/`ReadonlyProvider` construction inline, so there is exactly
+ * one place this logic lives.
+ */
+export function buildGateConfigMount(): VirtualProvider {
+  const gateConfigStore = new MemoryProvider();
+  // `writeFileSync` is typed optional on the shared `VirtualProvider`
+  // interface (some providers, e.g. `ReadonlyProvider`, don't implement it),
+  // but `MemoryProvider`'s own base class always provides it — confirmed by
+  // reading `.../vendored-node-vfs/lib/internal/vfs/provider.js`, which
+  // implements it generically via `open`/`write`. Non-null assertion, not a
+  // narrower cast: this is a real, always-present method on this concrete
+  // type, not an `unknown`-shaped escape hatch.
+  gateConfigStore.writeFileSync!("/gate.json", JSON.stringify(GATE_CONFIG));
+  gateConfigStore.setReadOnly();
+  return new ReadonlyProvider(gateConfigStore);
+}
 
 // No login shell for any exec here (array-form `exec` does not run one —
 // `docs/design.md` §5.4), so nothing can come from `/etc/profile`; PATH is
@@ -671,23 +739,12 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     vfsMounts[rawWorkspacePath(dir.name)] = withGlobPolicy(roOrRw, { rules: dir.rules, onDeny: onVfsDeny });
   }
 
-  // `gate.json` — see `GATE_CONFIG_MOUNT_ROOT`'s doc comment for why this
-  // lands at `/run/corb` rather than `/etc/corb`. Populated synchronously
-  // before `VM.create()`, then `setReadOnly()`'d: this is fixed, host-authored
-  // config the guest's `policygate` only ever reads, never writes.
-  // `ReadonlyProvider`-wrapped too, matching this function's own convention
-  // just above for every other read-only guest-visible mount.
-  const gateConfigStore = new MemoryProvider();
-  // `writeFileSync` is typed optional on the shared `VirtualProvider`
-  // interface (some providers, e.g. `ReadonlyProvider`, don't implement it),
-  // but `MemoryProvider`'s own base class always provides it — confirmed by
-  // reading `.../vendored-node-vfs/lib/internal/vfs/provider.js`, which
-  // implements it generically via `open`/`write`. Non-null assertion, not a
-  // narrower cast: this is a real, always-present method on this concrete
-  // type, not an `unknown`-shaped escape hatch.
-  gateConfigStore.writeFileSync!("/gate.json", JSON.stringify(GATE_CONFIG));
-  gateConfigStore.setReadOnly();
-  vfsMounts[GATE_CONFIG_MOUNT_ROOT] = new ReadonlyProvider(gateConfigStore);
+  // `gate.json` — see `GATE_CONFIG_MOUNT_ROOT`'s doc comment for why this is
+  // mounted at the internal-only `GATE_CONFIG_RAW_ROOT` and re-exported to
+  // the public `/run/corb` by `image/overlay/init-extra.sh`, not mounted
+  // directly at the public path. See `buildGateConfigMount()`'s own doc
+  // comment for why this construction lives there rather than inline here.
+  vfsMounts[GATE_CONFIG_RAW_ROOT] = buildGateConfigMount();
 
   let vm: VM | undefined;
   let ttyHandle: TtyHandle | undefined;

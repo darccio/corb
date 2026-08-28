@@ -41,8 +41,8 @@
       "addgroup -g 1000 agent && adduser -D -u 1000 -G agent -h /home/agent -s /bin/sh agent",
       "mkdir -p /work /home/agent/sessions && chown -R 1000:1000 /home/agent /work",
       "rm -f /usr/bin/npm /usr/bin/npx /bin/su /usr/bin/su /usr/bin/sudo /usr/bin/doas /sbin/apk",
-      "mv /usr/bin/git /usr/local/libexec/git-real && ln -s /usr/local/libexec/policygate /usr/local/bin/git",
-      "if [ -x /usr/bin/gh ]; then mv /usr/bin/gh /usr/local/libexec/gh-real && ln -s /usr/local/libexec/policygate /usr/local/bin/gh; fi",
+      "mv /usr/bin/git /usr/local/libexec/real-git && ln -s /usr/local/libexec/policygate /usr/local/bin/git",
+      "if [ -x /usr/bin/gh ]; then mv /usr/bin/gh /usr/local/libexec/real-gh && ln -s /usr/local/libexec/policygate /usr/local/bin/gh; fi",
       "chmod 0755 /usr/local/bin/dropcap /usr/local/libexec/policygate"
     ]
   }

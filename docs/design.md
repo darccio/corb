@@ -384,9 +384,17 @@ intercept before.
 ```
 /usr/local/bin/git      -> policygate
 /usr/local/bin/gh       -> policygate
-/usr/local/libexec/git-real
-/usr/local/libexec/gh-real
+/usr/local/libexec/real-git
+/usr/local/libexec/real-gh
 ```
+
+Named `real-git`/`real-gh`, not `git-real`/`gh-real`: git's own `cmd_main()`
+strips a literal `git-` prefix from its invoked basename and dispatches the
+remainder as a builtin (the mechanism behind `git-upload-pack`/
+`git-receive-pack`/`git-shell`), so a binary renamed to `git-real` fails
+immediately with `fatal: cannot handle real as a builtin` — confirmed against
+a real booted image. `real-gh` matches for naming symmetry even though `gh`
+doesn't share that convention.
 
 ```go
 type toolPolicy struct {
@@ -398,7 +406,7 @@ type toolPolicy struct {
 
 var policies = map[string]toolPolicy{
 	"git": {
-		real:               "/usr/local/libexec/git-real",
+		real:               "/usr/local/libexec/real-git",
 		blockedSubcommands: []string{"config", "credential", "filter-branch", "init"},
 		blockedFlags:       []string{"-c", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign"},
 		gated: map[string]hookSpec{
@@ -407,7 +415,7 @@ var policies = map[string]toolPolicy{
 		},
 	},
 	"gh": {
-		real:               "/usr/local/libexec/gh-real",
+		real:               "/usr/local/libexec/real-gh",
 		blockedSubcommands: []string{"auth", "secret", "ssh-key", "gpg-key", "config"},
 		blockedFlags:       []string{"--with-token"},
 	},

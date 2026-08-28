@@ -21,6 +21,7 @@
 // below for what was decided and why.
 
 import { createHttpHooks, VM } from "@earendil-works/gondolin";
+import { buildGateConfigMount, GATE_CONFIG_GUEST_PATH, GATE_CONFIG_RAW_ROOT } from "../src/vm/session.ts";
 
 export interface GateResult {
   name: string;
@@ -248,11 +249,30 @@ async function gateCaTrust(vm: VM): Promise<GateResult> {
 
   // git — ls-remote against a real public git-over-HTTPS host. Exit 0
   // means the TLS handshake was trusted and the smart-HTTP exchange
-  // completed; no clone, no credentials.
+  // completed; no clone, no credentials. Invokes the real binary directly at
+  // `/usr/local/libexec/real-git` (M7's `postBuild.commands` moved it there
+  // and put a `policygate` shim symlink at the old `/usr/bin/git`/
+  // `/usr/local/bin/git` — see `gateGitGhShimmed` below and `src/vm/
+  // session.ts`'s `GATE_CONFIG` doc comment for why `real-git`, not
+  // `git-real`), but this does *not* avoid `policygate` entirely: this
+  // Alpine git build has no standalone `git-remote-https` binary, so git's
+  // own https transport internally re-invokes the literal name `git` via a
+  // plain `$PATH` lookup (confirmed with `GIT_TRACE=1`: `start_command:
+  // /usr/local/bin/git remote-https ...`), landing back on the `policygate`
+  // shim for that one sub-invocation before it re-execs `real-git` a second
+  // time to actually run the transport. Harmless in a real session (the
+  // shim allows the unblocked `remote-https` subcommand straight through,
+  // and `CORB_GATE_CONFIG` is inherited across the re-exec), but this
+  // throwaway build-time verify VM otherwise has no `gate.json` mounted at
+  // all, so without the mount/env below the recursive shim call would fail
+  // closed for a reason that has nothing to do with CA trust. Mounting
+  // `buildGateConfigMount()`'s exact production config here (see
+  // `verifyImage()` below) makes this gate exercise the same real path a
+  // production session does, rather than papering over it.
   const gitResult = await run(
     vm,
-    ["/usr/bin/git", "ls-remote", "https://github.com/octocat/Hello-World.git"],
-    { HOME: "/root" },
+    ["/usr/local/libexec/real-git", "ls-remote", "https://github.com/octocat/Hello-World.git"],
+    { HOME: "/root", CORB_GATE_CONFIG: GATE_CONFIG_GUEST_PATH },
   );
   if (gitResult.exitCode !== 0) {
     problems.push(`git: ls-remote over https to github.com failed, exit ${gitResult.exitCode}: ${gitResult.stderr.trim()}`);
@@ -290,8 +310,8 @@ async function gateGitGhShimmed(vm: VM): Promise<GateResult> {
     "command -v git || echo GIT_ABSENT; " +
       "test -L /usr/local/bin/git && readlink /usr/local/bin/git || echo GIT_SHIM_NOT_SYMLINK; " +
       "test -L /usr/local/bin/gh && readlink /usr/local/bin/gh || echo GH_SHIM_NOT_SYMLINK; " +
-      "test -x /usr/local/libexec/git-real && echo GIT_REAL_PRESENT || echo GIT_REAL_MISSING; " +
-      "test -x /usr/local/libexec/gh-real && echo GH_REAL_PRESENT || echo GH_REAL_MISSING; " +
+      "test -x /usr/local/libexec/real-git && echo GIT_REAL_PRESENT || echo GIT_REAL_MISSING; " +
+      "test -x /usr/local/libexec/real-gh && echo GH_REAL_PRESENT || echo GH_REAL_MISSING; " +
       "test -x /usr/local/libexec/policygate && echo POLICYGATE_PRESENT || echo POLICYGATE_MISSING; " +
       "test -e /usr/bin/git && echo OLD_GIT_ON_DISK || echo OLD_GIT_GONE; " +
       "test -e /usr/bin/gh && echo OLD_GH_ON_DISK || echo OLD_GH_GONE",
@@ -315,10 +335,10 @@ async function gateGitGhShimmed(vm: VM): Promise<GateResult> {
     problems.push(`/usr/local/bin/gh is not a symlink to /usr/local/libexec/policygate (readlink: '${ghSymlinkTarget ?? "(nothing)"}')`);
   }
   if (!lines.includes("GIT_REAL_PRESENT")) {
-    problems.push("/usr/local/libexec/git-real is missing or not executable");
+    problems.push("/usr/local/libexec/real-git is missing or not executable");
   }
   if (!lines.includes("GH_REAL_PRESENT")) {
-    problems.push("/usr/local/libexec/gh-real is missing or not executable");
+    problems.push("/usr/local/libexec/real-gh is missing or not executable");
   }
   if (!lines.includes("POLICYGATE_PRESENT")) {
     problems.push("/usr/local/libexec/policygate is missing or not executable");
@@ -335,7 +355,7 @@ async function gateGitGhShimmed(vm: VM): Promise<GateResult> {
   }
   return pass(
     name,
-    "git/gh on PATH resolve to the policygate shim; git-real/gh-real/policygate all present and executable",
+    "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable",
   );
 }
 
@@ -397,6 +417,13 @@ export async function verifyImage(assetDir: string, options: VerifyImageOptions 
     dns: { mode: "synthetic", syntheticHostMapping: "per-host" },
     httpHooks,
     env,
+    // `gateCaTrust`'s git check needs a real, readable `gate.json` — see
+    // that gate's own doc comment for why. Mounted at the same internal-only
+    // `GATE_CONFIG_RAW_ROOT` (and re-exported to the same public path by
+    // `image/overlay/init-extra.sh`) a real `runSession()` uses, via the
+    // exact same `buildGateConfigMount()` production builder — not a
+    // hand-duplicated `gate.json`, to avoid drift.
+    vfs: { mounts: { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() } },
     sessionLabel: options.sessionLabel ?? "corb-image-verify",
   });
 
