@@ -328,6 +328,8 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     egress: resolved.fullConfig.egress,
     ...(resolved.fullConfig.secrets !== undefined ? { secrets: resolved.fullConfig.secrets } : {}),
     git: resolved.fullConfig.git,
+    policy: resolved.fullConfig.policy,
+    dirConfigs: resolved.fullConfig.dir,
     audit,
   });
 }

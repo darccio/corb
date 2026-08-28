@@ -26,12 +26,13 @@
 // primitive available.
 import fs from "node:fs";
 import path from "node:path";
-import { ReadonlyProvider, RealFSProvider, VM, type VirtualProvider } from "@earendil-works/gondolin";
+import { MemoryProvider, ReadonlyProvider, RealFSProvider, VM, type VirtualProvider } from "@earendil-works/gondolin";
 import { acquire, canRequestPty, type TtyHandle } from "./tty.ts";
 import { ShutdownController, type ExitFn, type ProcessLike } from "./shutdown.ts";
 import { resolveRuntimeImage } from "./image.ts";
 import { buildEgressConfig } from "./egress.ts";
 import { buildGitSshOptions } from "./gitssh.ts";
+import { POLICY_HOST } from "../policy/sentinel.ts";
 // M5.4: the outermost VFS layer for every mount (see the mount-building loop
 // inside `runSession`). `GlobRule` (`src/vfs/policy.ts`, M5.2) is the fully-
 // required rule shape `withGlobPolicy` (`src/vfs/glob-policy.ts`, M5.3)
@@ -56,7 +57,7 @@ import type { GlobRule } from "../vfs/policy.ts";
 // shaped and validated by this module itself (name safety, mount roots),
 // not merely forwarded to another module that already takes the config
 // type directly.
-import type { DirRuleConfig, EffectiveEgressConfig, EffectiveGitConfig } from "../config/load.ts";
+import type { DirConfig, DirRuleConfig, EffectiveEgressConfig, EffectiveGitConfig, EffectivePolicyConfig } from "../config/load.ts";
 import type { PartialSecretConfig } from "../config/schema.ts";
 import type { AuditWriter } from "../policy/audit.ts";
 
@@ -105,6 +106,62 @@ export const WORKSPACE_PUBLIC_ROOT = "/work";
  * comment for why no read-only-specific `bindfs` flag is used).
  */
 export const WORKSPACE_RAW_ROOT = "/mnt/corb-raw";
+
+/**
+ * Guest mount point (and, spelled out via `GATE_CONFIG_MOUNT_ROOT` below, the
+ * `CORB_GATE_CONFIG` env var value) for `policygate`'s (`guest/internal/gate/
+ * policy.go`) per-tool shim config, generated fresh every `runSession` call
+ * (see `GATE_CONFIG` and the `vfsMounts` construction below) — a *runtime*
+ * artifact, unlike `/etc/corb/image.json`, which is baked into the rootfs at
+ * image-build time.
+ *
+ * Deliberately **not** `/etc/corb` (the plan's own early sketch): `/etc/corb`
+ * already holds `image.json`, baked into `rootfs.ext4` by `image/corb-image.json`'s
+ * `postBuild.copy`. Gondolin's `vfs.mounts` are directory-level FUSE mounts
+ * that fully shadow whatever the underlying rootfs had at that guest path
+ * (the same mechanism `docs/gondolin-notes.md` R5/R12/R18 document for
+ * `/work`), so mounting anything at `/etc/corb` would make `image.json`
+ * invisible to `readGuestIdentity()`'s post-boot `cat` — and the host has no
+ * way to re-synthesize an identical `image.json` ahead of `VM.create()`
+ * (that's the whole reason `readGuestIdentity()` reads it post-boot in the
+ * first place). `/run` already hosts Gondolin's own runtime-injected
+ * `/run/gondolin/ca-certificates.crt` (a different mechanism, not a
+ * `vfs.mounts` entry Corb controls, but establishing `/run` as the right
+ * *kind* of location for runtime-generated state); nothing in
+ * `corb-image.json`'s `postBuild` touches `/run`, so this mounts a path that
+ * doesn't pre-exist in the rootfs at all — the same situation
+ * `WORKSPACE_RAW_ROOT` is already in, which is already proven to work.
+ */
+const GATE_CONFIG_MOUNT_ROOT = "/run/corb";
+
+/** Guest-visible path to the generated `gate.json` — see `GATE_CONFIG_MOUNT_ROOT`. Matches `CORB_GATE_CONFIG` in `buildGuestEnv()`. */
+const GATE_CONFIG_GUEST_PATH = `${GATE_CONFIG_MOUNT_ROOT}/gate.json`;
+
+/**
+ * Fixed, host-authored `policygate` shim config (`guest/internal/gate/policy.go`'s
+ * `Config`/`ToolPolicy`), not derived from any workspace config — there is no
+ * config-schema surface for per-tool blocked-subcommand/flag lists.
+ * `blockedSubcommands`/`blockedFlags` values match `docs/design.md` §4's
+ * table; `real` paths match `image/corb-image.json`'s `postBuild.commands`
+ * shim installation exactly (`git`/`gh` moved to `git-real`/`gh-real` under
+ * `/usr/local/libexec`) — keeping image wiring and this content consistent
+ * with each other is entirely this module's own responsibility, nothing
+ * upstream enforces it.
+ */
+const GATE_CONFIG = {
+  tools: {
+    git: {
+      real: "/usr/local/libexec/git-real",
+      blockedSubcommands: ["config", "credential", "filter-branch", "init"],
+      blockedFlags: ["-c", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign"],
+    },
+    gh: {
+      real: "/usr/local/libexec/gh-real",
+      blockedSubcommands: ["auth", "secret", "ssh-key", "gpg-key", "config"],
+      blockedFlags: ["--with-token"],
+    },
+  },
+};
 
 // No login shell for any exec here (array-form `exec` does not run one —
 // `docs/design.md` §5.4), so nothing can come from `/etc/profile`; PATH is
@@ -368,6 +425,15 @@ function buildGuestEnv(
     // hardcoded here), so it has somewhere writable of its own without a
     // second VFS mount. Its contents do not survive `vm.close()`.
     PI_CODING_AGENT_SESSION_DIR: identity.paths.sessionsDir,
+    // M7.3: `policygate`'s two env vars (`guest/internal/gate/policy.go`
+    // never hardcodes either, by design, exactly so this decision could be
+    // made independently here). Plain HTTP, not HTTPS — docs/design.md §5:
+    // "plain HTTP (no CA handling needed)". Built from `POLICY_HOST`
+    // (`src/policy/sentinel.ts`) rather than re-spelling the hostname a
+    // third time, matching that module's own stated reasoning for exporting
+    // the constant in the first place.
+    CORB_POLICY_URL: `http://${POLICY_HOST}/check`,
+    CORB_GATE_CONFIG: GATE_CONFIG_GUEST_PATH,
   };
 }
 
@@ -440,6 +506,33 @@ export interface RunSessionOptions {
    * decoupled shape, unlike `dirs`/`primary` above.
    */
   git: EffectiveGitConfig;
+  /**
+   * A session's full effective policy config (`EffectiveConfig.policy`,
+   * always present — see `src/config/load.ts`), passed straight through to
+   * `buildEgressConfig()`, which threads it into `sentinel()`
+   * (`src/policy/sentinel.ts`, M7.2/M7.3). See the module-level import
+   * comment for why this module imports this config type directly rather
+   * than defining its own decoupled shape, unlike `dirs`/`primary` above —
+   * mirrors `egress`/`git`'s own "always present, passed straight through"
+   * precedent (`runSession` has exactly one real caller, `src/commands/run.ts`,
+   * which already has `resolved.fullConfig.policy` on hand).
+   */
+  policy: EffectivePolicyConfig;
+  /**
+   * The real, already-merged `EffectiveConfig.dir` (`src/config/load.ts`'s
+   * `DirConfig[]`) — **not** the same thing as `dirs: WorkspaceDirSpec[]`
+   * above. `dirs` is this module's own deliberately decoupled shape for its
+   * *own* mounting logic (name safety, mount roots, `GlobRule[]`-shaped
+   * rules); `dirConfigs` is the un-decoupled config-system type that
+   * `sentinel()`'s content-check (`checkDuplicatedPathRules`, `src/policy/
+   * checks.ts`) needs instead, since it wants the raw `DirRuleConfig[]` with
+   * its optional fields, not `dirs`'s fully-validated `GlobRule[]`. Passed
+   * straight through to `buildEgressConfig()`, exactly mirroring the
+   * `egress`/`git`/`policy` "passed straight through, imported directly from
+   * config/load.ts" precedent. Do not confuse the two `dirs`-shaped fields on
+   * this interface — this one is never used for mounting.
+   */
+  dirConfigs: DirConfig[];
   /**
    * Where policy decisions for this session are recorded. Constructed by the
    * caller (`src/commands/run.ts`) — this module does not resolve an audit
@@ -578,6 +671,24 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     vfsMounts[rawWorkspacePath(dir.name)] = withGlobPolicy(roOrRw, { rules: dir.rules, onDeny: onVfsDeny });
   }
 
+  // `gate.json` — see `GATE_CONFIG_MOUNT_ROOT`'s doc comment for why this
+  // lands at `/run/corb` rather than `/etc/corb`. Populated synchronously
+  // before `VM.create()`, then `setReadOnly()`'d: this is fixed, host-authored
+  // config the guest's `policygate` only ever reads, never writes.
+  // `ReadonlyProvider`-wrapped too, matching this function's own convention
+  // just above for every other read-only guest-visible mount.
+  const gateConfigStore = new MemoryProvider();
+  // `writeFileSync` is typed optional on the shared `VirtualProvider`
+  // interface (some providers, e.g. `ReadonlyProvider`, don't implement it),
+  // but `MemoryProvider`'s own base class always provides it — confirmed by
+  // reading `.../vendored-node-vfs/lib/internal/vfs/provider.js`, which
+  // implements it generically via `open`/`write`. Non-null assertion, not a
+  // narrower cast: this is a real, always-present method on this concrete
+  // type, not an `unknown`-shaped escape hatch.
+  gateConfigStore.writeFileSync!("/gate.json", JSON.stringify(GATE_CONFIG));
+  gateConfigStore.setReadOnly();
+  vfsMounts[GATE_CONFIG_MOUNT_ROOT] = new ReadonlyProvider(gateConfigStore);
+
   let vm: VM | undefined;
   let ttyHandle: TtyHandle | undefined;
 
@@ -629,7 +740,15 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       sessionId,
     });
 
-    const egressConfig = buildEgressConfig(options.egress, options.secrets, hostEnv, options.audit, sessionId);
+    const egressConfig = buildEgressConfig(
+      options.egress,
+      options.secrets,
+      hostEnv,
+      options.audit,
+      sessionId,
+      options.policy,
+      options.dirConfigs,
+    );
     // `ssh` is always passed, never conditionally omitted: `SshOptions.allowedHosts`
     // is a required `string[]`, and `buildGitSshOptions` itself already
     // normalizes an absent `git["allow-hosts"]` to `[]` — which, per that

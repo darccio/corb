@@ -26,10 +26,11 @@
 // call) is still M3.4's job, not this one's — nothing here is called from
 // `session.ts` or `VM.create()` yet.
 import { createHttpHooks, type HttpHooks } from "@earendil-works/gondolin";
-import type { EffectiveEgressConfig } from "../config/load.ts";
+import type { DirConfig, EffectiveEgressConfig, EffectivePolicyConfig } from "../config/load.ts";
 import type { PartialSecretConfig } from "../config/schema.ts";
 import type { AuditWriter } from "../policy/audit.ts";
 import { githubApiGate } from "../policy/github.ts";
+import { POLICY_HOST, sentinel } from "../policy/sentinel.ts";
 
 /** The real secret value plus the hosts Gondolin is allowed to send it to. Matches `createHttpHooks({ secrets })`'s per-entry shape (docs/gondolin-notes.md §5). */
 export interface SecretBinding {
@@ -157,26 +158,75 @@ export interface EgressConfig {
 }
 
 /**
+ * One `createHttpHooks({ onRequest })`-shaped hook: `undefined` means
+ * "pass through, I have no opinion about this request"; a `Response` means
+ * "fully handled, short-circuit". Matches both `sentinel()`'s (async) and
+ * `githubApiGate()`'s (sync, but its return value is still awaitable) own
+ * signatures.
+ */
+type OnRequestHook = (req: Request) => Promise<Response | undefined> | Response | undefined;
+
+/**
+ * Composes several `onRequest` hooks into the single one `createHttpHooks()`
+ * accepts: tries each hook in `hooks` order, `await`-ing its result, and
+ * returns the first non-`undefined` `Response` — or `undefined` once every
+ * hook has passed through. `createHttpHooks()` takes exactly one `onRequest`,
+ * not a list (per the forward pointer this replaces, previously at this
+ * file's `buildEgressConfig` doc comment), so this is the composition
+ * mechanism that pointer was waiting for.
+ *
+ * Order is `sentinel` before `githubApiGate` at this function's own call
+ * site below, matching the plan's own `composeOnRequest([sentinel(...),
+ * githubApiGate(...)])` text — but this is for readability, not because
+ * order is load-bearing: neither hook's behavior actually depends on running
+ * before or after the other, since each scopes itself to a completely
+ * disjoint hostname (`POLICY_HOST` vs. `api.github.com`) before doing
+ * anything else.
+ */
+export function composeOnRequest(hooks: readonly OnRequestHook[]): OnRequestHook {
+  return async (req: Request): Promise<Response | undefined> => {
+    for (const hook of hooks) {
+      const result = await hook(req);
+      if (result !== undefined) {
+        return result;
+      }
+    }
+    return undefined;
+  };
+}
+
+/**
+ * Structurally equivalent to "policy content-checks are off" — the default
+ * `policy` value `buildEgressConfig` uses when a caller omits it entirely.
+ * Matches `sentinel()`'s own step 1 (`policy.enabled === false` -> pass
+ * through untouched), so an omitted `policy` costs nothing for any existing
+ * call site that has no opinion about it. `"fail-open": true` mirrors
+ * `src/config/load.ts`'s own built-in default for the same field.
+ */
+const INERT_POLICY: EffectivePolicyConfig = { enabled: false, "secret-scan": false, "fail-open": true };
+
+/**
  * Composes `buildSecretBindings` with the rest of `egress` into one
  * `createHttpHooks()` call, wires its `onResponse` hook to the unified audit
- * log (`src/policy/audit.ts`, M3.1), and wires its `onRequest` hook to the
- * GitHub API method/path gate (`egress.github-api`, `src/policy/github.ts`,
- * M4.2) — the mechanism that makes `gh api -X DELETE` refusable.
- * `githubApiGate()` is itself a complete no-op whenever
- * `egress["github-api"]` is `undefined` (no `[egress.github-api]` table
- * configured at all), so this wiring costs nothing for a workspace that
- * doesn't use it.
+ * log (`src/policy/audit.ts`, M3.1), and wires its `onRequest` hook to
+ * `composeOnRequest([sentinel(...), githubApiGate(...)])` — M7.2's
+ * out-of-guest content-check sentinel (`src/policy/sentinel.ts`,
+ * `policy.corb.invalid`, `docs/design.md` §5) ahead of the GitHub API
+ * method/path gate (`egress.github-api`, `src/policy/github.ts`, M4.2) — the
+ * mechanism that makes `gh api -X DELETE` refusable. Both hooks are
+ * themselves complete no-ops whenever their own config is inert
+ * (`policy.enabled === false`; `egress["github-api"]` `undefined`), so this
+ * wiring costs nothing for a workspace that doesn't use either.
+ *
+ * `policy` and `dirs` are optional, each defaulting to inert/disabled
+ * behavior when omitted (`INERT_POLICY`; `dirs` to `[]`) — this keeps every
+ * existing caller of this function (this module's own unit tests and the
+ * `.e2e.ts` suites, none of which care about the content-check sentinel)
+ * compiling and behaving exactly as before with no edits to them. Real
+ * callers (`src/vm/session.ts`) always pass both explicitly.
  *
  * Still deliberately passes neither `isRequestAllowed` nor `isIpAllowed`:
- * nothing in scope for this codebase needs them yet. **Forward pointer for
- * whoever wires up M7's sentinel-host content-check handler
- * (`policy.corb.invalid`, `docs/design.md` §5):** `createHttpHooks()` takes
- * exactly one `onRequest`, not a list, so adding the sentinel hook alongside
- * `githubApiGate()`'s here will need some form of composition (e.g. try each
- * hook in turn, first non-`undefined` result short-circuits) — that
- * composition mechanism does not exist yet and is not built by this item;
- * this comment is only the pointer, matching how M3.3's own version of this
- * comment pointed forward to this milestone.
+ * nothing in scope for this codebase needs them yet.
  *
  * Also registers every bound secret's real value with `audit` via
  * `addRedactedSecrets()` before doing anything else with it, so the audit
@@ -201,6 +251,22 @@ export interface EgressConfig {
  * a caller-supplied `isRequestAllowed`/`isIpAllowed` (out of scope here)
  * would ever see that decision. So `onResponse` only ever needs to record
  * `"allow"`.
+ *
+ * `POLICY_HOST` (`src/policy/sentinel.ts`) is added to `allowedHosts`
+ * unconditionally, per `docs/design.md` §5 ("The hostname is added to
+ * allowedHosts so it is not dropped before the hook sees it"). Not strictly
+ * load-bearing for `sentinel()` to intercept and handle a request —
+ * `createHttpHooks()`'s internal `onRequest` wrapper runs `options.onRequest`
+ * *before* the `allowedHosts` check, and a returned `Response` short-circuits
+ * before that check is ever reached (`docs/gondolin-notes.md` §4; already
+ * empirically confirmed by M4.4's own `githubApiGate` e2e suite, which works
+ * without `api.github.com` in `egress.allow` for the identical reason) — but
+ * it is cheap, harmless, explicitly called for by the design doc, and is
+ * defense-in-depth for the case where `sentinel()` itself is bypassed or
+ * misconfigured (e.g. `policy.enabled=false`): without it, a guest process
+ * reaching for `policy.corb.invalid` would otherwise hit the `allowedHosts`
+ * gate and fail there, in an equally inert way, rather than the request
+ * having any chance of behaving unexpectedly.
  */
 export function buildEgressConfig(
   egress: EffectiveEgressConfig,
@@ -208,6 +274,8 @@ export function buildEgressConfig(
   env: NodeJS.ProcessEnv,
   audit: AuditWriter,
   sessionId: string,
+  policy: EffectivePolicyConfig = INERT_POLICY,
+  dirs: readonly DirConfig[] = [],
 ): EgressConfig {
   const secretBindings = buildSecretBindings(secrets, env);
   audit.addRedactedSecrets(Object.values(secretBindings).map((binding) => binding.value));
@@ -219,8 +287,9 @@ export function buildEgressConfig(
   // with `undefined`, and that must become "deny all" here — never "omit the
   // field, allow everything". `?? []` is therefore load-bearing, not a
   // stylistic default; do not change this to pass `egress.allow` through
-  // unmodified.
-  const allowedHosts = egress.allow ?? [];
+  // unmodified. `POLICY_HOST` is always appended — see this function's own
+  // doc comment for why.
+  const allowedHosts = [...(egress.allow ?? []), POLICY_HOST];
   const allowedInternalHosts = egress["allow-internal"] ?? [];
 
   const { httpHooks, env: secretEnv } = createHttpHooks({
@@ -228,7 +297,10 @@ export function buildEgressConfig(
     allowedInternalHosts,
     blockInternalRanges: egress["block-internal-ranges"],
     secrets: secretBindings,
-    onRequest: githubApiGate(egress["github-api"], audit, sessionId),
+    onRequest: composeOnRequest([
+      sentinel(policy, dirs, audit, sessionId),
+      githubApiGate(egress["github-api"], audit, sessionId),
+    ]),
     onResponse: (res, req) => {
       audit.record({
         channel: "http",

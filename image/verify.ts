@@ -265,49 +265,78 @@ async function gateCaTrust(vm: VM): Promise<GateResult> {
 }
 
 // The plan's original gate table (written before M1 was split into
-// milestones) asserts that `/usr/local/bin/git` is a `policygate` shim and
-// that `/usr/bin/git` is absent. That is not true of the image M1.3 built:
-// policygate is explicit M7 work, and M1.3's commit message records the
-// deliberate decision to leave git/gh as the real, unmodified Alpine
-// binaries until then. Asserting the shimmed state now would fail every
-// build between M1.4 and M7.
+// milestones) asserted that `/usr/local/bin/git` is a `policygate` shim and
+// that `/usr/bin/git` is absent. Before M7 shipped, that assertion was
+// flipped to a *current-state* gate (git/gh still the real, unmodified
+// Alpine binaries) so a premature regression toward the shimmed state would
+// still be caught. M7 (`image/corb-image.json`'s `postBuild.commands`) now
+// actually installs the shim, so this gate is flipped back to asserting the
+// shimmed state the plan originally called for — this is the gate that
+// stays in place going forward.
 //
-// Decision (flagged to the user rather than made silently — see the report
-// this milestone returns): implement the *current-state* gate instead —
-// assert that git/gh are still the real, unshadowed binaries — so a future
-// accidental regression before M7 lands is still caught. Flip this gate's
-// assertion (and its name) when M7 ships policygate.
-async function gateGitGhCurrentState(vm: VM): Promise<GateResult> {
-  const name = "git-gh-current-state";
+// This is static image structure only: `command -v`/symlink target/`test -x`
+// checks against the *built image*, not `policygate`'s actual runtime
+// gating behavior. This throwaway build-time verify VM has no `gate.json`
+// mounted (that's a runtime, per-session artifact `src/vm/session.ts`
+// generates, not something baked into the image) and no `CORB_GATE_CONFIG`
+// pointing anywhere, so no gated subcommand can be meaningfully exercised
+// here. Full behavioral verification against a real session (M7.4) is a
+// separate, later item.
+async function gateGitGhShimmed(vm: VM): Promise<GateResult> {
+  const name = "git-gh-shimmed";
   const result = await run(vm, [
     "/bin/sh",
     "-lc",
     "command -v git || echo GIT_ABSENT; " +
-      "test -e /usr/local/bin/git && echo SHIM_GIT_PRESENT || echo SHIM_GIT_ABSENT; " +
-      "command -v gh || echo GH_ABSENT; " +
-      "test -e /usr/local/bin/gh && echo SHIM_GH_PRESENT || echo SHIM_GH_ABSENT",
+      "test -L /usr/local/bin/git && readlink /usr/local/bin/git || echo GIT_SHIM_NOT_SYMLINK; " +
+      "test -L /usr/local/bin/gh && readlink /usr/local/bin/gh || echo GH_SHIM_NOT_SYMLINK; " +
+      "test -x /usr/local/libexec/git-real && echo GIT_REAL_PRESENT || echo GIT_REAL_MISSING; " +
+      "test -x /usr/local/libexec/gh-real && echo GH_REAL_PRESENT || echo GH_REAL_MISSING; " +
+      "test -x /usr/local/libexec/policygate && echo POLICYGATE_PRESENT || echo POLICYGATE_MISSING; " +
+      "test -e /usr/bin/git && echo OLD_GIT_ON_DISK || echo OLD_GIT_GONE; " +
+      "test -e /usr/bin/gh && echo OLD_GH_ON_DISK || echo OLD_GH_GONE",
   ]);
   const lines = result.stdout
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
   const gitPath = lines[0];
+  const gitSymlinkTarget = lines[1];
+  const ghSymlinkTarget = lines[2];
 
   const problems: string[] = [];
-  if (gitPath !== "/usr/bin/git") {
-    problems.push(`git resolves to '${gitPath ?? "(nothing)"}\', expected the real unshadowed /usr/bin/git`);
+  if (gitPath !== "/usr/local/bin/git") {
+    problems.push(`git resolves to '${gitPath ?? "(nothing)"}', expected the policygate shim at /usr/local/bin/git`);
   }
-  if (!lines.includes("SHIM_GIT_ABSENT")) {
-    problems.push("/usr/local/bin/git already exists — update this gate for the M7 policygate shim");
+  if (gitSymlinkTarget !== "/usr/local/libexec/policygate") {
+    problems.push(`/usr/local/bin/git is not a symlink to /usr/local/libexec/policygate (readlink: '${gitSymlinkTarget ?? "(nothing)"}')`);
   }
-  if (!lines.includes("SHIM_GH_ABSENT")) {
-    problems.push("/usr/local/bin/gh already exists — update this gate for the M7 policygate shim");
+  if (ghSymlinkTarget !== "/usr/local/libexec/policygate") {
+    problems.push(`/usr/local/bin/gh is not a symlink to /usr/local/libexec/policygate (readlink: '${ghSymlinkTarget ?? "(nothing)"}')`);
+  }
+  if (!lines.includes("GIT_REAL_PRESENT")) {
+    problems.push("/usr/local/libexec/git-real is missing or not executable");
+  }
+  if (!lines.includes("GH_REAL_PRESENT")) {
+    problems.push("/usr/local/libexec/gh-real is missing or not executable");
+  }
+  if (!lines.includes("POLICYGATE_PRESENT")) {
+    problems.push("/usr/local/libexec/policygate is missing or not executable");
+  }
+  if (lines.includes("OLD_GIT_ON_DISK")) {
+    problems.push("/usr/bin/git is still directly reachable — the old unshadowed path should no longer be on PATH");
+  }
+  if (lines.includes("OLD_GH_ON_DISK")) {
+    problems.push("/usr/bin/gh is still directly reachable — the old unshadowed path should no longer be on PATH");
   }
 
   if (problems.length > 0) {
     return fail(name, problems.join("; "));
   }
-  return pass(name, "git resolves to the real /usr/bin/git; no policygate shim installed (expected pre-M7)");
+  return pass(
+    name,
+    "git/gh on PATH resolve to the policygate shim; git-real/gh-real/policygate all present and executable",
+  );
 }
 
 async function gatePi(vm: VM): Promise<GateResult> {
@@ -349,7 +378,7 @@ const GATES: Array<(vm: VM) => Promise<GateResult>> = [
   gateSuid,
   gateRemovals,
   gateCaTrust,
-  gateGitGhCurrentState,
+  gateGitGhShimmed,
   gatePi,
 ];
 

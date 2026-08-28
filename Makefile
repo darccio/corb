@@ -11,13 +11,14 @@ test:
 clean:
 	rm -rf dist
 
-# Reproducible static build of the guest Go binaries (dropcap for now;
-# policygate arrives in M7). CGO disabled and a stripped, buildid-less
-# binary keep the image content hash stable across rebuilds on the same
-# source.
+# Reproducible static build of the guest Go binaries: dropcap and policygate
+# (M7). CGO disabled and a stripped, buildid-less binary keep the image
+# content hash stable across rebuilds on the same source.
 guest:
 	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=$$(go env GOARCH) \
 		go build -trimpath -ldflags="-s -w -buildid=" -o build/dropcap ./cmd/dropcap
+	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=$$(go env GOARCH) \
+		go build -trimpath -ldflags="-s -w -buildid=" -o build/policygate ./cmd/policygate
 
 # M2.4: real end-to-end suite (test/e2e/**), boots actual VMs against a
 # freshly built guest image. Chosen dependency chain, and why: `e2e` rebuilds

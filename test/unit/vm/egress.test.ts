@@ -27,6 +27,7 @@ import {
   SecretHostsMissingError,
 } from "../../../src/vm/egress.ts";
 import type { EffectiveEgressConfig } from "../../../src/config/load.ts";
+import { POLICY_HOST } from "../../../src/policy/sentinel.ts";
 
 describe("vm/egress buildSecretBindings", () => {
   it("returns {} without error when secrets is undefined", () => {
@@ -181,19 +182,21 @@ describe("vm/egress buildEgressConfig", () => {
     });
   });
 
-  it("egress.allow unset produces allowedHosts: [] passed to createHttpHooks — never undefined, never omitted", () => {
+  it("egress.allow unset produces allowedHosts: [POLICY_HOST] passed to createHttpHooks — never undefined, never omitted", () => {
     buildEgressConfig(egress(), undefined, {}, fakeAudit(), "session-1");
     expect(createHttpHooksMock).toHaveBeenCalledTimes(1);
     const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect("allowedHosts" in callArgs).toBe(true);
-    expect(callArgs.allowedHosts).toEqual([]);
+    // M7.3: POLICY_HOST is always appended (docs/design.md §5) — see
+    // src/vm/egress.ts's buildEgressConfig doc comment for why.
+    expect(callArgs.allowedHosts).toEqual([POLICY_HOST]);
     expect(callArgs.allowedHosts).not.toBeUndefined();
   });
 
-  it("egress.allow with real hosts passes them through unchanged", () => {
+  it("egress.allow with real hosts passes them through unchanged, plus POLICY_HOST appended", () => {
     buildEgressConfig(egress({ allow: ["api.anthropic.com", "*.github.com"] }), undefined, {}, fakeAudit(), "s");
     const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(callArgs.allowedHosts).toEqual(["api.anthropic.com", "*.github.com"]);
+    expect(callArgs.allowedHosts).toEqual(["api.anthropic.com", "*.github.com", POLICY_HOST]);
   });
 
   it("egress['allow-internal'] unset produces [] the same way", () => {
@@ -291,16 +294,18 @@ describe("vm/egress buildEgressConfig", () => {
     expect("isIpAllowed" in callArgs).toBe(false);
   });
 
-  it("passes onRequest as the githubApiGate() wired to egress['github-api']/audit/sessionId — a request the gate denies is short-circuited with a 403", () => {
+  it("passes onRequest as composeOnRequest([sentinel, githubApiGate]) — a request the gate denies is short-circuited with a 403", async () => {
     const audit = fakeAudit();
     buildEgressConfig(egress({ "github-api": { methods: ["GET"] } }), undefined, {}, audit, "session-gh");
     const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
-      onRequest: (req: Request) => Response | undefined;
+      onRequest: (req: Request) => Promise<Response | undefined> | Response | undefined;
     };
     expect(typeof callArgs.onRequest).toBe("function");
 
+    // M7.3: onRequest is now `composeOnRequest([sentinel(...), githubApiGate(...)])`,
+    // always async (sentinel() itself is async) — see src/vm/egress.ts.
     const req = new Request("https://api.github.com/repos/dario/corb", { method: "DELETE" });
-    const result = callArgs.onRequest(req);
+    const result = await callArgs.onRequest(req);
 
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(403);
@@ -313,13 +318,13 @@ describe("vm/egress buildEgressConfig", () => {
     });
   });
 
-  it("onRequest passes a request through (returns undefined) when egress['github-api'] is undefined", () => {
+  it("onRequest passes a request through (resolves undefined) when egress['github-api'] is undefined and the host isn't POLICY_HOST", async () => {
     buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
     const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
-      onRequest: (req: Request) => Response | undefined;
+      onRequest: (req: Request) => Promise<Response | undefined> | Response | undefined;
     };
     const req = new Request("https://api.github.com/repos/dario/corb", { method: "DELETE" });
-    expect(callArgs.onRequest(req)).toBeUndefined();
+    await expect(callArgs.onRequest(req)).resolves.toBeUndefined();
   });
 
   it("wires onResponse to record an 'allow' AuditEvent with the exact expected shape, including sessionId", async () => {
