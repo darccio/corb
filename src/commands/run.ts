@@ -4,11 +4,22 @@
 // a `RunSessionOptions`.
 //
 // CLI shape: `corb run [WORKSPACE] [--dir NAME=HOST[:ro|:rw]]... [--primary
-// NAME] [--trust-config] [--dry-run] [-- PI_ARGS...]`, matching the surface
-// already recorded in the plan (`plans/.../` §2) rather than inventing a
-// new one — a positional workspace directory, defaulting to `process.cwd()`
-// when omitted, with anything after a literal `--` forwarded to `pi`
-// untouched.
+// NAME] [--trust-config] [--dry-run] [--expose PORT] [-- PI_ARGS...]`,
+// matching the surface already recorded in the plan (`plans/.../` §2) rather
+// than inventing a new one — a positional workspace directory, defaulting to
+// `process.cwd()` when omitted, with anything after a literal `--` forwarded
+// to `pi` untouched.
+//
+// M9.4 adds `--expose PORT`: wires Gondolin's host-to-guest ingress reverse
+// proxy (`vm.enableIngress()`/`vm.setIngressRoutes()`, `docs/gondolin-notes.md`
+// §9) onto a single guest loopback port. `PORT` is parsed and validated (an
+// integer in `[1, 65535]`) here, before anything boots — the same "error
+// clearly and immediately" discipline `DirFlagError`/`PrimaryDirectoryError`
+// already follow for their own flags — then threaded straight through to
+// `runSession()`'s own `expose?: number` option, which does the actual
+// wiring. Deliberately one port, not repeatable: no path-prefix multiplexing
+// across several exposed guest ports, and no `[expose]` config section —
+// see `docs/design.md`'s ingress subsection for why.
 //
 // M2.4 generalized `runSession` from a single `dir: string` to an explicit
 // `dirs`/`primary` shape (N named directories, each `ro`/`rw`). The
@@ -66,6 +77,13 @@ export interface RunCommandArgs {
   dirFlags: string[];
   primary: string | undefined;
   trustConfig: boolean;
+  /**
+   * The guest loopback port to expose via ingress, already validated (an
+   * integer in `[1, 65535]`) by `parseExposePort` — see the module comment.
+   * `undefined` when `--expose` was not passed, which leaves ingress
+   * disabled entirely.
+   */
+  expose: number | undefined;
 }
 
 /**
@@ -81,6 +99,34 @@ function splitPiArgs(argv: string[]): { corbArgs: string[]; piArgs: string[] } {
   return { corbArgs: argv.slice(0, idx), piArgs: argv.slice(idx + 1) };
 }
 
+/** Thrown by `parseExposePort` for an `--expose` value that isn't a valid guest loopback port. */
+export class InvalidExposePortError extends Error {
+  constructor(raw: string, reason: string) {
+    super(`corb run: invalid --expose value '${raw}': ${reason}`);
+    this.name = "InvalidExposePortError";
+  }
+}
+
+/**
+ * Parses and validates `--expose`'s raw string value into a guest loopback
+ * port, before anything boots — matching `DirFlagError`'s own "fail clearly,
+ * before any VM is created" discipline. A bare digit-string check rather than
+ * `Number(raw)` alone: `Number("")`/`Number(" ")`/`Number("1e2")` all parse to
+ * a finite number despite not being a plain port literal, so accepting
+ * anything `Number` doesn't reject would let non-integer or malformed input
+ * (whitespace, scientific notation, a leading `+`/`-`) through silently.
+ */
+export function parseExposePort(raw: string): number {
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new InvalidExposePortError(raw, "must be a positive integer");
+  }
+  const port = Number(raw);
+  if (port < 1 || port > 65535) {
+    throw new InvalidExposePortError(raw, "must be between 1 and 65535");
+  }
+  return port;
+}
+
 export function parseRunArgs(argv: string[]): RunCommandArgs {
   const { corbArgs, piArgs } = splitPiArgs(argv);
   const { values, positionals } = parseArgs({
@@ -90,6 +136,7 @@ export function parseRunArgs(argv: string[]): RunCommandArgs {
       dir: { type: "string", multiple: true },
       primary: { type: "string" },
       "trust-config": { type: "boolean" },
+      expose: { type: "string" },
     },
     allowPositionals: true,
     strict: true,
@@ -109,6 +156,7 @@ export function parseRunArgs(argv: string[]): RunCommandArgs {
     dirFlags: values.dir ?? [],
     primary: values.primary,
     trustConfig: values["trust-config"] ?? false,
+    expose: values.expose !== undefined ? parseExposePort(values.expose) : undefined,
   };
 }
 
@@ -295,7 +343,7 @@ function toWorkspaceDirSpec(entry: DirConfig): WorkspaceDirSpec {
 }
 
 export async function runRunCommand(argv: string[]): Promise<void> {
-  const { dir, piArgs, dryRun, dirFlags, primary: primaryFlag, trustConfig } = parseRunArgs(argv);
+  const { dir, piArgs, dryRun, dirFlags, primary: primaryFlag, trustConfig, expose } = parseRunArgs(argv);
 
   const cliLayer = buildCliLayer(dirFlags);
   const resolved = resolveWorkspace(dir, cliLayer);
@@ -409,5 +457,6 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     dirConfigs: resolved.fullConfig.dir,
     audit,
     auditPath,
+    ...(expose !== undefined ? { expose } : {}),
   });
 }

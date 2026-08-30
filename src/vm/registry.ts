@@ -79,6 +79,17 @@ export interface SessionSidecar {
   pid: number;
   /** ISO 8601, caller-supplied — see the module comment for why this module never calls `Date.now()`/`new Date()` itself. */
   startedAt: string;
+  /**
+   * M9.4: present only when this session was booted with `--expose PORT`
+   * (`src/commands/run.ts`), wiring Gondolin's ingress reverse proxy
+   * (`vm.enableIngress()`/`vm.setIngressRoutes()`, `src/vm/session.ts`).
+   * `port` is the guest loopback port that was exposed; `url` is the
+   * `IngressAccess.url` a client on the host reaches it through. Omitted
+   * entirely (not `undefined`-valued) when ingress was never enabled for
+   * this session, matching this interface's own "plain, JSON-serializable
+   * data only" discipline — see the module comment.
+   */
+  exposed?: { port: number; url: string };
 }
 
 /**
@@ -150,6 +161,30 @@ function validateImage(value: unknown, sidecarPath: string): SessionSidecarImage
 }
 
 /**
+ * Validates the optional M9.4 `exposed` field — present only for a session
+ * booted with `--expose PORT` (see `SessionSidecar.exposed`'s own doc
+ * comment). `undefined` is a valid, routine input (most sidecars have no
+ * `exposed` at all) and returns `undefined` right back; anything else that
+ * isn't a well-shaped `{ port: number; url: string }` is malformed, matching
+ * `validateImage`'s exact per-field style.
+ */
+function validateExposed(value: unknown, sidecarPath: string): { port: number; url: string } | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new MalformedSessionSidecarError(sidecarPath, "'exposed' is not an object");
+  }
+  if (typeof value.port !== "number" || !Number.isInteger(value.port)) {
+    throw new MalformedSessionSidecarError(sidecarPath, "'exposed.port' is missing or not an integer");
+  }
+  if (typeof value.url !== "string") {
+    throw new MalformedSessionSidecarError(sidecarPath, "'exposed.url' is missing or not a string");
+  }
+  return { port: value.port, url: value.url };
+}
+
+/**
  * Validates a parsed JSON value into a `SessionSidecar`, throwing
  * `MalformedSessionSidecarError` for anything that doesn't fit — every field
  * present and correctly typed, not just "is it an object", matching
@@ -180,6 +215,7 @@ function validateSessionSidecar(value: unknown, sidecarPath: string): SessionSid
   if (typeof value.startedAt !== "string") {
     throw new MalformedSessionSidecarError(sidecarPath, "'startedAt' is missing or not a string");
   }
+  const exposed = validateExposed(value.exposed, sidecarPath);
   return {
     id: value.id,
     sessionLabel: value.sessionLabel,
@@ -188,6 +224,7 @@ function validateSessionSidecar(value: unknown, sidecarPath: string): SessionSid
     auditPath: value.auditPath,
     pid: value.pid,
     startedAt: value.startedAt,
+    ...(exposed !== undefined ? { exposed } : {}),
   };
 }
 

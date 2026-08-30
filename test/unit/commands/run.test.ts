@@ -30,10 +30,12 @@ vi.mock("../../../src/vm/session.ts", async (importOriginal) => {
 
 import {
   DirFlagError,
+  InvalidExposePortError,
   PrimaryDirectoryError,
   TrustConfirmationRequiredError,
   buildCliLayer,
   parseDirFlag,
+  parseExposePort,
   parseRunArgs,
   resolvePrimaryName,
   runRunCommand,
@@ -94,6 +96,52 @@ describe("commands/run: parseRunArgs --dir/--primary/--trust-config", () => {
   it("parses --trust-config", () => {
     expect(parseRunArgs([]).trustConfig).toBe(false);
     expect(parseRunArgs(["--trust-config"]).trustConfig).toBe(true);
+  });
+});
+
+describe("commands/run: parseExposePort", () => {
+  it("accepts a valid port", () => {
+    expect(parseExposePort("8080")).toBe(8080);
+  });
+
+  it("accepts the boundary values 1 and 65535", () => {
+    expect(parseExposePort("1")).toBe(1);
+    expect(parseExposePort("65535")).toBe(65535);
+  });
+
+  it("rejects a non-numeric value", () => {
+    expect(() => parseExposePort("nope")).toThrow(InvalidExposePortError);
+  });
+
+  it("rejects a value with trailing/leading junk (not a bare digit string)", () => {
+    expect(() => parseExposePort("8080x")).toThrow(InvalidExposePortError);
+    expect(() => parseExposePort(" 8080")).toThrow(InvalidExposePortError);
+    expect(() => parseExposePort("1e2")).toThrow(InvalidExposePortError);
+    expect(() => parseExposePort("-1")).toThrow(InvalidExposePortError);
+  });
+
+  it("rejects 0", () => {
+    expect(() => parseExposePort("0")).toThrow(InvalidExposePortError);
+  });
+
+  it("rejects a value above 65535", () => {
+    expect(() => parseExposePort("65536")).toThrow(InvalidExposePortError);
+  });
+});
+
+describe("commands/run: parseRunArgs --expose", () => {
+  it("defaults expose to undefined when not passed", () => {
+    expect(parseRunArgs([]).expose).toBeUndefined();
+  });
+
+  it("parses a valid --expose value into a number", () => {
+    expect(parseRunArgs(["--expose", "3000"]).expose).toBe(3000);
+  });
+
+  it("throws InvalidExposePortError for an invalid --expose value, before anything else is attempted", () => {
+    expect(() => parseRunArgs(["--expose", "bogus"])).toThrow(InvalidExposePortError);
+    expect(() => parseRunArgs(["--expose", "0"])).toThrow(InvalidExposePortError);
+    expect(() => parseRunArgs(["--expose", "99999"])).toThrow(InvalidExposePortError);
   });
 });
 
@@ -494,6 +542,28 @@ describe("commands/run: runRunCommand", () => {
       options.audit.record({ channel: "session", decision: "allow", subject: "test-subject", sessionId: "test-session" });
       options.audit.flush();
       expect(fs.existsSync(expectedDefaultPath)).toBe(true);
+    });
+  });
+
+  describe("--expose wiring into runSession", () => {
+    it("omits the expose option entirely when --expose is not passed", async () => {
+      await runRunCommand([workDir, "--trust-config"]);
+      const [options] = runSessionMock.mock.calls[0] as [Record<string, unknown>];
+      expect(options.expose).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(options, "expose")).toBe(false);
+    });
+
+    it("passes the validated port through to runSession when --expose is passed", async () => {
+      await runRunCommand([workDir, "--expose", "8080", "--trust-config"]);
+      const [options] = runSessionMock.mock.calls[0] as [{ expose: number }];
+      expect(options.expose).toBe(8080);
+    });
+
+    it("an invalid --expose value fails before runSession is ever called", async () => {
+      await expect(runRunCommand([workDir, "--expose", "bogus", "--trust-config"])).rejects.toThrow(
+        InvalidExposePortError,
+      );
+      expect(runSessionMock).not.toHaveBeenCalled();
     });
   });
 

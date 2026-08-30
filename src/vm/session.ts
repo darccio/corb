@@ -27,7 +27,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { MemoryProvider, ReadonlyProvider, RealFSProvider, VM, type VirtualProvider } from "@earendil-works/gondolin";
+import {
+  MemoryProvider,
+  ReadonlyProvider,
+  RealFSProvider,
+  VM,
+  type IngressAccess,
+  type VirtualProvider,
+} from "@earendil-works/gondolin";
 import { acquire, canRequestPty, type TtyHandle } from "./tty.ts";
 import { ShutdownController, type ExitFn, type ProcessLike } from "./shutdown.ts";
 import { resolveRuntimeImage } from "./image.ts";
@@ -676,6 +683,22 @@ export interface RunSessionOptions {
   /** Passed through to `ShutdownController` — injectable for tests, per `src/vm/shutdown.ts`'s own convention. */
   shutdownProcess?: ProcessLike;
   exit?: ExitFn;
+  /**
+   * M9.4: a single guest loopback port to expose via Gondolin's host-to-guest
+   * ingress reverse proxy (`vm.enableIngress()`/`vm.setIngressRoutes()`,
+   * `docs/gondolin-notes.md` §9). Already validated as an integer in
+   * `[1, 65535]` by `src/commands/run.ts`'s `parseExposePort` before this
+   * function is ever called, matching `maxSession`'s own "raw-to-validated
+   * conversion happens elsewhere, this option takes the validated form"
+   * precedent — the difference here is the validation happens in the caller,
+   * not in this module, since it needs no VM/config context to do. `undefined`
+   * (the default) leaves ingress disabled entirely: no `enableIngress()`
+   * call, no `close-ingress` shutdown step, no `exposed` sidecar field.
+   * Deliberately one port, not repeatable — see `run.ts`'s own module comment
+   * for why path-prefix multiplexing across several guest ports is out of
+   * scope.
+   */
+  expose?: number;
 }
 
 interface ResolvedWorkspaceDir {
@@ -808,6 +831,14 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   let vm: VM | undefined;
   let ttyHandle: TtyHandle | undefined;
   let watchdogHandle: WatchdogHandle | undefined;
+  // M9.4: set together, only when `options.expose` is given — see
+  // `RunSessionOptions.expose`'s own doc comment. `ingressAccess` is what the
+  // `close-ingress` shutdown step below closes; `exposed` is the already-
+  // shaped `SessionSidecar.exposed` value (kept separate from `ingressAccess`
+  // itself so the sidecar-building code below doesn't need to re-derive
+  // `options.expose`'s validated value across an intervening `await`).
+  let ingressAccess: IngressAccess | undefined;
+  let exposed: { port: number; url: string } | undefined;
 
   // Installed before the VM even exists: a signal during boot must still
   // lead to a clean close of whatever got started, not just of a fully
@@ -821,6 +852,17 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       // session watchdog (M8)".
       { name: "clear-watchdog", run: () => watchdogHandle?.clear() },
       { name: "restore-tty", run: () => ttyHandle?.restore() },
+      {
+        // Before `close-vm`: stop accepting new external connections to the
+        // exposed guest port before tearing down the VM itself, not after —
+        // the reverse order would let a request race the VM's own close.
+        name: "close-ingress",
+        run: async () => {
+          if (ingressAccess) {
+            await ingressAccess.close();
+          }
+        },
+      },
       {
         name: "close-vm",
         run: async () => {
@@ -905,6 +947,26 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       sessionLabel,
     });
 
+    // Ingress (M9.4): host-to-guest reverse proxy exposing a single guest
+    // loopback port, wired only when `--expose PORT` was passed
+    // (`options.expose`). `enableIngress()` is called with no options, so
+    // `listenHost`/`listenPort` stay at the SDK's own defaults (`127.0.0.1`,
+    // ephemeral) — see `docs/design.md`'s ingress subsection for why nothing
+    // here overrides them. The single route (prefix `/`, this session's one
+    // guest port, `stripPrefix: true`) matches this item's own scope: one
+    // exposed port, not path-prefix multiplexing across several. Printed to
+    // `stderr` (the resolved stream this function already attaches the pty
+    // to, not a bare `console.error`) before the pty is attached below, so
+    // the URL is visible even if Pi's own TUI output is about to take over
+    // the terminal.
+    if (options.expose !== undefined) {
+      const exposePort = options.expose;
+      ingressAccess = await vm.enableIngress();
+      vm.setIngressRoutes([{ prefix: "/", port: exposePort, stripPrefix: true }]);
+      exposed = { port: exposePort, url: ingressAccess.url };
+      stderr.write(`corb run: exposing guest port ${exposePort} at ${ingressAccess.url}\n`);
+    }
+
     // Watchdog: only started when a maximum session lifetime was actually
     // configured (`options.maxSession` set). `docs/design.md` §7: "the host
     // closes the VM" is the only reliable termination primitive Corb has, no
@@ -939,6 +1001,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       auditPath: options.auditPath,
       pid: process.pid,
       startedAt: new Date().toISOString(),
+      ...(exposed !== undefined ? { exposed } : {}),
     };
     writeSessionSidecar(sidecar);
 

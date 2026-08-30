@@ -96,6 +96,7 @@ code.
 | `--primary NAME` | Which directory becomes Pi's working directory (defaults to the positional `DIR`). |
 | `--trust-config` | Accept a `requires-confirmation` trust verdict and proceed (`corb run` only — required on the first run against any workspace, and again whenever the effective policy widens). |
 | `--dry-run` | (`corb run` only) Print what a real run would do — config, trust verdict — without booting a VM or requiring a secret to be bound. |
+| `--expose PORT` | (`corb run` only) Expose a guest loopback port to the host via Gondolin's ingress reverse proxy. The resulting URL is printed to stderr and recorded in the session sidecar (`corb ls`). One port, not repeatable. |
 | `--json` | (`corb explain`/`corb ls` only) Machine-readable output. |
 | `-- PI_ARGS...` | (`corb run` only) Everything after a literal `--` is forwarded to `pi` unmodified. |
 
@@ -227,8 +228,8 @@ M1 through M8 (walking skeleton through sessions/limits, plus the git/gh
 policy gate, VFS policy, and image hardening gates in between) are complete —
 see `git log` for the full milestone-by-milestone history. M9 (optional: CI,
 this README, ADRs, `--expose`/ingress, and checkpoint-based warm starts) is
-in progress; CI (M9.1), this README (M9.2), and the ADRs (M9.3) are done so
-far.
+in progress; CI (M9.1), this README (M9.2), the ADRs (M9.3), and
+`--expose`/ingress (M9.4) are done so far.
 
 ## License
 

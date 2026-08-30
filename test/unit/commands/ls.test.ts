@@ -174,7 +174,7 @@ describe("commands/ls: renderLsText", () => {
   it("renders a header and one aligned row per session", () => {
     const text = renderLsText(joinSessions([entry(ID_A)], [sidecar(ID_A)]), NOW);
     const lines = text.split("\n");
-    expect(lines[0]).toMatch(/^ID\s+STATUS\s+AGE\s+WORKSPACE\s+IMAGE\s+LABEL$/);
+    expect(lines[0]).toMatch(/^ID\s+STATUS\s+AGE\s+WORKSPACE\s+IMAGE\s+EXPOSED\s+LABEL$/);
     expect(lines[1]).toContain(ID_A.slice(0, 12));
     expect(lines[1]).toContain("running");
     expect(lines[1]).toContain("5m");
@@ -182,6 +182,20 @@ describe("commands/ls: renderLsText", () => {
     expect(lines[1]).toContain("corb:0.1.0");
     // Column alignment: header and row share the same column offsets.
     expect(lines[0]?.indexOf("STATUS")).toBe(lines[1]?.indexOf("running"));
+  });
+
+  it("shows '-' in the EXPOSED column when the sidecar has no exposed field", () => {
+    const text = renderLsText(joinSessions([entry(ID_A)], [sidecar(ID_A)]), NOW);
+    const lines = text.split("\n");
+    const exposedCol = lines[0]?.indexOf("EXPOSED") ?? -1;
+    expect(exposedCol).toBeGreaterThanOrEqual(0);
+    expect(lines[1]?.slice(exposedCol)).toMatch(/^-\s/);
+  });
+
+  it("shows the exposed URL in the EXPOSED column when the sidecar has one", () => {
+    const withExposed = sidecar(ID_A, { exposed: { port: 8080, url: "http://127.0.0.1:54321" } });
+    const text = renderLsText(joinSessions([entry(ID_A)], [withExposed]), NOW);
+    expect(text.split("\n")[1]).toContain("http://127.0.0.1:54321");
   });
 
   it("leaves workspace and image empty for a Gondolin entry with no sidecar, but still shows its label", () => {

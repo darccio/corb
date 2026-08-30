@@ -866,6 +866,37 @@ user's choice through, not reimplement provider logic.
   no `[secrets.*]` entry is configured at all, pointing at `corb explain` and
   Pi's own provider docs rather than guessing which provider the user wants.
 
+### Ingress (`--expose`)
+
+Some workspaces run a server inside the guest that a human on the host wants
+to reach directly — a dev server, a preview build — rather than only
+interacting with it through Pi. Gondolin ships exactly this as a first-class
+primitive: `vm.enableIngress()` opens a host-to-guest HTTP reverse proxy, and
+`vm.setIngressRoutes()` points it at a guest loopback port
+(`gondolin-notes.md` §9). `corb run --expose PORT` (M9.4) wires that in
+directly, for one guest port at a time: `runSession()` calls
+`vm.enableIngress()` with no overrides — `listenHost`/`listenPort` stay at the
+SDK's own defaults (`127.0.0.1`, an ephemeral port), since nothing here needs
+a fixed host-side address — then calls `vm.setIngressRoutes([{ prefix: "/",
+port: PORT, stripPrefix: true }])`.
+
+There is deliberately no path-prefix multiplexing across several guest ports:
+that would need a naming scheme for the prefixes and a way to configure more
+than one port, and nothing in the current design needs either. A single guest
+port at `/` is the whole feature.
+
+The resulting URL is surfaced twice: once as a one-line `stderr` banner
+printed before the pty is attached, so it is not scrolled away under Pi's own
+TUI output the moment the session starts; and once persisted on the session
+sidecar's `exposed` field (`src/vm/registry.ts`), so `corb ls` can show it for
+a session that is still running, not only at the moment it was started.
+
+Teardown order matters here the same way it does for the VM itself: the
+ingress listener is closed *before* `vm.close()` in the shutdown sequence
+(`close-ingress`, ahead of `close-vm`), so the host stops accepting new
+connections to the exposed port before the guest it forwards to goes away,
+rather than leaving an in-flight request racing a VM that is mid-teardown.
+
 ---
 
 ## 9. Non-goals

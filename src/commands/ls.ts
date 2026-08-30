@@ -193,7 +193,7 @@ export function idColumnWidth(ids: readonly string[], minWidth = 12): number {
 /** Placeholder for a column a row genuinely has no value for — an unmatched Gondolin entry has no workspace/image, and fabricating one would be worse than saying so. */
 const ABSENT = "-";
 
-const HEADERS = ["ID", "STATUS", "AGE", "WORKSPACE", "IMAGE", "LABEL"];
+const HEADERS = ["ID", "STATUS", "AGE", "WORKSPACE", "IMAGE", "EXPOSED", "LABEL"];
 
 function toRow(session: JoinedSession, idWidth: number, now: number): string[] {
   const { sidecar, gondolin } = session;
@@ -204,6 +204,12 @@ function toRow(session: JoinedSession, idWidth: number, now: number): string[] {
     formatAge(session.startedAt, now),
     workspace,
     sidecar?.image.selector ?? ABSENT,
+    // M9.4: present only for a session booted with `--expose PORT`
+    // (`SessionSidecar.exposed`, `src/vm/registry.ts`) — the URL a host
+    // client reaches the exposed guest port through, matching the
+    // `WORKSPACE`/`IMAGE` columns' own "absent means genuinely absent, not
+    // fabricated" convention.
+    sidecar?.exposed?.url ?? ABSENT,
     // Corb's sidecar and Gondolin's registry hold the same label for a
     // session Corb started (`runSession()` passes it as `VM.create()`'s
     // `sessionLabel`), so the fallback only matters for a gondolin-only row
