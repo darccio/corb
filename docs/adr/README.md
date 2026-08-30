@@ -1,0 +1,17 @@
+# Architecture Decision Records
+
+Load-bearing decisions already made and shipped in Corb, recorded in MADR
+format. All are `Status: Accepted`.
+
+| # | Title | Summary |
+|---|---|---|
+| [0001](0001-typescript-host-go-guest.md) | TypeScript host, Go guest helpers | Gondolin is Node-only, so the host is TypeScript; `dropcap`/`policygate` are static Go binaries for direct syscall access and a dependency-free guest image. |
+| [0002](0002-walking-skeleton-behind-blocking-spike-gate.md) | Walking skeleton behind a blocking spike gate | Ship a minimal end-to-end path (M1) gated on M0's two blocking spikes (HTTP/2 interop, MITM CA trust) passing against a real boot, instead of building the full design on untested SDK assumptions. |
+| [0003](0003-no-host-side-execution-of-guest-chosen-commands.md) | No host-side execution of guest-chosen commands | git/gh run unmodified in the guest; only the wire protocol (SSH exec requests, HTTP) crosses to the host, because a guest-writable repo's hooks/aliases make any host-side git invocation host RCE. |
+| [0004](0004-no-guest-to-host-rpc-sentinel-hostname.md) | No guest→host RPC; sentinel-hostname `onRequest` short-circuit | A general guest→host channel risks becoming a tunnel by accident; content checks instead go through an `onRequest` short-circuit against the never-resolving sentinel host `policy.corb.invalid`. |
+| [0005](0005-allowlist-never-blocklist.md) | Allowlist, never blocklist, for anything with a CLI-sized surface | git/gh's local gate, egress hosts, and the GitHub API method/path gate are all allowlisted, because a blocklist over a tool the size of git/gh can never be completed. |
+| [0006](0006-workspace-config-outside-every-mount.md) | Workspace config outside every mount | Named TOML files under `~/.config/corb/workspaces/`, not a project-local `./corb.toml`, because a config file inside an agent-writable directory is host code execution at startup. |
+| [0007](0007-bindfs-reexport-for-non-root-vfs-mount.md) | `bindfs` re-export for the non-root VFS mount blocker | Fixes Gondolin's hardcoded root-only `sandboxfs` FUSE mount (which left the privilege-dropped agent with zero filesystem access) via a `bindfs`-built-from-source re-export, chosen over a patched-`sandboxfs` fork and over `fuse-overlayfs`. |
+| [0008](0008-reexec-systemd-user-scope-not-attach.md) | Re-exec into a systemd user scope, not attach-after-launch | Resource limits are applied by re-executing `corb run` under `systemd-run --user --scope` before `VM.create()`, eliminating the unconstrained window that attaching a cgroup to `vm.getHostPid()` afterward would leave open. |
+| [0009](0009-glob-vfs-policy-proxy-wrapper-not-subclass.md) | Glob VFS policy as a `Proxy` wrapper, not a subclass | `VirtualProviderClass` gives zero type checking and silently delegates forgotten overrides; a `Proxy` over an explicit method table defaults unknown operations to `EPERM`, failing loudly instead of leaking. |
+| [0010](0010-provider-agnostic-secrets-and-agent-config.md) | Provider-agnostic secrets and agent configuration | Corb hardcodes no model provider's name, host, or credential env var; `[secrets.NAME]`/`[agent].provider`/`.model` pass through to Pi's own multi-provider support unchanged. |
