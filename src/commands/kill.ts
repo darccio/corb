@@ -284,10 +284,14 @@ export function renderKillRefusal(query: string, plan: KillRefusal, sidecarPath?
     case "sidecar-only":
       return (
         `corb kill: session ${describeSession(plan.id, plan.label)} has no live Gondolin session entry.\n` +
-        "  Only corb's own sidecar remains — either the session ended without clean teardown (a SIGKILL, a host crash), or it is finishing its teardown right now. " +
-        "Either way it is not a session that can be signalled.\n" +
+        "  Only corb's own sidecar remains. That means the session ended without clean teardown (a SIGKILL, a host crash), or is starting up or finishing teardown right now, " +
+        "or is still running but unreachable because its IPC socket was never created (run 'corb doctor' — an over-long session socket path fails silently). " +
+        "In none of those cases is it something this command can signal.\n" +
         `  Nothing was signalled: the recorded pid ${plan.pid} may since have been reused by an unrelated process, and signalling it would kill that process instead.` +
-        (sidecarPath !== undefined ? `\n  The leftover sidecar is at ${sidecarPath}; 'corb gc' will prune it, until then it can be removed by hand.` : "")
+        (sidecarPath !== undefined
+          ? `\n  The leftover sidecar is at ${sidecarPath}. If the session has really ended, 'corb gc' prunes it. ` +
+            "If its host process is in fact still alive, gc deliberately keeps it and it must not be deleted by hand — it is a running session's only record of what it mounted and where its audit log went."
+          : "")
       );
   }
 }

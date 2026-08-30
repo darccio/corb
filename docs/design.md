@@ -758,9 +758,25 @@ described above. It also never signals a session that is not currently alive
 has died may since have been reused by an unrelated process. A stale or orphaned
 entry therefore gets an explanation and a non-zero exit, not a signal.
 
-**Not built yet — M8.6 and M8.7:** `corb gc` and `corb attach`. Until those land,
-the recovery path for an orphan is seeing it in `corb ls` and cleaning it up by
-hand.
+`corb gc [--older-than 1h]` (M8.6) is what actually prunes. It calls Gondolin's
+own `gcSessions()` first, then evaluates Corb's sidecars. Its guard is the exact
+mirror of `corb kill`'s: **`kill` requires positive proof of life before it
+signals; `gc` requires positive proof of death before it deletes.** In practice
+that means a sidecar whose recorded host pid is still alive is never pruned,
+whatever either registry says about it — which is what protects the three
+windows in which a healthy session looks dead: the startup gap before Gondolin's
+lazy registration, the teardown gap between `unregisterSession` and Corb's own
+`remove-sidecar` step, and a session whose IPC socket path overflowed
+`sun_path` and so reads `alive: false` forever. That last case matters
+especially here, because `gcSessions()` *will* collect such a session's Gondolin
+metadata; only the pid check then keeps its sidecar. Pid reuse can make a
+collectable sidecar look alive, which merely leaves a file for the next run —
+preferred over deleting a running session's only record. `--older-than` filters
+additionally (dead **and** older than the given age); with no flag there is no
+age filter, since a dead host pid already means the session is definitively
+over. Nothing to collect is a success, not an error.
+
+**Not built yet — M8.7:** `corb attach`.
 
 ---
 
