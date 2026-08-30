@@ -48,6 +48,8 @@
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { runSession, toGlobRules, type WorkspaceDirSpec } from "../vm/session.ts";
+import { readDelegatedControllersForCurrentUser } from "../vm/cgroup.ts";
+import { decideScope, reExecUnderScope } from "../vm/scope.ts";
 import { acceptWorkspace, resolveWorkspace, type ResolvedWorkspace } from "../config/resolve.ts";
 import { renderText, renderTrust } from "../config/render.ts";
 import { defaultAuditPath } from "../config/paths.ts";
@@ -316,6 +318,40 @@ export async function runRunCommand(argv: string[]): Promise<void> {
   }
   if (trustConfig) {
     acceptWorkspace(resolved.trustKey, resolved.persistentConfig, Date.now());
+  }
+
+  // Resource limits (M8.3, docs/design.md §7): re-exec under a systemd user
+  // scope with `vm.limits` applied as `-p` cgroup properties *before*
+  // `runSession()` ever boots the VM — see `src/vm/scope.ts`'s module
+  // comment for why this beats attaching a cgroup to the VM's host pid
+  // after the fact. Runs after `--dry-run` (a dry run boots no VM, so
+  // there is nothing to limit) and after the trust gate above (failing
+  // trust inside a re-exec'd child would just be a confusing extra process
+  // hop before the real error surfaces), and before `runSession()` — that
+  // ordering is the entire point, the limit has to exist before QEMU does.
+  // `CORB_SCOPED` already set means this process *is* the re-exec'd child,
+  // already running inside the scope for its whole process tree — nothing
+  // left to do, fall straight through.
+  if (resolved.fullConfig.vm?.limits !== undefined && process.env.CORB_SCOPED === undefined) {
+    const decision = decideScope(resolved.fullConfig.vm.limits, readDelegatedControllersForCurrentUser());
+    if (decision.reExec) {
+      const outcome = reExecUnderScope({ properties: decision.properties });
+      // A successful spawn already called `exit()` with the child's exact
+      // code (the real `process.exit`, by default) — execution never
+      // reaches past that in real usage. `outcome.spawnError` set means the
+      // spawn itself failed outright (e.g. `systemd-run` isn't installed);
+      // treat that exactly like "missing delegated controllers" below: warn
+      // and continue unlimited, nothing else attempted.
+      if (outcome.spawnError !== undefined) {
+        console.error(
+          `corb: could not start 'systemd-run' to apply vm.limits (${outcome.spawnError.message}); continuing without host resource limits.`,
+        );
+      }
+    } else if (decision.missingControllers.length > 0) {
+      console.error(
+        `corb: vm.limits configured, but the user cgroup does not delegate: ${decision.missingControllers.join(", ")}. Continuing without those limits (unlimited).`,
+      );
+    }
   }
 
   const dirs = resolved.fullConfig.dir.map(toWorkspaceDirSpec);

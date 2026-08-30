@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { corbConfigDir, configTomlPath } from "../config/paths.ts";
 import { ConfigParseError, parseConfigLayer, type ConfigLayer } from "../config/schema.ts";
 import { ImageNotFoundError, resolveRuntimeImage } from "../vm/image.ts";
+import { readCgroupControllersText } from "../vm/cgroup.ts";
 
 export type DoctorStatus = "ok" | "warn" | "fail";
 
@@ -554,10 +555,6 @@ export function classifyCgroupControllers(controllersText: string | undefined): 
   return ok("cgroup-controllers", `user cgroup delegates all required controllers (${REQUIRED_CGROUP_CONTROLLERS.join(", ")}).`);
 }
 
-function cgroupControllersPath(uid: number): string {
-  return `/sys/fs/cgroup/user.slice/user-${uid}.slice/user@${uid}.service/cgroup.controllers`;
-}
-
 function checkCgroupControllers(platform: NodeJS.Platform): DoctorCheckResult {
   if (platform !== "linux") {
     return ok("cgroup-controllers", `not applicable on ${platform} — cgroups are a Linux-only primitive (docs/design.md §7).`);
@@ -566,18 +563,11 @@ function checkCgroupControllers(platform: NodeJS.Platform): DoctorCheckResult {
   if (uid === undefined) {
     return warn("cgroup-controllers", "could not determine the current uid (process.getuid is unavailable); skipping this check.");
   }
-  const controllersPath = cgroupControllersPath(uid);
-  let text: string | undefined;
-  try {
-    text = fs.readFileSync(controllersPath, "utf8");
-  } catch (err) {
-    if (isEnoent(err)) {
-      text = undefined;
-    } else {
-      throw err;
-    }
-  }
-  return classifyCgroupControllers(text);
+  // Raw read (fs.readFileSync + ENOENT-as-"missing") lives in
+  // `src/vm/cgroup.ts` now, shared with `src/vm/scope.ts` (M8.3) — this
+  // check's own classification policy (`classifyCgroupControllers`,
+  // `REQUIRED_CGROUP_CONTROLLERS`, below) is unchanged.
+  return classifyCgroupControllers(readCgroupControllersText(uid));
 }
 
 // ---------------------------------------------------------------------------
