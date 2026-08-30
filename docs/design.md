@@ -738,10 +738,17 @@ not `vm.id`, tempting as that would be, and cannot be: `sessionLabel` is one of
 `VM.create()`'s own inputs, so at the moment the label has to exist, `vm.id` does
 not yet. The label is for humans to read; the join key is `id`.
 
-**Not built yet — M8.4 through M8.7:** `corb ls`, `corb attach`, `corb kill` and
-`corb gc`. The sidecar is what makes them possible, and is already written and
-cleaned up on every session, but nothing reads it back yet. Until those land, the
-recovery path for an orphan is Gondolin's own registry and nothing richer.
+`corb ls` (M8.4) is the first reader of that join: it lists Gondolin's own
+entries and Corb's sidecars keyed by `id`, showing all three cases — a matched
+pair, a Gondolin VM with no sidecar (listed, with the workspace columns empty
+rather than invented), and a sidecar with no Gondolin entry. That last case is an
+orphan: a session killed without clean teardown, so the sidecar removal never
+ran. `corb ls` surfaces it, marked as not running, but never prunes it — it only
+reads, and pruning is `corb gc`'s job.
+
+**Not built yet — M8.5 through M8.7:** `corb attach`, `corb kill` and `corb gc`.
+Until those land, the recovery path for an orphan is seeing it in `corb ls` and
+cleaning it up by hand.
 
 ---
 
