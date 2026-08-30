@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    // `...(cond ? { key: value } : {})` is this codebase's established idiom
+    // for satisfying tsconfig's `exactOptionalPropertyTypes` (omit a key
+    // entirely rather than set it to `undefined`) -- used throughout src/vm
+    // and src/commands. Not a useless spread.
+    "unicorn/no-useless-spread": "off"
+  },
+  "env": {
+    "builtin": true
+  }
+}
