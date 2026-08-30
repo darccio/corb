@@ -765,7 +765,9 @@ One host TypeScript program is the entire host side. In outline:
 4. Create the VM with `dns: { mode: "synthetic", syntheticHostMapping: "per-host" }`,
    the SSH egress policy, and the CA-bundle environment variables the guest's
    TLS clients need.
-5. Attach the watchdog and the host resource limits.
+5. Arm the wall-clock watchdog and write the session sidecar (§7). Host
+   resource limits are not applied here: they are already in force by this
+   point, from the re-exec that happens before any of this runs (§7).
 6. `vm.exec` the privilege-drop helper with the agent as its target, `pty: true`,
    and `attach()` for the interactive terminal.
 7. On exit: clear the watchdog, `vm.close()`, propagate the exit code.
