@@ -218,14 +218,17 @@ reliable on hosted runners — which is instead wired as a manual-only
   pinned to.
 - [`docs/spike-results.md`](docs/spike-results.md) — evidence from the
   go/no-go spikes gating the early milestones.
+- [`docs/adr/`](docs/adr/README.md) — Architecture Decision Records for the
+  load-bearing decisions made along the way.
 
 ## Status
 
 M1 through M8 (walking skeleton through sessions/limits, plus the git/gh
-policy gate, VFS policy, and image hardening gates in between) and CI (M9.1)
-are complete — see `git log` for the full milestone-by-milestone history.
-M9 as a whole is an optional milestone; this README is M9.2 of it, still in
-progress.
+policy gate, VFS policy, and image hardening gates in between) are complete —
+see `git log` for the full milestone-by-milestone history. M9 (optional: CI,
+this README, ADRs, `--expose`/ingress, and checkpoint-based warm starts) is
+in progress; CI (M9.1), this README (M9.2), and the ADRs (M9.3) are done so
+far.
 
 ## License
 
