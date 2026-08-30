@@ -28,6 +28,7 @@ import {
   classifySessionSocketPath,
   describeSessionSocketOverflow,
   gondolinSessionsDir,
+  isGroupOrOtherWritable,
   MAX_SESSIONS_DIR_LENGTH,
   MAX_UNIX_SOCKET_PATH_LENGTH,
   SESSION_SOCKET_SUFFIX_LENGTH,
@@ -110,6 +111,44 @@ describe("vm/sockpath: describeSessionSocketOverflow", () => {
     // An actionable remedy, naming the env var that fixes it.
     expect(message).toContain("GONDOLIN_SESSIONS_DIR");
     expect(message).toContain("66");
+  });
+
+  it("the remedy is a user-private location, not a bare shared /tmp path", () => {
+    // Regression guard for the M0.4 permissions finding: relocating under a
+    // shared directory like a bare /tmp/gondolin-sessions loses ~/.cache's
+    // own drwx------ protection and leaves only the umask standing between a
+    // live guest's socket and any other local user.
+    const message = describeSessionSocketOverflow(classifySessionSocketPath(dirOfLength(MAX_SESSIONS_DIR_LENGTH + 1)));
+    expect(message).toContain("user-private");
+    expect(message).toContain("mkdir -m 700");
+  });
+});
+
+describe("vm/sockpath: isGroupOrOtherWritable", () => {
+  it("0o755 (srwxr-xr-x, the default-umask shape) is not group- or other-writable", () => {
+    expect(isGroupOrOtherWritable(0o755)).toBe(false);
+  });
+
+  it("0o700 (user-private) is not group- or other-writable", () => {
+    expect(isGroupOrOtherWritable(0o700)).toBe(false);
+  });
+
+  it("0o777 (umask(0) shape observed in the M0.4 spike) is group- and other-writable", () => {
+    expect(isGroupOrOtherWritable(0o777)).toBe(true);
+  });
+
+  it("group-writable only (0o770) is flagged", () => {
+    expect(isGroupOrOtherWritable(0o770)).toBe(true);
+  });
+
+  it("other-writable only (0o707) is flagged", () => {
+    expect(isGroupOrOtherWritable(0o707)).toBe(true);
+  });
+
+  it("ignores unrelated bits: file-type bits and the read/execute bits of group/other don't trigger it", () => {
+    // 0o120755 is roughly what fs.Stats.mode looks like for a real socket
+    // (S_IFSOCK | 0755) — the predicate must mask those high bits out.
+    expect(isGroupOrOtherWritable(0o120755)).toBe(false);
   });
 });
 

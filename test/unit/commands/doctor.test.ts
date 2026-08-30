@@ -22,6 +22,7 @@ import {
   classifyE2fsprogs,
   classifyGoInstall,
   classifyNodeVersion,
+  classifySessionSocketPermissions,
   classifySocketPathBudget,
   classifySshAuthSock,
   compareVersionTuples,
@@ -289,6 +290,58 @@ describe("commands/doctor: Gondolin session socket path budget", () => {
   });
 });
 
+describe("commands/doctor: Gondolin session socket permissions", () => {
+  // The permission-bit predicate itself (isGroupOrOtherWritable) is owned
+  // and tested by `test/unit/vm/sockpath.test.ts`; what matters here is only
+  // that a scan maps onto the right `DoctorCheckResult`.
+  const sessionsDir = "/home/u/.cache/gondolin/sessions";
+
+  it("directory does not exist yet -> ok, nothing to check (a fresh machine, not a failure)", () => {
+    const result = classifySessionSocketPermissions({ sessionsDir, dirMode: undefined, socketModes: {} });
+    expect(result.status).toBe("ok");
+    expect(result.name).toBe("gondolin-socket-permissions");
+    expect(result.detail).toContain(sessionsDir);
+  });
+
+  it("directory 0o755 (default-umask shape) with no sockets present -> ok", () => {
+    const result = classifySessionSocketPermissions({ sessionsDir, dirMode: 0o755, socketModes: {} });
+    expect(result.status).toBe("ok");
+  });
+
+  it("directory 0o755 with a 0o755 socket (srwxr-xr-x, the M0.4-observed default) -> ok", () => {
+    const result = classifySessionSocketPermissions({
+      sessionsDir,
+      dirMode: 0o755,
+      socketModes: { "abc.sock": 0o755 },
+    });
+    expect(result.status).toBe("ok");
+  });
+
+  it("group- or other-writable directory -> warn, not fail (the VM still works; only the management surface is exposed)", () => {
+    const result = classifySessionSocketPermissions({ sessionsDir, dirMode: 0o777, socketModes: {} });
+    expect(result.status).toBe("warn");
+    expect(result.status).not.toBe("fail");
+    expect(result.detail).toContain("directory itself");
+    expect(result.detail).toContain("777");
+  });
+
+  it("group- or other-writable socket (the umask(0) shape observed in the M0.4 spike) -> warn, names the socket", () => {
+    const result = classifySessionSocketPermissions({
+      sessionsDir,
+      dirMode: 0o755,
+      socketModes: { "48f14dba-f89f-490e-abe6-6c3051c5bde1.sock": 0o777 },
+    });
+    expect(result.status).toBe("warn");
+    expect(result.detail).toContain("48f14dba-f89f-490e-abe6-6c3051c5bde1.sock");
+    expect(result.detail).toContain("connect(2)");
+  });
+
+  it("a writable socket never fails the overall report (warn only)", () => {
+    const result = classifySessionSocketPermissions({ sessionsDir, dirMode: 0o755, socketModes: { "x.sock": 0o777 } });
+    expect(buildDoctorReport([result]).ok).toBe(true);
+  });
+});
+
 describe("commands/doctor: required-secrets vs secrets-configured (config.toml + env)", () => {
   const absent: DoctorConfigLoad = { kind: "absent" };
   const parseError: DoctorConfigLoad = { kind: "parse-error", error: new ConfigParseError("config.toml", "bad TOML") };
@@ -406,6 +459,7 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
         "image-resolvable",
         "cgroup-controllers",
         "gondolin-socket-path",
+        "gondolin-socket-permissions",
       ]),
     );
     expect(report.ok).toBe(report.checks.every((c) => c.status !== "fail"));

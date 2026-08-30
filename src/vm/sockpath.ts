@@ -60,6 +60,20 @@
 // Nothing here binds a socket. The check is a pure length computation:
 // deterministic, free, and side-effect-free, which is what lets it sit on the
 // `corb run` hot path and inside `corb doctor` alike.
+//
+// ## A second, related trap: socket permissions
+//
+// `SessionIpcServer.start()` also never `chmod`s the socket it creates — its
+// mode is whatever `0777 & ~umask` produces at `listen()` time. Under the
+// default `022` umask and the default `~/.cache/gondolin/sessions` location
+// this is harmless twice over (the socket ends up `srwxr-xr-x`, and
+// `~/.cache` itself is normally `drwx------`), but the remedy this module
+// recommends for the length trap above — moving `GONDOLIN_SESSIONS_DIR`
+// somewhere shorter, historically a bare `/tmp` path — removes that parent-
+// directory protection and leaves only the umask standing between a live
+// guest's unauthenticated exec socket and any other local user. See
+// `isGroupOrOtherWritable` below and `docs/spike-results.md` "M0.4 — R2" for
+// the empirical verification.
 import os from "node:os";
 import path from "node:path";
 
@@ -180,7 +194,41 @@ export function describeSessionSocketOverflow(fit: SessionSocketPathFit): string
     `yields a ${fit.socketPathLength}-character socket path, over the ${fit.budget}-character unix-socket limit. ` +
     "Gondolin swallows the resulting bind error, so sessions will still boot and run normally, but their IPC socket " +
     "is never created — 'corb ls' will report a live session as 'stale' and 'corb kill' will refuse to signal it. " +
-    `Set GONDOLIN_SESSIONS_DIR to a shorter path (at most ${MAX_SESSIONS_DIR_LENGTH} chars), e.g. ` +
-    "GONDOLIN_SESSIONS_DIR=/tmp/gondolin-sessions."
+    `Set GONDOLIN_SESSIONS_DIR to a shorter, user-private path (at most ${MAX_SESSIONS_DIR_LENGTH} chars) — prefer ` +
+    "a per-user runtime directory such as /run/user/$UID/gondolin (already mode 700) over a shared location like " +
+    "/tmp; if you do relocate under /tmp, create the directory yourself first with `mkdir -m 700` rather than " +
+    "letting Gondolin create it at the mercy of your umask (see corb doctor's gondolin-socket-permissions check)."
   );
+}
+
+/**
+ * Mode bits that grant write access to the owning group or to everyone else
+ * — `S_IWGRP | S_IWOTH`. `connect(2)` on a unix domain socket only requires
+ * write permission on the socket special file (`man 7 unix`), so this pair
+ * is exactly what determines whether a non-owner local user can reach it.
+ */
+const WRITABLE_BY_GROUP_OR_OTHER = 0o022;
+
+/**
+ * True when `mode` (as returned by `fs.Stats.mode`, or any raw POSIX mode
+ * integer) grants write access to the owning group or to everyone else.
+ *
+ * Exists because `SessionIpcServer.start()` (the same `session-registry.js`
+ * this module's other exports reason about) never `chmod`s the socket it
+ * creates — its mode comes straight from the process's umask at `listen()`
+ * time (`0777 & ~umask`). Under the usual `022` umask that yields
+ * `srwxr-xr-x` (group/other can neither write nor connect); under a
+ * permissive umask (or an explicit `umask(0)`) it yields `srwxrwxrwx` — a
+ * socket any local user can `connect()` to, i.e. an unauthenticated exec
+ * channel into a running guest. Verified empirically in the M0.4 spike
+ * (`docs/spike-results.md` "M0.4 — R2", "What surprised us"): observed
+ * `srwxr-xr-x` under the default umask, and mode `777` with `umask(0)`.
+ *
+ * Exported (not `doctor.ts`-local) for the same reason `gondolinSessionsDir`/
+ * `classifySessionSocketPath` are: that spike entry flags this as "worth a
+ * mode check in whatever M8.7 [`corb attach`] builds", a second consumer of
+ * the identical primitive, not just `corb doctor`'s report.
+ */
+export function isGroupOrOtherWritable(mode: number): boolean {
+  return (mode & WRITABLE_BY_GROUP_OR_OTHER) !== 0;
 }

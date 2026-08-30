@@ -28,6 +28,7 @@ import {
   classifySessionSocketPath,
   describeSessionSocketOverflow,
   gondolinSessionsDir,
+  isGroupOrOtherWritable,
   MAX_SESSIONS_DIR_LENGTH,
 } from "../vm/sockpath.ts";
 
@@ -619,6 +620,102 @@ function checkSocketPathBudget(): DoctorCheckResult {
 }
 
 // ---------------------------------------------------------------------------
+// Gondolin session socket permissions. `SessionIpcServer.start()` never
+// `chmod`s the socket it creates — its mode comes from the process umask at
+// bind time (`0777 & ~umask`) — so a permissive umask, or relocating
+// `GONDOLIN_SESSIONS_DIR` somewhere without `~/.cache`'s own `drwx------`
+// protection (exactly what `describeSessionSocketOverflow` above recommends
+// when the path is too long), can leave the socket connectable by any local
+// user. See `src/vm/sockpath.ts`'s "A second, related trap" section and
+// `docs/spike-results.md` "M0.4 — R2" for the full finding.
+// ---------------------------------------------------------------------------
+
+/** What `checkSocketPathPermissions` reads from disk, kept separate from the classification below so the classification is testable against a fabricated layout instead of a real directory. */
+export interface SessionSocketPermissionScan {
+  /** The Gondolin sessions directory this scan covers. */
+  sessionsDir: string;
+  /** `undefined` when `sessionsDir` does not exist — a fresh machine that has never created a Gondolin session, not a failure. */
+  dirMode: number | undefined;
+  /** The mode of every `*.sock` entry found directly inside `sessionsDir`, keyed by filename. */
+  socketModes: Record<string, number>;
+}
+
+/**
+ * Pure classification over an already-collected `SessionSocketPermissionScan`
+ * — same split as `classifyE2fsprogs`/`classifyCgroupControllers` above:
+ * this is the logic worth getting right, tested against a fabricated scan
+ * rather than only ever exercised against this machine's real umask.
+ *
+ * `warn`, not `fail`, for the same reason `classifySocketPathBudget` warns
+ * rather than fails: a writable socket does not stop corb from working
+ * today (the guest boots and runs fine either way) — it only means the
+ * unauthenticated exec channel into a running guest is reachable by other
+ * local users, which `corb doctor` should surface, not gate a working
+ * machine on.
+ */
+export function classifySessionSocketPermissions(scan: SessionSocketPermissionScan): DoctorCheckResult {
+  if (scan.dirMode === undefined) {
+    return ok("gondolin-socket-permissions", `'${scan.sessionsDir}' does not exist yet (no session has been created) — nothing to check.`);
+  }
+  const issues: string[] = [];
+  if (isGroupOrOtherWritable(scan.dirMode)) {
+    issues.push(`the directory itself (mode ${(scan.dirMode & 0o777).toString(8)})`);
+  }
+  for (const [name, mode] of Object.entries(scan.socketModes)) {
+    if (isGroupOrOtherWritable(mode)) {
+      issues.push(`'${name}' (mode ${(mode & 0o777).toString(8)})`);
+    }
+  }
+  if (issues.length > 0) {
+    return warn(
+      "gondolin-socket-permissions",
+      `group- or other-writable under '${scan.sessionsDir}': ${issues.join(", ")}. Gondolin never chmods its ` +
+        "per-session unix socket — its mode comes from your umask at bind time — and a writable socket is an " +
+        "unauthenticated exec channel into any running guest, since connect(2) on a unix socket only needs write " +
+        "permission. Tighten your umask (e.g. `umask 077`) or make this directory user-private " +
+        `(\`chmod 700 '${scan.sessionsDir}'\`).`,
+    );
+  }
+  return ok("gondolin-socket-permissions", `'${scan.sessionsDir}' and its session socket(s) are not group- or other-writable.`);
+}
+
+/** Real filesystem read behind `checkSocketPathPermissions` — stats the directory and every `*.sock` entry directly inside it. Nothing is created, bound, or written. */
+function scanSessionSocketPermissions(sessionsDir: string): SessionSocketPermissionScan {
+  let dirStat: fs.Stats;
+  try {
+    dirStat = fs.statSync(sessionsDir);
+  } catch (err) {
+    if (isEnoent(err)) {
+      return { sessionsDir, dirMode: undefined, socketModes: {} };
+    }
+    throw err;
+  }
+
+  const socketModes: Record<string, number> = {};
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(sessionsDir);
+  } catch {
+    entries = [];
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".sock")) {
+      continue;
+    }
+    try {
+      socketModes[entry] = fs.statSync(path.join(sessionsDir, entry)).mode;
+    } catch {
+      // Removed between readdir and stat (e.g. its session ended concurrently) — not a failure, just skip it.
+    }
+  }
+  return { sessionsDir, dirMode: dirStat.mode, socketModes };
+}
+
+function checkSocketPathPermissions(): DoctorCheckResult {
+  return classifySessionSocketPermissions(scanSessionSocketPermissions(gondolinSessionsDir()));
+}
+
+// ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
 
@@ -673,6 +770,7 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   checks.push(checkImageResolvable());
   checks.push(checkCgroupControllers(process.platform));
   checks.push(checkSocketPathBudget());
+  checks.push(checkSocketPathPermissions());
 
   return buildDoctorReport(checks);
 }
