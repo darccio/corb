@@ -46,7 +46,7 @@ export function defaultAuditPath(stateDir: string = corbStateDir()): string {
 }
 
 /**
- * Directory holding Corb's own session sidecars (`docs/design.md` §5.6, §3)
+ * Directory holding Corb's own session sidecars (`docs/design.md` §7, §3)
  * inside `stateDir` (defaults to `corbStateDir()`) — one `<id>.json` file per
  * session, `id` matching Gondolin's own `vm.id`. This is only ever a default
  * a caller may pass on to `src/vm/registry.ts` — that module takes a plain

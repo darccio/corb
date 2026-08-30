@@ -48,7 +48,7 @@ export interface VerifyImageOptions {
 const DEFAULT_ALLOWED_HOSTS = ["api.anthropic.com", "github.com"];
 
 // No login shell, so no reliance on /etc/profile; matches the array-exec
-// convention used throughout the rest of Corb (see docs/design.md §5.4).
+// convention used throughout the rest of Corb (see docs/gondolin-notes.md §3).
 const BASE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 function pass(name: string, detail: string): GateResult {

@@ -2,12 +2,12 @@
 // by re-executing `corb run` itself under `systemd-run --user --scope` with
 // `-p MemoryMax=…`/`-p TasksMax=…`/`-p CPUQuota=…`, rather than attaching a
 // cgroup to `vm.getHostPid()` after the fact. Attach-after-the-fact is the
-// naive alternative `docs/design.md` §7 itself shows and explicitly warns
-// against ("Attach timing matters: confirm the PID is stable early enough to
-// attach the cgroup before the guest can do meaningful work, not after") —
-// re-exec sidesteps the whole timing problem by having the limit already in
-// place, on the whole process tree, before `corb` (and therefore QEMU) ever
-// starts.
+// naive alternative `docs/design.md` §7 ("Host resource limits: re-exec, not
+// attach") describes and rejects: `vm.getHostPid()` only returns a pid once
+// the VM already exists, so attaching then leaves a window of unknown length
+// in which the guest runs unconstrained. Re-exec sidesteps the whole timing
+// problem by having the limit already in place, on the whole process tree,
+// before `corb` (and therefore QEMU) ever starts.
 //
 // One correction to note for a future reader: the systemd property for the
 // pids controller is `TasksMax=`, not `PidsMax=` — confirmed both by `man

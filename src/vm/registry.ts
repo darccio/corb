@@ -7,7 +7,7 @@
 // registry knows nothing about workspaces: its own `SessionInfo` shape is
 // just `{ id, pid, socketPath, createdAt, label }`. Corb's sidecar is the
 // side-channel that remembers what a session actually mounted and how it was
-// configured — `docs/design.md` §5.6: "dirs, image ref + content hash, audit
+// configured — `docs/design.md` §7: "dirs, image ref + content hash, audit
 // path, pid, started-at" — plus `sessionLabel`, since M8 items after this one
 // (`corb ls` etc.) need to display it without re-deriving it.
 //
@@ -54,7 +54,7 @@ export interface SessionSidecarDir {
   mode: "ro" | "rw";
 }
 
-/** The guest image a session booted from — "image ref + content hash" per `docs/design.md` §5.6, matching `src/vm/image.ts`'s `ResolvedCorbImage.selector`/`.buildId` fields (not its `arch`/`assetDir`, which are re-derivable and not part of what the sidecar needs to remember). */
+/** The guest image a session booted from — "image ref + content hash" per `docs/design.md` §7, matching `src/vm/image.ts`'s `ResolvedCorbImage.selector`/`.buildId` fields (not its `arch`/`assetDir`, which are re-derivable and not part of what the sidecar needs to remember). */
 export interface SessionSidecarImage {
   selector: string;
   buildId: string | undefined;

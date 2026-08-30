@@ -392,7 +392,7 @@ export function classifySshAuthSock(sockPath: string | undefined, socketExists: 
         "git-over-SSH will likely fail until it points at a live agent.",
     );
   }
-  // Heuristic only, per docs/design.md §5.2: 1Password's agent prompts
+  // Heuristic only, per the top-level plan's §5.2: 1Password's agent prompts
   // per-signature in a way that can look like a hang behind Pi's full-screen
   // TUI. Not a guarantee — just a distinct, more actionable warn when it's
   // cheaply detectable.

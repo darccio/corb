@@ -577,12 +577,25 @@ has no opinion about correlating them:
 | `vfs` | the policy provider's deny callback |
 | `gate` | content-check outcomes, recorded by the sentinel handler |
 
-Corb writes all four to one JSONL file with one schema:
+A fifth channel is Corb's own rather than the SDK's:
+
+| Channel | Source |
+|---|---|
+| `session` | `runSession()` itself — one line per session lifecycle transition |
+
+`session` records `start` before anything is booted (so a pre-boot validation
+failure still lands in the log), `exit:<code>` on a normal end, `error` on an
+abnormal one, and `watchdog-expired` when the wall-clock limit in §7 fires. It
+exists because none of the four SDK-derived channels can say whether a session
+began at all, and a log of policy decisions with no record of the run they
+belong to is hard to read after the fact.
+
+Corb writes all five to one JSONL file with one schema:
 
 ```ts
 interface AuditEvent {
   ts: number;
-  channel: "http" | "ssh" | "vfs" | "gate";
+  channel: "http" | "ssh" | "vfs" | "gate" | "session";
   decision: "allow" | "deny";
   subject: string;    // host, repo, path, or op
   reason?: string;
@@ -610,30 +623,125 @@ allocate memory, fork, and fill disk inside the VM. There is no in-guest
 mechanism to stop it. Everything here is therefore host-side and needs zero
 guest cooperation.
 
-**Wall-clock watchdog.** Every session has a maximum lifetime, after which the
-host closes the VM. This is not optional: with no exec timeout and no way to
-kill a guest process, `vm.close()` is the only reliable termination primitive
-Corb has.
+**Wall-clock watchdog.** A session configured with `vm.max-session` gets a
+maximum lifetime, after which the host closes the VM. `vm.close()` is the
+termination primitive because it is the only reliable one Corb has: there is no
+exec timeout and no way to kill a guest process.
 
 ```ts
 const watchdog = setTimeout(() => vm.close(), maxSessionMs);
 ```
 
-**Host resource limits on the VM process.** `vm.getHostPid()` returns the real
-hypervisor process id. On Linux, place it in a cgroup with explicit
-`MemoryMax`, `PidsMax` and `CPUQuota`. The SDK will not create one, so this is
-attached from outside it. macOS has no equivalent primitive, so the fallback is
-a polling watchdog that samples resident memory and CPU and closes the VM past a
-threshold.
+Expiry records a `session` / `watchdog-expired` line in the audit log and exits
+`124` — `timeout(1)`'s conventional code for the same event — so a session that
+ran out of time is distinguishable in a transcript from one that crashed or was
+signalled. Leaving `vm.max-session` unset disables the watchdog outright; that
+is a real choice a config can make, not a default worth pretending away.
 
-Attach timing matters: confirm the PID is stable early enough to attach the
-cgroup before the guest can do meaningful work, not after
-(`gondolin-notes.md` R15).
+### Host resource limits: re-exec, not attach
 
-**Cleanup.** `vm.close()` on every exit path, including signal handlers and
-unhandled rejections. A VM whose host process exits without closing leaves QEMU
-running. The SDK's session registry (`listSessions`, `gcSessions`) is the
-recovery path for orphans.
+The limit has to exist *before* the hypervisor does. The obvious approach loses
+that race by construction: `vm.getHostPid()` returns the real hypervisor process
+id, but it only returns it once the VM has been created, so attaching a cgroup
+to that pid from outside the SDK leaves a window — of unknown length, with
+nothing in the SDK to narrow it or report when it closes — in which the guest is
+already running unconstrained.
+
+Corb inverts it. When a session configures `[vm.limits]` and `CORB_SCOPED` is
+unset, `corb run` re-executes *itself* under a transient systemd user scope,
+before `VM.create()` is ever reached:
+
+```
+systemd-run --user --scope --collect --quiet \
+  -p MemoryMax=… -p TasksMax=… -p CPUQuota=… \
+  -- <process.execPath> <process.argv.slice(1)…>
+```
+
+with `CORB_SCOPED=1` in the child's environment so it does not re-exec again.
+The command is rebuilt from `process.execPath` and `process.argv.slice(1)`,
+never a textual `corb …` reconstruction, so it behaves identically under
+`node src/cli.ts run …` in development and under the installed bin shim. `stdio`
+is inherited, so the agent's TUI and pty behave exactly as in a direct run, and
+the parent exits with the child's exact exit code: this is a re-exec, not a
+supervisor. `--collect` unloads the transient unit once it completes even on
+failure, so no "failed"-looking unit lingers; `--quiet` suppresses systemd-run's
+`Running as unit: run-xxxx.scope` line, which would otherwise read as stray
+`corb` output.
+
+The limit then applies to the whole process tree — `corb`, QEMU, everything they
+spawn — from before QEMU exists, and no pid is ever observed.
+
+**Config key to systemd property.** The mapping is not one-to-one in spelling:
+
+| Config key | systemd property |
+|---|---|
+| `vm.limits.memory-max` | `MemoryMax=` |
+| `vm.limits.pids-max` | `TasksMax=` |
+| `vm.limits.cpu-quota` | `CPUQuota=` |
+
+`TasksMax=`, not `PidsMax=`: the pids controller's systemd property is spelled
+`TasksMax`, and `-p PidsMax=…` fails outright with `Unknown assignment` —
+confirmed against a real `systemd-run` and `man systemd.resource-control`, not
+inferred from the controller's name. Corb's own config key stays `pids-max`;
+only the systemd-side spelling differs. `MemoryMax=` and `CPUQuota=` take the
+raw config strings unchanged, because the size and percentage formats Corb's
+schema already validates are systemd's own.
+
+**Only what was configured, and never partially.** Only the `vm.limits` keys
+actually set are examined: an unset key contributes no property and its
+controller is not required. Each configured key needs its controller (`memory`,
+`pids`, `cpu`) delegated to the user's systemd manager, read from
+`/sys/fs/cgroup/user.slice/user-<uid>.slice/user@<uid>.service/cgroup.controllers`.
+If any configured key's controller is missing, the whole mechanism is skipped —
+never a partial re-exec applying just the deliverable subset, which would hand a
+session quietly fewer limits than its config asked for while looking like it
+worked. The session then runs unlimited with a warning on stderr rather than
+failing outright: an operator's incomplete cgroup delegation should not stop the
+agent from working, the same fail-open-and-say-so posture §5 takes for the
+content-check service.
+
+That warn-and-continue path covers every other way this can be unavailable, not
+only missing delegation: `systemd-run` absent (the spawn fails with `ENOENT`), or
+a platform with no `/sys/fs/cgroup` at all — macOS reads as "nothing delegated"
+and falls through identically. A polling watchdog sampling resident memory and
+CPU would be the macOS-shaped equivalent of a cgroup; **it is not built.** A
+macOS session that configures `[vm.limits]` today gets the wall-clock watchdog,
+no resource limits at all, and a warning saying so.
+
+### Cleanup and session sidecars
+
+`vm.close()` on every exit path, including signal handlers and unhandled
+rejections. A VM whose host process exits without closing leaves QEMU running.
+Gondolin's own session registry (`listSessions`, `findSession`, `gcSessions`) is
+the recovery path for those orphans.
+
+That registry is not enough on its own, because it knows nothing about
+workspaces: its record is `{ id, pid, socketPath, createdAt, label }`. What a
+session actually mounted, which image it booted, and where its audit log went are
+all absent from it. Corb therefore writes a sidecar alongside it — one
+`<id>.json` under `~/.local/state/corb/sessions/`, holding the workspace dirs
+(name, host path, `ro`/`rw`), the image ref and its content hash, the audit path,
+the pid, and the start time.
+
+- `id` is Gondolin's own `vm.id`, and is also the sidecar's filename stem, so the
+  two registries join by exact id with no mapping table between them.
+- `pid` is the host `corb run` process, matching what Gondolin's registry records
+  for the same session — deliberately *not* `vm.getHostPid()`, which is a
+  different process, so that "pid" means one thing across both files.
+- The sidecar is written as soon as `vm.id` is known, so a session is visible
+  while it is still running rather than only after it ends, and removed during
+  shutdown after `vm.close()`.
+
+The human-legible label is a separate value: `corb:<name>:<shortid>`, where
+`<shortid>` is eight characters minted host-side *before* `VM.create()`. It is
+not `vm.id`, tempting as that would be, and cannot be: `sessionLabel` is one of
+`VM.create()`'s own inputs, so at the moment the label has to exist, `vm.id` does
+not yet. The label is for humans to read; the join key is `id`.
+
+**Not built yet — M8.4 through M8.7:** `corb ls`, `corb attach`, `corb kill` and
+`corb gc`. The sidecar is what makes them possible, and is already written and
+cleaned up on every session, but nothing reads it back yet. Until those land, the
+recovery path for an orphan is Gondolin's own registry and nothing richer.
 
 ---
 
@@ -761,7 +869,7 @@ user's choice through, not reimplement provider logic.
 - The privilege-drop helper's target process shows `NoNewPrivs=1` and no
   supplementary groups in `/proc/self/status`.
 - Pointing the helper at a nonexistent binary exits 127, not 0.
-- The audit log contains at least one entry from each of the four channels after
+- The audit log contains at least one entry from each of the five channels after
   a representative session.
 - A session exceeding its wall-clock limit is closed, and no hypervisor process
   survives host exit.

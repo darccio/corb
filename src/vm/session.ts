@@ -236,8 +236,8 @@ export function buildGateConfigMount(): VirtualProvider {
 }
 
 // No login shell for any exec here (array-form `exec` does not run one —
-// `docs/design.md` §5.4), so nothing can come from `/etc/profile`; PATH is
-// set explicitly everywhere, matching `image/verify.ts`'s own convention.
+// `docs/gondolin-notes.md` §3), so nothing can come from `/etc/profile`; PATH
+// is set explicitly everywhere, matching `image/verify.ts`'s own convention.
 const GUEST_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 // Confirmed against the real, locally-built `corb:0.1.0` image (M1.3/M1.4):
@@ -473,7 +473,7 @@ export function rawWorkspacePath(name: string): string {
 
 /**
  * Guest environment for the `dropcap`/`pi` exec. None of this can come from
- * `/etc/profile` (`docs/design.md` §5.4) — array-form `exec` runs no login
+ * `/etc/profile` (`docs/gondolin-notes.md` §3) — array-form `exec` runs no login
  * shell — so everything the guest process needs is listed explicitly here.
  * `NODE_EXTRA_CA_CERTS`/`SSL_CERT_FILE`/etc. are deliberately *not* set:
  * `docs/gondolin-notes.md` R3 records that Gondolin's own guest init exports
@@ -563,7 +563,7 @@ export interface RunSessionOptions {
   name?: string;
   /**
    * `VM.create()`'s `sessionLabel`. Defaults to
-   * `` `corb:${name}:${shortid}` `` (`docs/design.md` §5.6), where `name` is
+   * `` `corb:${name}:${shortid}` `` (`docs/design.md` §7), where `name` is
    * `options.name ?? path.basename(primaryEntry.hostPath)` and `shortid` is
    * an 8-character id this function mints itself via `randomUUID().slice(0,
    * 8)` before `VM.create()` — `sessionLabel` is a `VM.create()` *input*, so
@@ -716,7 +716,8 @@ function findPrimaryEntry(dirs: ResolvedWorkspaceDir[], primary: string): Resolv
 /**
  * Boots the guest image, mounts every entry in `options.dirs` at its own
  * `` `/work/${name}` ``, and runs Pi's TUI inside `` `/work/${options.primary}` ``
- * via `dropcap`, following the pattern in `docs/design.md` §5.5. Under
+ * via `dropcap`, following the wiring in `docs/design.md` §2 (and §7 for the
+ * teardown side). Under
  * normal operation this does not return: the guest's own exit code (or an
  * error) is propagated through `ShutdownController`'s `exit` function, which
  * defaults to the real `process.exit`.
@@ -730,7 +731,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   const primaryEntry = findPrimaryEntry(resolvedDirs, options.primary);
   const resolvedImage = resolveRuntimeImage(options.image);
 
-  // `docs/design.md` §5.6's `"corb:<name>:<shortid>"` format. `shortid` is
+  // `docs/design.md` §7's `"corb:<name>:<shortid>"` format. `shortid` is
   // minted here, before `VM.create()`, since `sessionLabel` is one of that
   // call's own inputs — it cannot be derived from `vm.id`, which doesn't
   // exist until `VM.create()` resolves. See `RunSessionOptions.sessionLabel`'s
