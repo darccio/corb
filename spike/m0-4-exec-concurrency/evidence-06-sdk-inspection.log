@@ -1,0 +1,91 @@
+== pinned version ==
+@earendil-works/gondolin 0.12.0
+
+== 1. control protocol: the complete client->server message set ==
+-- (there is no 'list execs' and no 'join exec N'; ClientMessage is closed) --
+export type ClientMessage = BootCommandMessage | ExecCommandMessage | StdinCommandMessage | PtyResizeCommandMessage | ExecWindowCommandMessage | LifecycleCommandMessage | SnapshotCommandMessage;
+-- and the complete server->client set --
+export type ServerMessage = ExecResponseMessage | ErrorMessage | SnapshotResponseMessage | StatusMessage;
+
+== 2. server-ops: handleExec's dispatch — what actually gates a second exec ==
+912:        // Keep file operations mutually exclusive with exec start. Once the file
+913-        // operation completes, queued execs are started concurrently.
+914-        if (this.activeFileOpId !== null) {
+915-            this.execQueue.push(entry);
+916-            return;
+917-        }
+918-        this.startExecNow(entry);
+919-    }
+920-    handleStdin(client, message) {
+
+== 3. server-ops: the only admission limit is maxQueuedExecs ==
+847:        if (this.execPressure() >= this.options.maxQueuedExecs) {
+852:                message: `too many concurrent exec requests (limit ${this.options.maxQueuedExecs})`,
+16:const DEFAULT_MAX_QUEUED_EXECS = 64;
+520:        maxQueuedExecs: options.maxQueuedExecs ?? DEFAULT_MAX_QUEUED_EXECS,
+
+== 4. server-ops: execPressure() ==
+42:    execPressure() {
+43-        let pressure = this.startedExecs.size;
+44-        for (const id of this.inflight.keys()) {
+45-            if (!this.startedExecs.has(id))
+46-                pressure += 1;
+47-        }
+48-        return pressure;
+49-    }
+50-    scheduleControllerIdlePause() {
+
+== 5. server-ops: waitForExecIdle() — busy-waits on ANY live exec ==
+518:    async waitForExecIdle(signal) {
+519-        while (this.inflight.size > 0 ||
+520-            this.startedExecs.size > 0 ||
+521-            this.activeFileOpId !== null ||
+522-            this.execQueue.length > 0) {
+523-            if (signal?.aborted) {
+524-                throw new Error("operation aborted");
+525-            }
+526-            await new Promise((resolve) => {
+527-                const t = setTimeout(resolve, 10);
+528-                t.unref?.();
+529-            });
+530-        }
+531-    }
+532-    isNonTerminalExecErrorCode(code) {
+
+== 6. server-ops: who calls waitForExecIdle() (i.e. what a live exec blocks) ==
+4:66-    async readGuestFileStream(filePath, options = {}) {
+7:69:        await this.waitForExecIdle(options.signal);
+12:151-    async writeGuestFile(filePath, input, options = {}) {
+15:154:        await this.waitForExecIdle(options.signal);
+20:205-    async deleteGuestFile(filePath, options = {}) {
+23:208:        await this.waitForExecIdle(options.signal);
+
+== 7. vm/core.d.ts: execPressure/waitForExecIdle are NOT on the VM surface ==
+-- 'server' is a private field; grep the whole public VM declaration: --
+0
+61:    private server;
+
+== 8. session-registry: SessionIpcServer gives each client its own id space ==
+284:        // Per-client id translation to keep each external channel independent.
+285-        const externalToInternal = new Map();
+286-        const internalToExternal = new Map();
+287-        let connection = null;
+288-        const ensureConnection = () => {
+10:const INTERNAL_ID_FLOOR = 0x80000000;
+263:            if (this.nextInternalId < INTERNAL_ID_FLOOR ||
+269:            if (candidate < INTERNAL_ID_FLOOR)
+-- an id the client never allocated is rejected, not routed: --
+401-        };
+402-        const forwardMappedIdMessage = (message) => {
+403-            const internalId = externalToInternal.get(message.id);
+404-            if (internalId === undefined) {
+405:                sendError(socket, "unknown_id", "request id not found", message.id);
+
+== 9. session-registry: what an attach client is NOT allowed to do ==
+463:                // Attach clients connect to an already-running VM; ignore boot requests.
+464-                return;
+465-            }
+466-            if (message.type === "exec") {
+485-            }
+486-            if (message.type === "lifecycle") {
+487:                sendError(socket, "unsupported", "lifecycle actions are not supported over attach IPC");

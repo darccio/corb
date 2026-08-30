@@ -1,0 +1,41 @@
+[15:18:09.993 t+     3ms] image: selector=corb:0.1.0 buildId=8b79a869-e2c3-56ce-9ec9-91ef108802be
+[15:18:10.093 t+   103ms] VM.create() returned id=3c5d008a-188b-4c02-94a0-9eb6641d6aba
+[15:18:43.600 t+ 33610ms]   boot warm-up exec: resolved after 33449ms
+[15:18:43.601 t+ 33611ms] guest up; hostPid=511781
+[15:18:43.652 t+ 33662ms] long pty exec confirmed alive
+[15:18:43.652 t+ 33662ms]   execPressure(long exec only) = 1
+[15:18:43.653 t+ 33663ms] issuing 80 concurrent 'sleep 60' execs alongside it
+[15:18:48.690 t+ 38700ms] still running: 63, rejected: 17
+[15:18:48.690 t+ 38700ms] first rejection at index 63: error queue_full: too many concurrent exec requests (limit 64)
+[15:18:48.690 t+ 38701ms] last  rejection at index 79
+[15:18:48.691 t+ 38701ms]   execPressure(at the ceiling) = 64
+[15:18:48.741 t+ 38751ms] long pty exec still answering after the flood: true
+[15:18:48.741 t+ 38751ms] 
+[15:18:48.741 t+ 38751ms] ================ SUMMARY ================
+{
+  "attempts": 80,
+  "accepted": 63,
+  "rejected": 17,
+  "firstRejectionIndex": 63,
+  "rejectionMessage": "error queue_full: too many concurrent exec requests (limit 64)",
+  "execPressureAtCeiling": 64,
+  "longExecSurvived": true
+}
+[15:18:48.741 t+ 38751ms] closing VM (this abandons the sleeps; vm.close() is the only kill primitive)
+file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1445
+        const error = new Error(`error ${message.code}: ${message.message}`);
+                      ^
+
+Error: error server_shutdown: server is shutting down
+    at VM.handleError (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1445:23)
+    at VM.handleMessage (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1413:18)
+    at LocalSandboxClient.onMessage (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1196:22)
+    at LocalSandboxClient.sendJson (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/sandbox/client.js:12:14)
+    at sendJson (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/sandbox/client.js:29:19)
+    at sendError (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/sandbox/client.js:35:12)
+    at SandboxServer.failInflight (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/sandbox/server-ops.js:1276:13)
+    at SandboxServer.closeInternal (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/sandbox/server-ops.js:453:14)
+    at file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/sandbox/server-ops.js:439:54
+    at AsyncSingleflight.run (file:///home/dario/Code/corb/.claude/worktrees/practical-booth-05db1d/node_modules/@earendil-works/gondolin/dist/src/utils/async.js:44:24)
+
+Node.js v26.7.0

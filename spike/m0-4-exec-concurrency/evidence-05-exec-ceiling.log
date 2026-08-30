@@ -1,0 +1,26 @@
+[15:19:25.335 t+     2ms] image: selector=corb:0.1.0 buildId=8b79a869-e2c3-56ce-9ec9-91ef108802be
+[15:19:25.419 t+    86ms] VM.create() returned id=f0a4aacc-d80a-47c6-8251-c3ebf9b6ff3f
+[15:19:58.909 t+ 33576ms]   boot warm-up exec: resolved after 33438ms
+[15:19:58.910 t+ 33577ms] guest up; hostPid=512264
+[15:19:58.961 t+ 33628ms] long pty exec confirmed alive
+[15:19:58.961 t+ 33628ms]   execPressure(long exec only) = 1
+[15:19:58.961 t+ 33628ms] issuing 80 concurrent 'sleep 60' execs alongside it
+[15:20:03.997 t+ 38664ms] still running: 63, rejected: 17
+[15:20:03.998 t+ 38665ms] first rejection at index 63: error queue_full: too many concurrent exec requests (limit 64)
+[15:20:03.998 t+ 38665ms] last  rejection at index 79
+[15:20:03.998 t+ 38665ms]   execPressure(at the ceiling) = 64
+[15:20:04.049 t+ 38716ms] long pty exec still answering after the flood: true
+[15:20:04.049 t+ 38716ms] 
+[15:20:04.049 t+ 38716ms] ================ SUMMARY ================
+{
+  "attempts": 80,
+  "accepted": 63,
+  "rejected": 17,
+  "firstRejectionIndex": 63,
+  "rejectionMessage": "error queue_full: too many concurrent exec requests (limit 64)",
+  "execPressureAtCeiling": 64,
+  "longExecSurvived": true
+}
+[15:20:04.050 t+ 38717ms] closing VM (this abandons the sleeps; vm.close() is the only kill primitive)
+[15:20:04.052 t+ 38719ms]   long exec settled: rejected error server_shutdown: server is shutting down
+[15:20:04.121 t+ 38788ms] VM closed

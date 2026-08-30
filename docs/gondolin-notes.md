@@ -115,12 +115,32 @@ consume `proc.stdout` yourself.
   `kill` anywhere in the callback surface. Any timeout-and-terminate behaviour
   is yours to build, and the only reliable termination primitive is
   `vm.close()`.
-- **Concurrency is documented inconsistently.** One page says the guest runs one
-  command at a time and that a long-running `exec` blocks further exec
-  requests; another says each attached client gets an independent command
-  channel with no cross-talk. The types expose `waitForExecIdle()` and
-  `execPressure()`, which suggests serialisation pressure is a real phenomenon.
-  Measure before designing around it (risk R2).
+- **Concurrency is documented inconsistently — and measurement settled it in
+  favour of the permissive page.** One page says the guest runs one command at
+  a time and that a long-running `exec` blocks further exec requests; another
+  says each attached client gets an independent command channel with no
+  cross-talk. **Measured (M0.4, 2026-08-30, risk R2): `exec` does not
+  serialise.** A second `exec` issued alongside a long-lived `pty: true` exec
+  starts in 5-6ms and runs genuinely in parallel (four concurrent `sleep 3`
+  execs complete in 3013ms, not ~12000ms), from the same host process and from
+  a separate one over `connectToSession()`; the first exec keeps accepting
+  input and producing correct output throughout, with no cross-talk in either
+  direction. The only queueing branch in `handleExec` is against an in-flight
+  **file operation**, not against other execs. The one real limit is
+  `SandboxServerOptions.maxQueuedExecs`, default 64, counted session-wide
+  across every connected client; past it, `exec` is refused with
+  `code: "queue_full"` rather than queued.
+- **A live `exec` does block `vm.fs`'s file operations, though.** That is what
+  `waitForExecIdle()` is for, and its only three callers are
+  `readGuestFileStream`, `writeGuestFile` and `deleteGuestFile` — i.e.
+  `vm.fs.readFile`, `vm.fs.writeFile` and `vm.fs.deleteFile`. They wait for
+  **zero** live execs, so with a long-running interactive exec they never
+  complete. `vm.fs.stat`/`listDir`/`mkdir`/`access`/`rename` are implemented
+  as execs and are unaffected. See risk R2 and `spike-results.md` M0.4.
+- **`execPressure()` and `waitForExecIdle()` are not reachable from `VM`.**
+  They live on `SandboxServerOps`, which `VM` holds in a `private server`
+  field and never re-exposes (`vm/core.d.ts` mentions neither). No host code
+  can call them; do not design a "is the session busy?" check around either.
 
 ---
 
@@ -477,6 +497,9 @@ file semantics).
 | 13 | SSH egress and mapped TCP bypass HTTP hooks and secrets | Police those paths separately |
 | 14 | Every VFS path is aliased under `fuseMount` | Path policy must cover both spellings |
 | 15 | Adding guest packages requires an image rebuild | Alpine-only image builder |
+| 16 | `exec` is concurrent, but `vm.fs`'s file ops are not | `readFile`/`writeFile`/`deleteFile` wait for **zero** live execs, so they never complete during a long-running interactive exec |
+| 17 | `maxQueuedExecs` defaults to 64, counted session-wide | Past it `exec` fails with `queue_full`; every attach client draws on the same budget |
+| 18 | `vm.close()` rejects every live exec with `server_shutdown` | An un-awaited `vm.exec()` promise becomes an unhandled rejection and, under Node's default, kills the host process |
 
 ---
 
@@ -493,7 +516,7 @@ Status values:
 | # | Risk | Detail | Status |
 |---|---|---|---|
 | R1 | HTTP/2 to the model API | Gondolin supports HTTP/1.x and TLS interception only, with no HTTP/2 or HTTP/3. Model-provider SDKs commonly negotiate h2, and some agent configurations select a WebSocket transport (supported, but opaque after the 101 handshake). **Closed by M0.1 (2026-08-22):** a real TLS handshake to `api.anthropic.com` from inside a guest completes and negotiates `http/1.1` even though the client offers `h2`; a local chunked-response test confirms the egress mediation delivers streamed chunks incrementally, not buffered. See `spike-results.md` for verbatim evidence. | closed |
-| R2 | Exec concurrency with a long-lived interactive process | The docs contradict themselves (§3). The agent's TUI is one long-running `exec`. Start a long exec, attempt a second, and measure `execPressure()`. If exec serialises, the design must need exactly one exec — everything else must be network- or VFS-mediated — and `vm.fs` must cover host-side file needs. | open |
+| R2 | Exec concurrency with a long-lived interactive process | The docs contradict themselves (§3). The agent's TUI is one long-running `exec`. **Closed by M0.4 (2026-08-30): `exec` does not serialise, and the risk's own proposed mitigation was backwards.** With a long-lived `pty: true`/`stdin: true` exec running (production's `dropcap` -> shell shape), a second `vm.exec()` starts in 5-6ms and runs genuinely in parallel (four concurrent `sleep 3` execs finish in 3013ms, not ~12000ms; `execPressure()` reads 5); the same holds for a second exec issued from a *separate host process* over `connectToSession()` (13ms end to end, stdout returned). The long exec survives untouched — it accepted input and produced correct output *during* the second exec's session, and neither stream saw a byte of the other's. Cause, read from the shipped 0.12.0 source: `handleExec`'s only queueing branch is against an in-flight **file operation**, never against another exec; the sole limit is `maxQueuedExecs` (default 64, session-wide across all clients, then `code: "queue_full"`). The inversion: it is `vm.fs`'s file operations that serialise, via `waitForExecIdle()`'s wait-for-*zero*-execs — `vm.fs.readFile`/`writeFile`/`deleteFile` can never complete while Pi's TUI exec is alive, so this risk's "`vm.fs` must cover host-side file needs" fallback was the one thing that would not have worked. (`vm.fs.stat`/`listDir`/`mkdir`/`access`/`rename` are exec-backed and unaffected; Corb calls none of the three blocked methods today.) Two secondary corrections: `execPressure()`/`waitForExecIdle()` are **not** on `VM`'s public surface (`private server`; `vm/core.d.ts` mentions neither), so no design may depend on them; and `vm.close()` rejects every live exec with `server_shutdown`, which under Node's default `--unhandled-rejections=throw` kills the host process if the exec promise has no handler. **Consequence for M8.7:** `corb attach` is viable, but only as a *new* interactive shell in the running session — the control protocol has no "list execs" and no "join exec N" (`ClientMessage` is a closed union), `SessionIpcServer` gives each client a disjoint request-id space, and addressing the owner's exec id from an attach client is refused with `unknown_id`. Rejoining or mirroring Pi's TUI is not expressible in 0.12.0. See `spike-results.md` M0.4 for verbatim evidence. | closed |
 | R3 | MITM CA and Node | **Closed by M0.2 (2026-08-22):** HTTPS from node, curl, git and go all pass inside the guest, and — surprisingly — none needs an explicit CA env var from the host application: Gondolin's own guest init (`init-scripts.js`) unconditionally exports `SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE`/`NODE_EXTRA_CA_CERTS` for every guest process regardless of `VM.create()`/`vm.exec()` config; git and go inherit trust via `SSL_CERT_FILE` with no tool-specific var needed. A genuine negative control (all CA vars forced to a bad path) reproduces a clean cert-trust failure per tool, confirming causality. See `spike-results.md` for verbatim evidence. | closed |
 | R4 | OCI rootfs viability | OCI swaps the rootfs only; boot stays Alpine-derived; the rootfs must contain `/bin/sh`. Confirm the agent and any toolchains work in the resulting rootfs, and that `arch` matches the host (aarch64 on Apple Silicon). | open |
 | R5 | VFS uid/gid reporting | Can a provider report `uid`/`gid` in `stat` such that the non-root guest user appears to own the workspace? If yes, no `/etc/passwd` fixup is needed at all. If no, an equivalent fixup belongs in `rootfsInitExtra`. **Closed (2026-08-22):** irrelevant either way — the question this risk asked no longer matters, because `stat`-level uid/gid reporting was never the actual blocker. The real blocker, found empirically: `sandboxfs` mounts every `vfs.mounts` path with a hardcoded FUSE option string (`mountFuse` in `guest/src/sandboxfs/main.zig`: `fd={d},rootmode=40000,user_id=0,group_id=0,default_permissions`) with **no `allow_other`**, so per plain Linux FUSE semantics only the mounting uid (0) can touch the mount at all — reporting a friendlier `uid`/`gid` in `stat` responses would not have helped, since the kernel FUSE layer rejects a non-owning uid's request before any inode metadata (including a provider-supplied `uid`/`gid`) is even consulted. No upstream config surface exists to add `allow_other` (Gondolin issue #76, closed unanswered against 0.12.0). Fixed by re-exporting the raw mount through `bindfs` (built from source; not packaged for any current Alpine stable branch) with the workspace uid/gid squashed via `--force-user`/`--force-group` and `allow_other` on by bindfs's own default — see R18 and `image/overlay/init-extra.sh`. | closed |

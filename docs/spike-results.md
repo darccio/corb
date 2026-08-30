@@ -448,3 +448,521 @@ Left running: nothing. The VM was closed in a `finally` block on every run
 (`run-spike.mjs`, `diag-env.mjs`, `diag-env2.mjs`, `diag-ca-install.mjs`,
 `diag-negative-control.mjs` all follow this pattern); no lingering
 QEMU/`gondolin-krun-runner` processes after the session.
+
+---
+
+## M0.4 — R2: exec concurrency with a long-lived interactive process
+
+**Date:** 2026-08-30
+**Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
+**Verdict: PASS — exec does not serialise.** A second `exec` runs immediately
+and in parallel with a long-lived `pty: true` exec, from the same host
+process *and* from a separate host process over `connectToSession()`. The
+long-lived exec is unaffected: it keeps answering commands throughout, and
+there is zero cross-talk in either direction. **`corb attach` (M8.7) is
+therefore viable** — but only as a *new* shell in the running session, never
+as a rejoin of Pi's existing TUI, which the control protocol cannot express
+at all. The SDK's self-contradiction (§3) resolves in favour of the
+"independent command channel, no cross-talk" page; the "one command at a
+time" page is wrong for `exec`. It is, however, *accidentally* right about
+one thing: `waitForExecIdle()` is real serialisation pressure, and it gates
+`vm.fs`'s **file operations** — which means Corb's `runSession()` can never
+use `vm.fs.readFile`/`writeFile`/`deleteFile` while Pi's TUI is running.
+
+### What was built
+
+`spike/m0-4-exec-concurrency/`. Unlike M0.1 and M0.2 this spike has **no
+`package.json`, no `build-config.json` and no `assets/`**: it deliberately
+boots the *real* tagged runtime image via `resolveRuntimeImage()`
+(`src/vm/image.ts`), from the repo's own already-pinned `node_modules`, so
+that what is measured is the guest Corb actually ships — a standalone package
+with its own dependency tree would have measured a different image. It drives
+`VM.create()` directly rather than `runSession()`, the established convention
+for narrow SDK-behaviour checks (see `test/e2e/policygate-content.e2e.ts` and
+`test/e2e/dropcap-status.e2e.ts` for the same reasoning).
+
+- `lib.mjs` — shared helpers. The important one is `withTimeout`: **every**
+  wait in this spike is bounded, and "still pending after N ms" is recorded
+  as a result rather than hung on. If exec had genuinely serialised, a naive
+  `await` would have hung forever and produced no evidence at all.
+- `same-process.mjs` — measurements 1, 1b, 3, 4 and 5, in one process and one
+  VM boot, run twice over two long-exec shapes: `A` = plain `/bin/sh` with a
+  pty, `B` = `dropcap 1000 1000 /bin/sh` with a pty, i.e. production's exact
+  wrapper with `pi` swapped for a shell. Takes `--no-warmup` to reproduce a
+  trap this spike fell into (see below).
+- `session-holder.mjs` — the "`corb run`" side of the cross-process leg.
+  Boots a VM, starts one long-lived `dropcap 1000 1000 /bin/sh` exec
+  (`pty: true`, `stdin: true`, `stdout: "pipe"` — `session.ts`'s shape),
+  logs every byte that exec emits with a wall-clock timestamp, samples
+  `execPressure()` every 2s, and takes commands (`send`, `expect`,
+  `assert-absent`, `pressure`, `status`, `quit`) so the spike can
+  independently interrogate the long exec from outside.
+- `attach-client.mjs` — the `corb attach` side. A **separate host process**
+  with no `VM` object, holding nothing but the session's unix socket. Speaks
+  the raw control protocol over `connectToSession()`.
+- `run-cross-process.sh` — orchestrates the two, `setsid`s the holder, waits
+  bounded for its state file, runs the attach client, then asks the holder
+  whether its long exec survived. Redirects `CORB_STATE_DIR`,
+  `CORB_CONFIG_DIR` and `GONDOLIN_SESSIONS_DIR` (to `/tmp/gsess`, 10
+  characters — well inside `src/vm/sockpath.ts`'s 66-character budget, so the
+  socket bind cannot silently fail and be misread as a concurrency failure).
+- `exec-ceiling.mjs` — how many concurrent execs the session actually allows.
+- `inspect-sdk.sh` — the reading half, made reproducible: prints the exact
+  shipped-SDK source behind every "why" claim below.
+
+### Reading the SDK first: what `corb attach` can and cannot be
+
+Confirmed independently, as the brief asked (full output:
+`evidence-06-sdk-inspection.log`). `ClientMessage` is a closed union and the
+complete client-to-server vocabulary is:
+
+```
+export type ClientMessage = BootCommandMessage | ExecCommandMessage | StdinCommandMessage | PtyResizeCommandMessage | ExecWindowCommandMessage | LifecycleCommandMessage | SnapshotCommandMessage;
+```
+
+There is **no "list running execs" and no "join exec N"**. `SessionIpcServer`
+additionally gives every connected client its own request-id space
+(`// Per-client id translation to keep each external channel independent.`,
+with internal ids allocated downward from `0xffffffff` above an
+`INTERNAL_ID_FLOOR` of `0x80000000`, disjoint from the session owner's small
+ids), and an id a client never allocated is refused rather than routed:
+
+```
+        const forwardMappedIdMessage = (message) => {
+            const internalId = externalToInternal.get(message.id);
+            if (internalId === undefined) {
+                sendError(socket, "unknown_id", "request id not found", message.id);
+```
+
+So rejoining Pi's existing TUI stream is not expressible, and a **new exec is
+the only thing `corb attach` could ever do**. This was then confirmed live —
+see Check 4b below.
+
+The mechanism that makes a second exec *work* is equally explicit.
+`handleExec` in `dist/src/sandbox/server-ops.js` has exactly one queueing
+branch, and it is not about other execs:
+
+```
+912:        // Keep file operations mutually exclusive with exec start. Once the file
+913-        // operation completes, queued execs are started concurrently.
+914-        if (this.activeFileOpId !== null) {
+915-            this.execQueue.push(entry);
+916-            return;
+917-        }
+918-        this.startExecNow(entry);
+```
+
+The only other gate is an admission limit, `maxQueuedExecs`, defaulting to
+`64`. Nothing serialises exec against exec.
+
+### Check 1 — same-process concurrency
+
+From `evidence-02-same-process.log`, shape A (plain `/bin/sh` + pty). The
+long exec is proven alive first, then a second `vm.exec()` is issued:
+
+```
+[15:29:10.084 t+ 33609ms] ================ SHAPE A (plain /bin/sh + pty): ["/bin/sh"] ================
+[15:29:10.136 t+ 33661ms]   long exec alive: true
+[15:29:10.137 t+ 33662ms]   execPressure(long exec running) = 1
+[15:29:10.137 t+ 33662ms] MEASUREMENT 1 — second one-shot vm.exec() while the long exec runs
+[15:29:10.142 t+ 33667ms]   second one-shot exec: resolved after 5ms
+[15:29:10.142 t+ 33667ms]   exitCode=0 stdout="SECOND_ONESHOT_9483760E\n"
+```
+
+Shape B (`dropcap 1000 1000 /bin/sh` + pty — production's wrapper) is
+identical:
+
+```
+[15:29:25.476 t+ 49001ms]   second one-shot exec: resolved after 5ms
+[15:29:25.476 t+ 49001ms]   exitCode=0 stdout="SECOND_ONESHOT_4DBC9534\n"
+```
+
+**5-6ms across runs** (6ms in
+`evidence-01-boot-warmup-trap-negative-control.log`), **not queued behind a
+shell that never exits.** The two shapes do not differ, so the simple
+stand-in is representative and the `dropcap` wrapper changes nothing about
+exec admission.
+
+"Accepted promptly" is not the same as "actually parallel", so measurement 1b
+uses wall-clock time as an independent check — four concurrent `sleep 3`
+execs alongside the long exec:
+
+```
+[15:29:10.894 t+ 34419ms]   execPressure(long exec + 4 sleeps, sampled 750ms in) = 5
+[15:29:13.155 t+ 36680ms]   four concurrent 3s sleeps: resolved after 2261ms
+[15:29:13.155 t+ 36680ms]   wall clock for 4x 'sleep 3': 3013ms (parallel ~3000ms, serialised ~12000ms)
+[15:29:13.155 t+ 36680ms]   exit codes: [0,0,0,0]
+```
+
+3013ms, not 12000ms. Genuinely parallel in the guest, not merely queued
+politely.
+
+### Check 2 — cross-process concurrency via `connectToSession()`
+
+**This is the one that decides M8.7.** From
+`evidence-03-cross-process-attach.log`. The holder process (pid 509514) has
+the long-lived `dropcap`+pty exec; the attach client (pid 509974) is a
+different process that only ever sees the socket:
+
+```
+-- gondolin sessions dir --
+srwxr-xr-x  1 dario dario    0 30 d’ag.    17:16 48f14dba-f89f-490e-abe6-6c3051c5bde1.sock
+
+[15:16:37.417 t+     1ms] attach client pid=509974, target session 48f14dba-f89f-490e-abe6-6c3051c5bde1
+[15:16:37.420 t+     4ms] ATTACH CHECK 1 — one-shot /bin/echo over connectToSession()
+[15:16:37.420 t+     4ms]   -> {"type":"exec","id":1,"cmd":"/bin/echo","argv":["ATTACH_ONESHOT_52411C42"],"env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]}
+[15:16:37.425 t+     9ms]   <- JSON {"type":"status","state":"running"}
+[15:16:37.433 t+    17ms]   <- stdout (id=1) "ATTACH_ONESHOT_52411C42\n"
+[15:16:37.433 t+    17ms]   <- JSON {"type":"exec_response","id":1,"exit_code":0}
+```
+
+It executes, and **its stdout comes back** — 13ms end to end, over a socket,
+from a process that has no `VM` object.
+
+### Check 4 — an *interactive* second exec (what `corb attach` actually wants)
+
+Both in-process and over the attach socket. Over the socket, a `pty: true`
+`/bin/sh`, driven for two round-trips with a `pty_resize` in between (the
+`\u001b[6n` cursor-position queries are the shell's own output; the logs
+JSON-escape them, so what appears below is literal text, not control bytes):
+
+```
+[15:16:37.433 t+    17ms] ATTACH CHECK 2 — interactive pty:true /bin/sh over connectToSession()
+[15:16:37.440 t+    24ms]   <- stdout (id=2) "attach$ \u001b[6n"
+[15:16:37.809 t+   393ms]   <- stdout (id=2) "40 120\r\n"
+[15:16:37.810 t+   394ms]   <- stdout (id=2) "0\r\n"
+[15:16:37.810 t+   394ms]   <- stdout (id=2) "ATTACH_PTY_TURN2_1B7E5C33\r\nattach$ \u001b[6n"
+[15:16:37.858 t+   442ms]   <- JSON {"type":"exec_response","id":2,"exit_code":0}
+```
+
+The command that produced `40 120` was `stty size; id -u; echo
+ATTACH_PTY_TURN2_1B7E5C33`, visible in that exec's full transcript on line 50
+of the log.
+
+`stty size` returns `40 120` — the exact geometry sent in the `pty_resize`
+message — so it is a real pty with a real, resizable window size, not a pipe.
+
+And in production's shape, an unprivileged shell via `dropcap`:
+
+```
+[15:16:37.859 t+   443ms] ATTACH CHECK 3 — dropcap 1000 1000 /bin/sh, pty:true (what `corb attach` would actually run)
+[15:16:38.162 t+   746ms]   <- stdout (id=3) "id -u; id -g; echo ATTACH_DROPCAP_A74EBF18\r\n"
+[15:16:38.184 t+   768ms]   <- stdout (id=3) "1000\r\n"
+[15:16:38.184 t+   768ms]   <- stdout (id=3) "1000\r\n"
+[15:16:46.292 t+  8876ms]   result: {"answered":true,"exited":true,"response":{"type":"exec_response","id":3,"exit_code":0},...}
+```
+
+uid 1000, gid 1000 — an attach shell can be dropped to the agent's own
+privilege exactly the way `session.ts` drops Pi's.
+
+The same shape works in-process too (`evidence-02-same-process.log`), with
+two independent interactive execs live at once:
+
+```
+[15:29:25.214 t+ 48739ms]   second pty exec produced its own marker: true
+[15:29:25.266 t+ 48791ms]   second pty exec second round-trip: true
+[15:29:25.266 t+ 48791ms]   execPressure(two interactive execs, both confirmed live) = 2
+```
+
+### Check 3 — does the first exec survive? (and cross-talk)
+
+The strongest evidence is the cross-process one, because the two sides are
+logged by two different processes and can be correlated by wall clock. The
+attach client held its `dropcap` pty shell open from **15:16:37.859** to
+**15:16:46.292** and, while holding it, drove the holder's long exec. The
+holder's own log for that window:
+
+```
+[15:16:38.402 t+ 38952ms] CMD: pressure
+[15:16:38.402 t+ 38952ms]   execPressure(on demand) = 2
+[15:16:38.402 t+ 38952ms]   writing to long exec stdin: "echo DURING_ATTACH_LONG_EXEC_187EA76D"
+[15:16:38.426 t+ 38976ms]   LONG-STDOUT "DURING_ATTACH_LONG_EXEC_187EA76D\r\n"
+[15:16:38.452 t+ 39002ms]   EXPECT DURING_ATTACH_LONG_EXEC_187EA76D -> FOUND in the long exec's own stream
+[15:16:39.340 t+ 39890ms]   execPressure(periodic) = 2
+[15:16:41.341 t+ 41891ms]   execPressure(periodic) = 2
+[15:16:43.341 t+ 43891ms]   execPressure(periodic) = 2
+[15:16:45.341 t+ 45891ms]   execPressure(periodic) = 2
+[15:16:47.342 t+ 47892ms]   execPressure(periodic) = 1
+```
+
+The long exec **accepted new input and produced correct output at 15:16:38.4,
+in the middle of the attach client's shell session** — not just "the process
+still exists". Pressure sat at 2 for the whole overlap and fell back to 1
+when the attach shell exited at ~15:16:46.3.
+
+After the attach client had exited entirely, the holder was asked again:
+
+```
+[15:16:47.872 t+ 48422ms]   writing to long exec stdin: "echo AFTER_ATTACH_658927980"
+[15:16:47.896 t+ 48446ms]   LONG-STDOUT "AFTER_ATTACH_658927980\r\n"
+[15:16:47.923 t+ 48473ms]   EXPECT AFTER_ATTACH_658927980 -> FOUND in the long exec's own stream
+[15:16:47.923 t+ 48473ms]   ASSERT-ABSENT ATTACH_ONESHOT -> absent (no cross-talk)
+[15:16:47.923 t+ 48474ms]   ASSERT-ABSENT ATTACH_PTY_TURN1 -> absent (no cross-talk)
+[15:16:47.924 t+ 48474ms]   ASSERT-ABSENT ATTACH_DROPCAP -> absent (no cross-talk)
+[15:16:47.924 t+ 48474ms]   ASSERT-ABSENT ATTACH_HIJACK_ATTEMPT -> absent (no cross-talk)
+[15:16:47.924 t+ 48474ms]   long exec settled? no — still running
+```
+
+The long exec's complete captured output for the whole run contains its own
+four markers and nothing else:
+
+```
+"echo HOLDER_LONG_UP_206D7921\r\ncorb-long# echo HOLDER_LONG_UP_206D7921\r\nHOLDER_LONG_UP_206D7921\r\ncorb-long# \u001b[6necho BEFORE_ATTACH_207071007\r\nBEFORE_ATTACH_207071007\r\ncorb-long# \u001b[6necho DURING_ATTACH_LONG_EXEC_187EA76D\r\nDURING_ATTACH_LONG_EXEC_187EA76D\r\ncorb-long# \u001b[6necho AFTER_ATTACH_658927980\r\nAFTER_ATTACH_658927980\r\ncorb-long# \u001b[6n"
+```
+
+Symmetrically, the attach client saw no frame it had not asked for, and the
+in-process run reports the same in both directions for both shapes:
+
+```
+[15:29:25.317 t+ 48842ms]   CROSS-TALK: {"secondPtyMarkerLeakedIntoFirst":false,"oneShotMarkerLeakedIntoFirst":false,"firstMarkersLeakedIntoSecond":false}
+```
+
+**Check 4b — can an attach client reach the session owner's exec at all?**
+Since the protocol has no "join", the only thing left to try is addressing
+the owner's request id directly. It is refused, exactly as the id-remapping
+code predicts:
+
+```
+[15:16:46.292 t+  8876ms]   holder's long exec has VM-internal id=5
+[15:16:46.293 t+  8877ms]   <- JSON {"type":"error","code":"unknown_id","message":"request id not found","id":5}
+[15:16:46.293 t+  8877ms]   <- JSON {"type":"error","code":"unknown_id","message":"request id not found","id":5}
+```
+
+and `ATTACH_HIJACK_ATTEMPT` never appears in the long exec's stream (above).
+This is a *good* result: it means a stray or hostile attach client cannot
+inject keystrokes into Pi's TUI. It is also the definitive proof that
+`corb attach` cannot mirror the agent's screen.
+
+### Check 5 — `execPressure()` and `waitForExecIdle()`, read then measured
+
+Read first (`evidence-06-sdk-inspection.log`). `execPressure()` is a plain
+count of live exec requests — started plus admitted-but-not-yet-started:
+
+```
+42:    execPressure() {
+43-        let pressure = this.startedExecs.size;
+44-        for (const id of this.inflight.keys()) {
+45-            if (!this.startedExecs.has(id))
+46-                pressure += 1;
+47-        }
+48-        return pressure;
+49-    }
+```
+
+`waitForExecIdle()` is a 10ms busy-wait for **zero** live execs:
+
+```
+518:    async waitForExecIdle(signal) {
+519-        while (this.inflight.size > 0 ||
+520-            this.startedExecs.size > 0 ||
+521-            this.activeFileOpId !== null ||
+522-            this.execQueue.length > 0) {
+```
+
+Measured values match exactly: `0` before any exec, `1` with the long exec,
+`2` with two interactive execs both confirmed live, `5` with the long exec
+plus four sleeps, `64` at the ceiling, back to `0` once everything exits.
+
+Its three callers are the whole story of what a live exec actually blocks:
+
+```
+4:66-    async readGuestFileStream(filePath, options = {}) {
+7:69:        await this.waitForExecIdle(options.signal);
+12:151-    async writeGuestFile(filePath, input, options = {}) {
+15:154:        await this.waitForExecIdle(options.signal);
+20:205-    async deleteGuestFile(filePath, options = {}) {
+23:208:        await this.waitForExecIdle(options.signal);
+```
+
+Measured, with the long exec running and then not (`evidence-02`):
+
+```
+[15:29:19.156 t+ 42681ms]   waitForExecIdle() with the long exec running: timeout after 6000ms
+[15:29:25.157 t+ 48682ms]   vm.fs.readFile() with the long exec running: timeout after 6001ms
+[15:29:25.164 t+ 48689ms]   vm.fs.stat() with the long exec running (exec-backed, not file-op-backed): resolved after 6ms
+...
+[15:29:25.416 t+ 48941ms]   execPressure(no execs running) = 0
+[15:29:25.416 t+ 48941ms]   waitForExecIdle() with nothing running: resolved after 0ms
+[15:29:25.420 t+ 48945ms]   vm.fs.readFile() with nothing running: resolved after 3ms
+[15:29:25.420 t+ 48945ms]     readFile -> "localhost\n"
+```
+
+**This is the one real serialisation in the system, and it is the exact
+opposite of what R2 assumed.** R2's own mitigation text said that if exec
+serialised, "everything else must be network- or VFS-mediated — and `vm.fs`
+must cover host-side file needs." The measurement inverts that: *exec* is the
+concurrent path and `vm.fs`'s **file operations** are the serialised one.
+`vm.fs.readFile`, `writeFile` and `deleteFile` can never complete while Pi's
+TUI exec is alive — which is to say, never, for the entire duration of a
+`corb run` session. (`vm.fs.stat`/`listDir`/`mkdir`/`access`/`rename` are
+implemented as `exec` calls, not file ops, and keep working fine — 6ms
+above.) Corb does not currently call any of the three blocked methods, so
+nothing is broken today; this is a constraint on what future host-side code
+may do, not a live bug.
+
+### The concurrency ceiling
+
+`evidence-05-exec-ceiling.log`: one long pty exec plus 80 attempted
+concurrent `sleep 60` execs.
+
+```
+[15:20:03.997 t+ 38664ms] still running: 63, rejected: 17
+[15:20:03.998 t+ 38665ms] first rejection at index 63: error queue_full: too many concurrent exec requests (limit 64)
+[15:20:03.998 t+ 38665ms]   execPressure(at the ceiling) = 64
+[15:20:04.049 t+ 38716ms] long pty exec still answering after the flood: true
+```
+
+63 accepted + 1 long exec = exactly `maxQueuedExecs`'s default of 64, then
+clean `queue_full` rejections. The ceiling is **session-wide**, shared
+between the owner's execs and every attach client's execs — the admission
+check reads one counter. The long exec survived the flood untouched.
+
+### Verdict and reasoning
+
+**PASS. R2 is closed.** Point by point:
+
+1. **Same-process concurrency:** the second exec runs, promptly (5-6ms),
+   and genuinely in parallel (4x `sleep 3` in 3013ms).
+2. **Cross-process via `connectToSession()`:** it executes and its stdout
+   comes back, 13ms end to end.
+3. **The first exec survives:** it accepted input and produced correct output
+   *during* the second exec's session, stayed unsettled throughout, and
+   showed zero cross-talk in either direction.
+4. **Interactive second exec:** works, with a real resizable pty
+   (`stty size` gives `40 120`) and under `dropcap` at uid/gid 1000.
+5. **`execPressure()`/`waitForExecIdle()`:** exactly what their
+   implementations say — a live-exec counter, and a wait-for-zero that gates
+   `vm.fs`'s three file operations and nothing else.
+
+**Recommendation on M8.7: build it — as `corb attach` opening a *new*
+interactive shell in the running session. Not as a way to see or share Pi's
+screen, which is impossible in 0.12.0.** Caveats the implementation must
+carry:
+
+- **Naming and UX must be honest.** The user gets a fresh shell beside the
+  agent, not the agent's terminal. "attach" invites the second reading; if
+  the command keeps that name, its help text and first-run output must say
+  which one it is. `corb shell` would be the more truthful name.
+- **Run it under `dropcap <uid> <gid>`**, like `session.ts` does, and build
+  its guest env the same way — an attach shell that skipped `dropcap` would
+  be a root shell in the guest and a hole in the privilege-drop story that
+  R18 and `dropcap` exist to hold up. Verified working: uid/gid 1000.
+- **Host-side policy is preserved for free.** An attach exec is executed by
+  the *session owner's* sandbox server, so the same `httpHooks`, sentinel and
+  VFS providers apply. The attach client supplies only argv/env; it cannot
+  reach the host-side hooks or the secret manager.
+- **Handle `server_shutdown`.** When `corb run` exits (or its watchdog
+  fires), `vm.close()` rejects every live exec with `error server_shutdown:
+  server is shutting down` and the attach client's socket closes. An attach
+  client must render that as "session ended", not as a crash — see the dead
+  end below for how loudly this fails if ignored.
+- **`lifecycle` is refused over attach IPC** (`"lifecycle actions are not
+  supported over attach IPC"`), so `corb attach` can never stop the session.
+  `corb kill`'s existing signal-based approach stays the right one.
+- **Budget against the 64-exec session-wide ceiling.** Not a practical limit
+  for a human opening a shell or two, but it is shared, and a future feature
+  that fans out execs would compete with attach sessions for it.
+- **No way to kill an attach exec from the host.** §3's "no exec timeout and
+  no kill" applies here too: an abandoned attach shell (client killed with
+  the pty still open) holds a slot until `vm.close()`. Worth a thought in
+  M8.7's design, not a blocker.
+
+### What surprised us / had to be routed around
+
+- **`VM.create()` returns before the guest exists, and that nearly produced
+  the exact wrong answer.** The first run of `same-process.mjs` used a 15s
+  per-step timeout and reported `long exec alive: false` for *both* shapes —
+  which reads exactly like "a long-lived exec is blocked". It was not: boot
+  is lazy and happens on the first exec, taking ~33s on this machine.
+  `VM.create()` had resolved in 86ms with `getHostPid()` still `null`. The
+  fix is the `BOOT` warm-up exec in `main()`. Kept as a runnable negative
+  control (`--no-warmup`,
+  `evidence-01-boot-warmup-trap-negative-control.log`), because
+  distinguishing "the second exec is blocked" from "the guest wasn't up yet"
+  is the single most dangerous confusion available in this spike:
+
+  ```
+  [15:20:38.866 t+    84ms] VM.create() returned, id=5d799965-61a5-4212-8c93-6e813818b01a hostPid=null
+  [15:20:38.866 t+    84ms] --no-warmup: skipping the boot warm-up (negative control)
+  [15:20:58.937 t+ 20155ms]   long exec alive: false
+  [15:21:12.333 t+ 33551ms]   long exec alive: true
+  ```
+
+  The `false` is shape A, timing out at its 20s budget while the guest is
+  still booting; the `true` is shape B, which succeeds only because by then
+  ~33s of wall clock has passed and the guest has finally come up.
+
+  That control has a second lesson in it. Shape A's abandoned exec is never
+  reaped — there is no kill — so it stays live for the rest of the process
+  and offsets every later `execPressure()` reading by one
+  (`execPressure(no execs running) = 1`) and makes `waitForExecIdle()` never
+  resolve even when the spike believes it is idle. Any future
+  `execPressure()`-based logic has to assume leaked execs are permanent.
+
+- **`execPressure()` and `waitForExecIdle()` are not on the `VM` public
+  surface at all.** §3 said "the types expose `waitForExecIdle()` and
+  `execPressure()`", which is true only of `SandboxServerOps`; `VM` holds it
+  in a `private server` field and never re-exposes either method
+  (`grep -c "execPressure\|waitForExecIdle" dist/src/vm/core.d.ts` gives `0`).
+  This spike reaches them via `vm.server` from `.mjs`, which works only
+  because TypeScript `private` is compile-time. Production code cannot use
+  them, so no Corb design may depend on either — including any future
+  "is the session busy?" check.
+
+- **A `vm.exec()` promise with no rejection handler kills the host process on
+  `vm.close()`.** The first ceiling run produced its full, correct result and
+  *then* died (absolute paths abbreviated to `.../` here; the log has them in
+  full):
+
+  ```
+  Error: error server_shutdown: server is shutting down
+      at VM.handleError (.../dist/src/vm/core.js:1445:23)
+      at SandboxServer.failInflight (.../dist/src/sandbox/server-ops.js:1276:13)
+      at SandboxServer.closeInternal (.../dist/src/sandbox/server-ops.js:453:14)
+  ```
+
+  `vm.close()` rejects every live exec; Node's default
+  `--unhandled-rejections=throw` turns an unhandled one into an uncaught
+  exception. `runSession()` is safe today because it always `await`s its one
+  exec — but any code that starts an exec it does not await (an attach
+  client's, a future background exec) must attach a handler.
+  `evidence-04-exec-ceiling-first-attempt-unhandled-rejection.log` is the
+  failing run, kept.
+
+- **The session socket's permissions come from the process umask, and
+  Gondolin never chmods it.** Observed `srwxr-xr-x` in `/tmp/gsess`, i.e.
+  `0777 & ~umask` with the usual `0022`. Under the default umask no other
+  local user can `connect()` (that needs write permission), and in the
+  default `~/.cache/gondolin/sessions` location `~/.cache` is `drwx------`
+  anyway. But under a permissive umask the socket would be `0777` (verified
+  directly: a Node `listen()` with `umask(0)` yields mode `777`), and it is
+  an unauthenticated exec channel into the guest. Relevant because
+  `src/vm/sockpath.ts` actively recommends relocating the directory to
+  `/tmp/gondolin-sessions` when the path is too long — which removes the
+  `~/.cache` parent-directory protection and leaves only the umask. Worth a
+  mode check in whatever M8.7 builds; not chased further here.
+
+- **The SDK's contradiction is resolved, but not symmetrically.** The
+  "independent command channel, no cross-talk" page is right about `exec`.
+  The "one command at a time" page is wrong about `exec` — yet
+  `waitForExecIdle()` exists precisely because the guest *does* serialise its
+  **file-transfer** channel against execs. The two pages appear to describe
+  two different subsystems and have been collapsed into one claim.
+
+- Left running: nothing. `vm.close()` in a `finally` on every script;
+  `run-cross-process.sh` ends with an explicit leak check, which for the
+  recorded run reported `(none)` for both `qemu-system` and `gondolin`, and
+  an empty `/tmp/gsess`.
+
+### Evidence files
+
+All under `spike/m0-4-exec-concurrency/`:
+
+| File | Contents |
+|---|---|
+| `evidence-01-boot-warmup-trap-negative-control.log` | `--no-warmup` negative control: without a boot warm-up the long exec looks dead for ~33s, which is the failure mode most likely to be misread as serialisation. Also shows an abandoned exec permanently skewing `execPressure()`/`waitForExecIdle()` |
+| `evidence-02-same-process.log` | Measurements 1, 1b, 3, 4, 5 in one VM boot, over both long-exec shapes (plain `/bin/sh`, and production's `dropcap 1000 1000 /bin/sh`) — the primary same-process record |
+| `evidence-03-cross-process-attach.log` | The `corb attach` leg: holder log and attach-client log for one run, wall-clock correlated. Contains the one-shot, interactive-pty and `dropcap`-pty attach execs, the id-hijack refusal, the holder's `execPressure()=2` overlap window, the cross-talk assertions, and the process/socket leak check |
+| `evidence-04-exec-ceiling-first-attempt-unhandled-rejection.log` | The ceiling run that produced a correct result and then died on an unhandled `server_shutdown` rejection at `vm.close()` |
+| `evidence-05-exec-ceiling.log` | The ceiling: 63 concurrent execs accepted alongside the long exec, then `queue_full` at `execPressure()` 64 |
+| `evidence-06-sdk-inspection.log` | The reading half: the closed `ClientMessage` union (no "list execs"/"join exec"), `handleExec`'s file-op-only queueing branch, `maxQueuedExecs`, `execPressure()`, `waitForExecIdle()` and its three callers, the absence of both from `VM`'s public surface, and `SessionIpcServer`'s per-client id space and `unknown_id` refusal |

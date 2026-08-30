@@ -1,0 +1,117 @@
+[15:20:38.783 t+     1ms] GONDOLIN_SESSIONS_DIR=/tmp/gsess
+[15:20:38.783 t+     1ms] CORB_STATE_DIR=/tmp/corb-spike-m04/state
+[15:20:38.785 t+     3ms] image: selector=corb:0.1.0 buildId=8b79a869-e2c3-56ce-9ec9-91ef108802be arch=x86_64
+[15:20:38.785 t+     3ms] assetDir=/home/dario/.cache/gondolin/images/objects/8b79a869-e2c3-56ce-9ec9-91ef108802be
+[15:20:38.866 t+    84ms] VM.create() returned, id=5d799965-61a5-4212-8c93-6e813818b01a hostPid=null
+[15:20:38.866 t+    84ms] --no-warmup: skipping the boot warm-up (negative control)
+[15:20:38.866 t+    84ms] 
+[15:20:38.867 t+    85ms] ================ SHAPE A (plain /bin/sh + pty): ["/bin/sh"] ================
+[15:20:38.867 t+    85ms]   execPressure(before any exec) = 0
+[15:20:38.921 t+   139ms] long exec issued (id=1); proving it is alive before anything else
+[15:20:58.937 t+ 20155ms]   long exec alive: false
+[15:20:58.937 t+ 20155ms]   !! long exec never produced its marker; captured so far: ""
+[15:20:58.938 t+ 20156ms] 
+[15:20:58.938 t+ 20156ms] ================ SHAPE B (dropcap 1000 1000 /bin/sh + pty — production's wrapper): ["/usr/local/bin/dropcap","1000","1000","/bin/sh"] ================
+[15:20:58.938 t+ 20156ms]   execPressure(before any exec) = 1
+[15:20:58.938 t+ 20156ms] long exec issued (id=3); proving it is alive before anything else
+[15:21:12.333 t+ 33551ms]   long exec alive: true
+[15:21:12.333 t+ 33551ms]   execPressure(long exec running) = 2
+[15:21:12.333 t+ 33551ms] MEASUREMENT 1 — second one-shot vm.exec() while the long exec runs
+[15:21:12.333 t+ 33551ms]   execPressure(immediately after issuing the second exec) = 2
+[15:21:12.340 t+ 33558ms]   second one-shot exec: resolved after 6ms
+[15:21:12.340 t+ 33558ms]   exitCode=0 stdout="SECOND_ONESHOT_D41820A3\n"
+[15:21:12.340 t+ 33558ms]   execPressure(after the second exec finished) = 2
+[15:21:12.340 t+ 33558ms] MEASUREMENT 1b — four concurrent 3s sleeps alongside the long exec: parallel or serialised?
+[15:21:13.091 t+ 34309ms]   execPressure(long exec + 4 sleeps, sampled 750ms in) = 6
+[15:21:15.356 t+ 36574ms]   four concurrent 3s sleeps: resolved after 2265ms
+[15:21:15.356 t+ 36574ms]   wall clock for 4x 'sleep 3': 3016ms (parallel ~3000ms, serialised ~12000ms)
+[15:21:15.357 t+ 36575ms]   exit codes: [0,0,0,0]
+[15:21:15.357 t+ 36575ms] MEASUREMENT 5 — waitForExecIdle() and vm.fs while the long exec is still running
+[15:21:21.357 t+ 42575ms]   waitForExecIdle() with the long exec running: timeout after 6000ms
+[15:21:27.358 t+ 48576ms]   vm.fs.readFile() with the long exec running: timeout after 6001ms
+[15:21:27.367 t+ 48585ms]   vm.fs.stat() with the long exec running (exec-backed, not file-op-backed): resolved after 9ms
+[15:21:27.367 t+ 48585ms]     stat -> {"dev":64768,"mode":33188,"nlink":1,"uid":0,"gid":0,"rdev":0,"blksize":512,"ino":126,"size":10,"blocks":8,"atimeMs":1788077795000,"mtimeMs":1788077795000,"ctimeMs":1788077795000,"birthtimeMs":1788077795000,"atime":"2026-08-30T08:16:35.000Z","mtime":"2026-08-30T08:16:35.000Z","ctime":"2026-08-30T08:16:35.000Z","birthtime":"2026-08-30T08:16:35.000Z"}
+[15:21:27.367 t+ 48585ms] MEASUREMENT 4 — second exec with pty: true + stdin: true (what `corb attach` wants)
+[15:21:27.367 t+ 48585ms]   execPressure(two interactive execs live) = 2
+[15:21:27.417 t+ 48635ms]   second pty exec produced its own marker: true
+[15:21:27.417 t+ 48635ms]   second pty exec captured output: "echo SECOND_PTY_0A842469\r\n$ echo SECOND_PTY_0A842469\r\nSECOND_PTY_0A842469\r\n$ \u001b[6n"
+[15:21:27.468 t+ 48686ms]   second pty exec second round-trip: true
+[15:21:27.468 t+ 48686ms]   execPressure(two interactive execs, both confirmed live) = 3
+[15:21:27.468 t+ 48686ms] MEASUREMENT 3 — first exec still alive while the second interactive exec is live
+[15:21:27.519 t+ 48737ms]   first exec answered a fresh command while the second was live: true
+[15:21:27.519 t+ 48737ms]   first exec settled? no — still running
+[15:21:27.519 t+ 48737ms]   CROSS-TALK: {"secondPtyMarkerLeakedIntoFirst":false,"oneShotMarkerLeakedIntoFirst":false,"firstMarkersLeakedIntoSecond":false}
+[15:21:27.519 t+ 48737ms]   first exec output since the probe started: "echo LONG_STILL_ALIVE_8F20BCB5\r\nLONG_STILL_ALIVE_8F20BCB5\r\n# \u001b[6n"
+[15:21:27.543 t+ 48761ms]   second pty exec exit: resolved after 23ms
+[15:21:27.543 t+ 48761ms]   second pty exec exitCode=0
+[15:21:27.543 t+ 48761ms]   execPressure(after the second pty exec exited) = 2
+[15:21:27.594 t+ 48812ms]   first exec still answering after the second exec exited: true
+[15:21:27.617 t+ 48835ms]   long exec exit: resolved after 22ms
+[15:21:27.618 t+ 48836ms]   long exec exitCode=0
+[15:21:27.618 t+ 48836ms]   execPressure(no execs running) = 1
+[15:21:33.618 t+ 54836ms]   waitForExecIdle() with nothing running: timeout after 6000ms
+[15:21:39.619 t+ 60837ms]   vm.fs.readFile() with nothing running: timeout after 6001ms
+[15:21:39.619 t+ 60837ms] 
+[15:21:39.619 t+ 60837ms] closing VM
+[15:21:39.687 t+ 60905ms] VM closed
+[15:21:39.687 t+ 60905ms] 
+[15:21:39.688 t+ 60906ms] ================ SUMMARY ================
+[
+  {
+    "name": "A (plain /bin/sh + pty)",
+    "fatal": "long exec never came up"
+  },
+  {
+    "name": "B (dropcap 1000 1000 /bin/sh + pty — production's wrapper)",
+    "longAlive": true,
+    "secondOneShot": {
+      "outcome": "resolved",
+      "ms": 6,
+      "exitCode": 0,
+      "stdout": "SECOND_ONESHOT_D41820A3"
+    },
+    "secondPty": {
+      "firstMarker": true,
+      "secondMarker": true,
+      "exit": "resolved",
+      "exitCode": 0
+    },
+    "firstSurvives": {
+      "whileSecondLive": true,
+      "afterSecondExited": true,
+      "settledEarly": {
+        "outcome": "resolved",
+        "exitCode": 0
+      }
+    },
+    "crossTalk": {
+      "secondPtyMarkerLeakedIntoFirst": false,
+      "oneShotMarkerLeakedIntoFirst": false,
+      "firstMarkersLeakedIntoSecond": false
+    },
+    "parallelism": {
+      "wallMsForFourConcurrent3sSleeps": 3016,
+      "pressureDuringSleeps": 6,
+      "outcome": "resolved"
+    },
+    "execPressure": {
+      "longRunning": 2,
+      "sampledRaceyRightAfterIssuingSecond": 2,
+      "afterSecond": 2,
+      "longPlusFourSleeps": 6,
+      "twoInteractiveSampledRacey": 2,
+      "twoInteractiveBothConfirmedLive": 3,
+      "afterPtyExit": 2,
+      "idle": 1
+    },
+    "waitForExecIdle": {
+      "whileBusy": "timeout",
+      "whenIdle": "timeout"
+    },
+    "vmFs": {
+      "readFileWhileBusy": "timeout",
+      "statWhileBusy": "resolved",
+      "readFileWhenIdle": "timeout"
+    }
+  }
+]

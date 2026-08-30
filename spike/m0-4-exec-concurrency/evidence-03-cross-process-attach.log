@@ -1,0 +1,269 @@
+== starting session holder (separate process, setsid) ==
+== waiting (bounded, 240s) for the holder's state file ==
+-- holder state --
+{
+  "pid": 509514,
+  "vmId": "48f14dba-f89f-490e-abe6-6c3051c5bde1",
+  "socketPath": "/tmp/gsess/48f14dba-f89f-490e-abe6-6c3051c5bde1.sock",
+  "socketExists": true,
+  "socketPathLength": 52,
+  "longExecId": 5
+}
+-- holder pid: 509514 (this shell's child was 509514) --
+-- gondolin sessions dir --
+total 4
+drwxr-xr-x  2 dario dario   80 30 d’ag.    17:16 .
+drwxrwxrwt 86 root  root  3360 30 d’ag.    17:16 ..
+-rw-r--r--  1 dario dario  228 30 d’ag.    17:16 48f14dba-f89f-490e-abe6-6c3051c5bde1.json
+srwxr-xr-x  1 dario dario    0 30 d’ag.    17:16 48f14dba-f89f-490e-abe6-6c3051c5bde1.sock
+
+== proving the long exec is alive BEFORE any attach ==
+
+== running the attach client, in a SEPARATE process ==
+[15:16:37.417 t+     1ms] attach client pid=509974, target session 48f14dba-f89f-490e-abe6-6c3051c5bde1
+[15:16:37.418 t+     2ms] socket: /tmp/gsess/48f14dba-f89f-490e-abe6-6c3051c5bde1.sock (exists=true, len=52)
+[15:16:37.419 t+     4ms] 
+[15:16:37.420 t+     4ms] ATTACH CHECK 1 — one-shot /bin/echo over connectToSession()
+[15:16:37.420 t+     4ms]   -> {"type":"exec","id":1,"cmd":"/bin/echo","argv":["ATTACH_ONESHOT_52411C42"],"env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]}
+[15:16:37.425 t+     9ms]   <- JSON {"type":"status","state":"running"}
+[15:16:37.433 t+    17ms]   <- stdout (id=1) "ATTACH_ONESHOT_52411C42\n"
+[15:16:37.433 t+    17ms]   <- JSON {"type":"exec_response","id":1,"exit_code":0}
+[15:16:37.433 t+    17ms]   result: {"exited":true,"response":{"type":"exec_response","id":1,"exit_code":0},"stdout":"ATTACH_ONESHOT_52411C42\n","markerEchoedBack":true,"ms":13}
+[15:16:37.433 t+    17ms] 
+[15:16:37.433 t+    17ms] ATTACH CHECK 2 — interactive pty:true /bin/sh over connectToSession()
+[15:16:37.433 t+    17ms]   -> {"type":"exec","id":2,"cmd":"/bin/sh","env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","TERM=xterm-256color","PS1=attach$ "],"stdin":true,"pty":true}
+[15:16:37.440 t+    24ms]   <- stdout (id=2) "attach$ \u001b[6n"
+[15:16:37.739 t+   323ms]   <- stdout (id=2) "\rattach$ \u001b[Je"
+[15:16:37.740 t+   324ms]   <- stdout (id=2) "cho ATTACH_"
+[15:16:37.740 t+   324ms]   <- stdout (id=2) "PTY_TURN1_"
+[15:16:37.740 t+   324ms]   <- stdout (id=2) "E595C709\r\n"
+[15:16:37.761 t+   345ms]   <- stdout (id=2) "ATTACH_PTY_TURN1_E595C709\r\nattach$ "
+[15:16:37.761 t+   345ms]   <- stdout (id=2) "\u001b[6n"
+[15:16:37.788 t+   372ms]   <- stdout (id=2) "st"
+[15:16:37.788 t+   372ms]   <- stdout (id=2) "ty size; id"
+[15:16:37.788 t+   372ms]   <- stdout (id=2) " -u; echo ATTACH_PTY_TURN2_1B7E5C33\r\n"
+[15:16:37.809 t+   393ms]   <- stdout (id=2) "40 120\r\n"
+[15:16:37.810 t+   394ms]   <- stdout (id=2) "0\r\n"
+[15:16:37.810 t+   394ms]   <- stdout (id=2) "ATTACH_PTY_TURN2_1B7E5C33\r\nattach$ \u001b[6n"
+[15:16:37.837 t+   421ms]   <- stdout (id=2) "exit\r\n"
+[15:16:37.858 t+   442ms]   <- JSON {"type":"exec_response","id":2,"exit_code":0}
+[15:16:37.858 t+   442ms]   result: {"turn1":true,"turn2":true,"exited":true,"response":{"type":"exec_response","id":2,"exit_code":0},"transcript":"attach$ \u001b[6n\rattach$ \u001b[Jecho ATTACH_PTY_TURN1_E595C709\r\nATTACH_PTY_TURN1_E595C709\r\nattach$ \u001b[6nstty size; id -u; echo ATTACH_PTY_TURN2_1B7E5C33\r\n40 120\r\n0\r\nATTACH_PTY_TURN2_1B7E5C33\r\nattach$ \u001b[6n"}
+[15:16:37.859 t+   443ms] 
+[15:16:37.859 t+   443ms] ATTACH CHECK 3 — dropcap 1000 1000 /bin/sh, pty:true (what `corb attach` would actually run)
+[15:16:37.859 t+   443ms]   -> {"type":"exec","id":3,"cmd":"/usr/local/bin/dropcap","argv":["1000","1000","/bin/sh"],"env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","TERM=xterm-256color","PS1=attach-agent$ "],"stdin":true,"pty":true}
+[15:16:37.866 t+   450ms]   <- stdout (id=3) "attach-agent$ \u001b[6n"
+[15:16:38.162 t+   746ms]   <- stdout (id=3) "id -u; id -g; echo ATTACH_DROPCAP_A74EBF18\r\n"
+[15:16:38.184 t+   768ms]   <- stdout (id=3) "1000\r\n"
+[15:16:38.184 t+   768ms]   <- stdout (id=3) "1000\r\n"
+[15:16:38.184 t+   768ms]   <- stdout (id=3) "ATTACH_DROPCAP_A74EBF18\r\nattach-agent$ \u001b[6n"
+[15:16:38.208 t+   792ms]   holding this attach shell open; driving the holder's long exec concurrently (DURING_ATTACH_LONG_EXEC_187EA76D)
+[15:16:46.220 t+  8804ms]   <- stdout (id=3) "e"
+[15:16:46.220 t+  8804ms]   <- stdout (id=3) "cho "
+[15:16:46.220 t+  8804ms]   <- stdout (id=3) "ST"
+[15:16:46.220 t+  8804ms]   <- stdout (id=3) "ILL_HERE_DURIN"
+[15:16:46.220 t+  8804ms]   <- stdout (id=3) "G_ATT"
+[15:16:46.220 t+  8804ms]   <- stdout (id=3) "ACH_LONG_EXEC_187EA76D\r\n"
+[15:16:46.240 t+  8824ms]   <- stdout (id=3) "STILL_HERE_DURING_ATTACH_LONG_EXEC_187EA76D\r\n"
+[15:16:46.241 t+  8825ms]   <- stdout (id=3) "attach-agent$ \u001b[6n"
+[15:16:46.271 t+  8855ms]   <- stdout (id=3) "e"
+[15:16:46.271 t+  8855ms]   <- stdout (id=3) "xit\r\n"
+[15:16:46.292 t+  8876ms]   <- JSON {"type":"exec_response","id":3,"exit_code":0}
+[15:16:46.292 t+  8876ms]   result: {"answered":true,"exited":true,"response":{"type":"exec_response","id":3,"exit_code":0},"heldOpenWhileDrivingHoldersLongExec":"DURING_ATTACH_LONG_EXEC_187EA76D","transcript":"attach-agent$ \u001b[6nid -u; id -g; echo ATTACH_DROPCAP_A74EBF18\r\n1000\r\n1000\r\nATTACH_DROPCAP_A74EBF18\r\nattach-agent$ \u001b[6necho STILL_HERE_DURING_ATTACH_LONG_EXEC_187EA76D\r\nSTILL_HERE_DURING_ATTACH_LONG_EXEC_187EA76D\r\nattach-agent$ \u001b[6n"}
+[15:16:46.292 t+  8876ms] 
+[15:16:46.292 t+  8876ms] ATTACH CHECK 4 — try to address the holder's long exec by id (stdin to it)
+[15:16:46.292 t+  8876ms]   holder's long exec has VM-internal id=5
+[15:16:46.293 t+  8877ms]   <- JSON {"type":"error","code":"unknown_id","message":"request id not found","id":5}
+[15:16:46.293 t+  8877ms]   <- JSON {"type":"error","code":"unknown_id","message":"request id not found","id":5}
+[15:16:47.794 t+ 10378ms]   result: {"marker":"ATTACH_HIJACK_ATTEMPT_41A63125","jsonSinceAttempt":[{"type":"exec_response","id":2,"exit_code":0},{"type":"exec_response","id":3,"exit_code":0},{"type":"error","code":"unknown_id","message":"request id not found","id":5},{"type":"error","code":"unknown_id","message":"request id not found","id":5}]}
+[15:16:47.795 t+ 10379ms] 
+[15:16:47.795 t+ 10379ms] unexpected frames (would be cross-talk): [{"kind":"json-unknown-id","message":{"type":"error","code":"unknown_id","message":"request id not found","id":5}},{"kind":"json-unknown-id","message":{"type":"error","code":"unknown_id","message":"request id not found","id":5}}]
+[15:16:47.795 t+ 10379ms] connection state at end: still open
+[15:16:47.795 t+ 10379ms] 
+[15:16:47.795 t+ 10379ms] ================ ATTACH SUMMARY ================
+{
+  "oneShot": {
+    "exited": true,
+    "response": {
+      "type": "exec_response",
+      "id": 1,
+      "exit_code": 0
+    },
+    "stdout": "ATTACH_ONESHOT_52411C42\n",
+    "markerEchoedBack": true,
+    "ms": 13
+  },
+  "interactivePty": {
+    "turn1": true,
+    "turn2": true,
+    "exited": true,
+    "response": {
+      "type": "exec_response",
+      "id": 2,
+      "exit_code": 0
+    },
+    "transcript": "attach$ \u001b[6n\rattach$ \u001b[Jecho ATTACH_PTY_TURN1_E595C709\r\nATTACH_PTY_TURN1_E595C709\r\nattach$ \u001b[6nstty size; id -u; echo ATTACH_PTY_TURN2_1B7E5C33\r\n40 120\r\n0\r\nATTACH_PTY_TURN2_1B7E5C33\r\nattach$ \u001b[6n"
+  },
+  "dropcapPty": {
+    "answered": true,
+    "exited": true,
+    "response": {
+      "type": "exec_response",
+      "id": 3,
+      "exit_code": 0
+    },
+    "heldOpenWhileDrivingHoldersLongExec": "DURING_ATTACH_LONG_EXEC_187EA76D",
+    "transcript": "attach-agent$ \u001b[6nid -u; id -g; echo ATTACH_DROPCAP_A74EBF18\r\n1000\r\n1000\r\nATTACH_DROPCAP_A74EBF18\r\nattach-agent$ \u001b[6necho STILL_HERE_DURING_ATTACH_LONG_EXEC_187EA76D\r\nSTILL_HERE_DURING_ATTACH_LONG_EXEC_187EA76D\r\nattach-agent$ \u001b[6n"
+  },
+  "hijackAttempt": {
+    "marker": "ATTACH_HIJACK_ATTEMPT_41A63125",
+    "jsonSinceAttempt": [
+      {
+        "type": "exec_response",
+        "id": 2,
+        "exit_code": 0
+      },
+      {
+        "type": "exec_response",
+        "id": 3,
+        "exit_code": 0
+      },
+      {
+        "type": "error",
+        "code": "unknown_id",
+        "message": "request id not found",
+        "id": 5
+      },
+      {
+        "type": "error",
+        "code": "unknown_id",
+        "message": "request id not found",
+        "id": 5
+      }
+    ]
+  },
+  "unexpectedFrames": [
+    {
+      "kind": "json-unknown-id",
+      "message": {
+        "type": "error",
+        "code": "unknown_id",
+        "message": "request id not found",
+        "id": 5
+      }
+    },
+    {
+      "kind": "json-unknown-id",
+      "message": {
+        "type": "error",
+        "code": "unknown_id",
+        "message": "request id not found",
+        "id": 5
+      }
+    }
+  ],
+  "closedReason": null
+}
+-- attach client exit code: 0 --
+
+== asking the holder whether its long exec survived ==
+
+== telling the holder to quit ==
+
+================ HOLDER LOG ================
+[15:15:59.450 t+     0ms] holder pid=509514
+[15:15:59.451 t+     1ms] GONDOLIN_SESSIONS_DIR=/tmp/gsess (derived: /tmp/gsess)
+[15:15:59.454 t+     4ms] image: selector=corb:0.1.0 buildId=8b79a869-e2c3-56ce-9ec9-91ef108802be
+[15:15:59.556 t+   106ms] VM.create() returned id=48f14dba-f89f-490e-abe6-6c3051c5bde1
+[15:16:33.288 t+ 33838ms]   boot warm-up exec: resolved after 33674ms
+[15:16:33.288 t+ 33838ms] guest up; hostPid=509531
+[15:16:33.299 t+ 33849ms]   LONG-STDOUT "echo HOLDER_LONG_UP_206D7921\r\n"
+[15:16:33.300 t+ 33850ms]   LONG-STDOUT "corb-long# e"
+[15:16:33.300 t+ 33850ms]   LONG-STDOUT "cho HOLDER_LONG"
+[15:16:33.300 t+ 33850ms]   LONG-STDOUT "_"
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "UP"
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "_2"
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "0"
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "6D"
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "7921\r\n"
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "HOLDER_LONG_UP_206D7921\r\n"
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "corb-long# "
+[15:16:33.301 t+ 33851ms]   LONG-STDOUT "\u001b[6n"
+[15:16:33.340 t+ 33890ms] long exec confirmed alive (id=5)
+[15:16:33.340 t+ 33890ms]   execPressure(long exec only) = 1
+[15:16:33.340 t+ 33890ms] state written: {"pid":509514,"vmId":"48f14dba-f89f-490e-abe6-6c3051c5bde1","socketPath":"/tmp/gsess/48f14dba-f89f-490e-abe6-6c3051c5bde1.sock","socketExists":true,"socketPathLength":52,"longExecId":5}
+[15:16:34.142 t+ 34692ms] CMD: send echo BEFORE_ATTACH_207071007
+[15:16:34.142 t+ 34692ms]   writing to long exec stdin: "echo BEFORE_ATTACH_207071007"
+[15:16:34.143 t+ 34693ms] CMD: expect BEFORE_ATTACH_207071007
+[15:16:34.145 t+ 34695ms]   LONG-STDOUT "echo BEFORE_ATTACH_207071007\r\n"
+[15:16:34.166 t+ 34716ms]   LONG-STDOUT "BEFORE_ATTACH_207071007\r\n"
+[15:16:34.167 t+ 34717ms]   LONG-STDOUT "corb-long# \u001b[6n"
+[15:16:34.193 t+ 34743ms]   EXPECT BEFORE_ATTACH_207071007 -> FOUND in the long exec's own stream
+[15:16:35.341 t+ 35891ms]   execPressure(periodic) = 1
+[15:16:37.340 t+ 37890ms]   execPressure(periodic) = 1
+[15:16:38.402 t+ 38952ms] CMD: pressure
+[15:16:38.402 t+ 38952ms]   execPressure(on demand) = 2
+[15:16:38.402 t+ 38952ms] CMD: status
+[15:16:38.402 t+ 38952ms]   long exec settled? no — still running
+[15:16:38.402 t+ 38952ms] CMD: send echo DURING_ATTACH_LONG_EXEC_187EA76D
+[15:16:38.402 t+ 38952ms]   writing to long exec stdin: "echo DURING_ATTACH_LONG_EXEC_187EA76D"
+[15:16:38.402 t+ 38952ms] CMD: expect DURING_ATTACH_LONG_EXEC_187EA76D
+[15:16:38.405 t+ 38955ms]   LONG-STDOUT "ec"
+[15:16:38.405 t+ 38955ms]   LONG-STDOUT "ho "
+[15:16:38.405 t+ 38955ms]   LONG-STDOUT "DURING_A"
+[15:16:38.405 t+ 38955ms]   LONG-STDOUT "TTACH"
+[15:16:38.405 t+ 38955ms]   LONG-STDOUT "_LONG_EXEC_187EA76D\r\n"
+[15:16:38.426 t+ 38976ms]   LONG-STDOUT "DURING_ATTACH_LONG_EXEC_187EA76D\r\n"
+[15:16:38.426 t+ 38976ms]   LONG-STDOUT "corb-long# \u001b[6n"
+[15:16:38.452 t+ 39002ms]   EXPECT DURING_ATTACH_LONG_EXEC_187EA76D -> FOUND in the long exec's own stream
+[15:16:38.453 t+ 39003ms] CMD: pressure
+[15:16:38.453 t+ 39003ms]   execPressure(on demand) = 2
+[15:16:38.453 t+ 39003ms] CMD: status
+[15:16:38.453 t+ 39003ms]   long exec settled? no — still running
+[15:16:39.340 t+ 39890ms]   execPressure(periodic) = 2
+[15:16:41.341 t+ 41891ms]   execPressure(periodic) = 2
+[15:16:43.341 t+ 43891ms]   execPressure(periodic) = 2
+[15:16:45.341 t+ 45891ms]   execPressure(periodic) = 2
+[15:16:47.342 t+ 47892ms]   execPressure(periodic) = 1
+[15:16:47.871 t+ 48421ms] CMD: status
+[15:16:47.872 t+ 48422ms]   long exec settled? no — still running
+[15:16:47.872 t+ 48422ms] CMD: pressure
+[15:16:47.872 t+ 48422ms]   execPressure(on demand) = 1
+[15:16:47.872 t+ 48422ms] CMD: send echo AFTER_ATTACH_658927980
+[15:16:47.872 t+ 48422ms]   writing to long exec stdin: "echo AFTER_ATTACH_658927980"
+[15:16:47.872 t+ 48422ms] CMD: expect AFTER_ATTACH_658927980
+[15:16:47.875 t+ 48425ms]   LONG-STDOUT "ec"
+[15:16:47.876 t+ 48426ms]   LONG-STDOUT "ho AFTER_ATTACH_658927980\r\n"
+[15:16:47.896 t+ 48446ms]   LONG-STDOUT "AFTER_ATTACH_658927980\r\n"
+[15:16:47.897 t+ 48447ms]   LONG-STDOUT "corb-long# "
+[15:16:47.897 t+ 48447ms]   LONG-STDOUT "\u001b[6n"
+[15:16:47.923 t+ 48473ms]   EXPECT AFTER_ATTACH_658927980 -> FOUND in the long exec's own stream
+[15:16:47.923 t+ 48473ms] CMD: assert-absent ATTACH_ONESHOT
+[15:16:47.923 t+ 48473ms]   ASSERT-ABSENT ATTACH_ONESHOT -> absent (no cross-talk)
+[15:16:47.923 t+ 48473ms] CMD: assert-absent ATTACH_PTY_TURN1
+[15:16:47.923 t+ 48474ms]   ASSERT-ABSENT ATTACH_PTY_TURN1 -> absent (no cross-talk)
+[15:16:47.924 t+ 48474ms] CMD: assert-absent ATTACH_DROPCAP
+[15:16:47.924 t+ 48474ms]   ASSERT-ABSENT ATTACH_DROPCAP -> absent (no cross-talk)
+[15:16:47.924 t+ 48474ms] CMD: assert-absent ATTACH_HIJACK_ATTEMPT
+[15:16:47.924 t+ 48474ms]   ASSERT-ABSENT ATTACH_HIJACK_ATTEMPT -> absent (no cross-talk)
+[15:16:47.924 t+ 48474ms] CMD: status
+[15:16:47.924 t+ 48474ms]   long exec settled? no — still running
+[15:16:49.342 t+ 49892ms]   execPressure(periodic) = 1
+[15:16:51.342 t+ 51892ms]   execPressure(periodic) = 1
+[15:16:53.343 t+ 53893ms]   execPressure(periodic) = 1
+[15:16:55.342 t+ 55892ms]   execPressure(periodic) = 1
+[15:16:55.939 t+ 56489ms] CMD: quit
+[15:16:55.939 t+ 56489ms] long exec settled? no — still running
+[15:16:55.939 t+ 56489ms] total long-exec output captured: "echo HOLDER_LONG_UP_206D7921\r\ncorb-long# echo HOLDER_LONG_UP_206D7921\r\nHOLDER_LONG_UP_206D7921\r\ncorb-long# \u001b[6necho BEFORE_ATTACH_207071007\r\nBEFORE_ATTACH_207071007\r\ncorb-long# \u001b[6necho DURING_ATTACH_LONG_EXEC_187EA76D\r\nDURING_ATTACH_LONG_EXEC_187EA76D\r\ncorb-long# \u001b[6necho AFTER_ATTACH_658927980\r\nAFTER_ATTACH_658927980\r\ncorb-long# \u001b[6n"
+[15:16:55.939 t+ 56489ms] closing VM
+[15:16:55.941 t+ 56491ms]   LONG EXEC SETTLED: rejected error server_shutdown: server is shutting down
+[15:16:56.001 t+ 56551ms] VM closed
+
+================ LEAK CHECK ================
+-- qemu-system processes --
+(none)
+-- gondolin-krun-runner processes --
+(none)
+-- /tmp/gsess --
+total 0
+drwxr-xr-x  2 dario dario   40 30 d’ag.    17:16 .
+drwxrwxrwt 86 root  root  3240 30 d’ag.    17:16 ..
