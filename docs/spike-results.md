@@ -966,3 +966,114 @@ All under `spike/m0-4-exec-concurrency/`:
 | `evidence-04-exec-ceiling-first-attempt-unhandled-rejection.log` | The ceiling run that produced a correct result and then died on an unhandled `server_shutdown` rejection at `vm.close()` |
 | `evidence-05-exec-ceiling.log` | The ceiling: 63 concurrent execs accepted alongside the long exec, then `queue_full` at `execPressure()` 64 |
 | `evidence-06-sdk-inspection.log` | The reading half: the closed `ClientMessage` union (no "list execs"/"join exec"), `handleExec`'s file-op-only queueing branch, `maxQueuedExecs`, `execPressure()`, `waitForExecIdle()` and its three callers, the absence of both from `VM`'s public surface, and `SessionIpcServer`'s per-client id space and `unknown_id` refusal |
+
+---
+
+## M9.5 — `vm.checkpoint()`/`resume()`: does it actually skip any boot cost?
+
+**Date:** 2026-08-30
+**Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
+**Verdict: NO SPEEDUP — checkpoint/resume does not skip guest boot at all.**
+Reading `checkpoint.js` first: `vm.checkpoint(path)` stops the VM and writes a
+qcow2 disk (plus a JSON metadata trailer); `VmCheckpoint.resume(options)`
+starts a **fresh QEMU VM** from a new overlay backed by that disk, going
+through the exact same `createVm()` codepath a cold `VM.create()` uses — same
+kernel, same initramfs, same `/init` -> `sandboxd` -> `sandboxfs` ->
+`rootfsInitExtra` (bindfs re-export) sequence. `gondolin-notes.md` §2 already
+says "no memory snapshots"; this spike measures whether that has a real,
+timed consequence rather than trusting the sentence's implication.
+
+It does. Four boots against the real tagged `corb:0.1.0` image, each timed
+from `VM.create()`/`resume()` call to a successful first `vm.exec()` (`cat
+/etc/corb/image.json`, matching `session.ts`'s own `readGuestIdentity()`):
+
+| Boot | Time to first exec |
+|---|---|
+| Cold #1 | 33472ms |
+| Cold #2 | 33568ms |
+| **Resumed from a checkpoint of Cold #1** | **33548ms** |
+| Cold #3 (after the resume, same run) | 33552ms |
+
+All four are the same figure within noise. The resumed VM is exactly as slow
+to become usable as a cold boot — checkpointing immediately after boot and
+resuming later saved nothing. This is independently corroborated by this
+project's own earlier finding: M0.4's `evidence-01-boot-warmup-trap-negative-
+control.log` recorded the same "~33s before a long exec looks alive" figure
+for a plain cold boot with no warm-up, months before this spike and for an
+unrelated reason (a starting warm-up trap, not a checkpoint comparison) — the
+two independent measurements agree on what guest boot actually costs.
+
+### Why: reading `checkpoint.js`'s `resume()`
+
+`resume()`'s merge logic (`node_modules/@earendil-works/gondolin/dist/src/checkpoint.js`):
+
+```js
+const mergedForResume = { ...base, ...options, sandbox: { ...(base.sandbox ?? {}), ...(options.sandbox ?? {}) } };
+// ...
+const merged = { ...mergedForResume, sandbox: { ...(mergedForResume.sandbox ?? {}), imagePath: resolved.imagePath, rootDiskPath: overlayPath, rootDiskFormat: "qcow2", rootDiskReadOnly: false, rootDiskDeleteOnClose: true } };
+return await createVm(merged);
+```
+
+Two things worth being explicit about, neither obvious from the `.d.ts` alone:
+
+- **`VmCheckpoint.load(path)` always sets `baseVmOptions` to `null`.** So for
+  the only realistic production shape (persist a checkpoint to disk, load it
+  back in a *different* `corb run` invocation/process), `base` is `{}` and
+  `resume(options)`'s `options` supplies *every* `VMOptions` field —
+  `vfs.mounts`, `httpHooks`, `env`, `ssh`, `dns`, `sessionLabel`, everything.
+  This is good news for a hypothetical warm-start design (a checkpoint could
+  in principle be resumed with a completely different session's real
+  workspace mounts, not just the exact options it was created with) — it just
+  turns out not to matter, because of the next point.
+- **`resume()` still calls `createVm()` — the same function `VM.create()`
+  calls.** There is no partial/fast-path boot for a resumed VM. The guest's
+  kernel, initramfs, `/init`, `sandboxd`, `sandboxfs`, and (for Corb's image
+  specifically) `rootfsInitExtra`'s `bindfs` re-export mounting all run in
+  full, every time, on a resumed VM exactly as on a cold one. The ~33.5s cost
+  measured above is that full sequence, and checkpoint/resume has no lever
+  over any part of it.
+
+### Why this makes "warm starts" a dead end for Corb specifically, not just a missing feature
+
+Even setting aside the boot-time finding, Corb's own architecture leaves
+checkpoint/resume little left to usefully capture even as a *disk-state*
+fork (as opposed to a boot-time skip):
+
+- Everything session-relevant already lives behind a VFS mount, not the
+  guest's own qcow2 disk: `/work/<name>` (workspace dirs), `/home/agent/.pi`
+  (`MemoryProvider`), `/home/agent/sessions` (`RealFSProvider`), `/run/corb`
+  (gate config) — `gondolin-notes.md` §2 already states VFS-backed data is
+  never captured in a checkpoint regardless.
+- What *is* on the persistent disk is almost entirely baked in at
+  `corb image build` time (`postBuild.copy`/`postBuild.commands` in
+  `image/corb-image.json`) — which the existing tagged-image mechanism
+  (`sandbox.imagePath: "corb:0.1.0"`) already reuses across every session with
+  zero extra machinery, making a checkpoint of "just-booted, nothing done
+  yet" redundant with what `corb image build` already provides.
+- The image deliberately removes `npm`/`npx`/`apk`/`su`/`sudo`/`doas` and
+  routes nothing persistent-disk-writing through a normal session (`docs/design.md`
+  §2's "supporting measures in the image"), so there is no realistic
+  in-session action left that would write something worth checkpointing to
+  the one place (the qcow2 disk, outside `/root`/`/tmp`/`/var/tmp`/
+  `/var/cache`/`/var/log`, which are tmpfs and excluded anyway) a checkpoint
+  could actually preserve.
+
+### What was built
+
+`spike/m9-5-checkpoint/run-spike.mjs` — boots the real, already-tagged
+`corb:<pkgVersion>` image directly via `sandbox.imagePath` (matching M0.4's
+own precedent of measuring what Corb actually ships, not a throwaway
+image), times four boots end-to-end to first successful `vm.exec()`: two
+cold baselines, one `vm.checkpoint()` immediately after the first cold
+boot followed by `VmCheckpoint.load().resume()` with fresh `VMOptions`
+(different `sessionLabel`, its own `httpHooks`), and a third cold boot
+afterward for a same-run comparison. `deny-all` `createHttpHooks` (no real
+egress needed for this check). Every VM closed in sequence; the checkpoint
+file removed at the end.
+
+### Evidence files
+
+`spike/m9-5-checkpoint/evidence-01-boot-timing-comparison.log` — the four
+timed boots verbatim, plus the checkpoint's own JSON metadata trailer
+(`guestAssetBuildId`, `compatibleVmm: ["qemu","krun"]`, `snapshotKind:
+"disk"`).

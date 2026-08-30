@@ -1,0 +1,12 @@
+--- Phase 1: cold boot #1 (baseline) ---
+[cold-1] VM.create() resolved in 91ms; first exec (cat image.json) in 33472ms; ok=true
+--- Phase 2: cold boot #2 (baseline, same image, fresh VM.create()) ---
+[cold-2] VM.create() resolved in 69ms; first exec (cat image.json) in 33568ms; ok=true
+--- Phase 3: checkpoint vm1, then close it ---
+checkpoint() took 102ms, wrote /tmp/corb-spike-checkpoint-1788121292930.qcow2
+checkpoint metadata: {"version":1,"name":"corb-spike-checkpoint-1788121292930","createdAt":"2026-08-30T20:21:33.032Z","diskFile":"corb-spike-checkpoint-1788121292930.qcow2","guestAssetBuildId":"c2c62b17-8ed6-5414-8ed3-96d192c6ebb6","snapshotKind":"disk","createdWithVmm":"qemu","compatibleVmm":["qemu","krun"]}
+--- Phase 4: resume from checkpoint, fresh VMOptions (different sessionLabel, own httpHooks) ---
+[resume] VM.create() resolved in 96ms; first exec (cat image.json) in 33548ms; ok=true
+--- Phase 5: cold boot #3 (baseline, run again after the resume, for a fair same-run comparison) ---
+[cold-3] VM.create() resolved in 62ms; first exec (cat image.json) in 33552ms; ok=true
+--- done ---

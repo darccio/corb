@@ -228,8 +228,14 @@ M1 through M8 (walking skeleton through sessions/limits, plus the git/gh
 policy gate, VFS policy, and image hardening gates in between) are complete —
 see `git log` for the full milestone-by-milestone history. M9 (optional: CI,
 this README, ADRs, `--expose`/ingress, and checkpoint-based warm starts) is
-in progress; CI (M9.1), this README (M9.2), the ADRs (M9.3), and
-`--expose`/ingress (M9.4) are done so far.
+done: CI (M9.1), this README (M9.2), the ADRs (M9.3), and `--expose`/ingress
+(M9.4) all shipped; checkpoint-based warm starts (M9.5) was evaluated and
+deliberately **not** built — `vm.checkpoint()`/`resume()` measurably boots
+the guest from scratch every time regardless (no CPU/memory state is ever
+saved, only disk contents), so it cannot speed up `corb run`'s startup. See
+[`docs/spike-results.md`](docs/spike-results.md) M9.5 and
+[`docs/gondolin-notes.md`](docs/gondolin-notes.md) R19 for the measurements
+and reasoning.
 
 ## License
 
