@@ -26,12 +26,16 @@
 // primitive available.
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { MemoryProvider, ReadonlyProvider, RealFSProvider, VM, type VirtualProvider } from "@earendil-works/gondolin";
 import { acquire, canRequestPty, type TtyHandle } from "./tty.ts";
 import { ShutdownController, type ExitFn, type ProcessLike } from "./shutdown.ts";
 import { resolveRuntimeImage } from "./image.ts";
 import { buildEgressConfig } from "./egress.ts";
 import { buildGitSshOptions } from "./gitssh.ts";
+import { startWatchdog, type WatchdogHandle } from "./watchdog.ts";
+import { removeSessionSidecar, writeSessionSidecar, type SessionSidecar } from "./registry.ts";
+import { parseDuration } from "../util/duration.ts";
 import { POLICY_HOST } from "../policy/sentinel.ts";
 // M5.4: the outermost VFS layer for every mount (see the mount-building loop
 // inside `runSession`). `GlobRule` (`src/vfs/policy.ts`, M5.2) is the fully-
@@ -550,8 +554,35 @@ export interface RunSessionOptions {
   piArgs: string[];
   /** Image selector override. Defaults to `resolveRuntimeImage()`'s own default (`corb:<pkgVersion>`). */
   image?: string;
-  /** `VM.create()`'s `sessionLabel`. Defaults to a name derived from the primary directory. */
+  /**
+   * The workspace's configured `EffectiveConfig.name` (`src/config/load.ts`).
+   * Used as the `<name>` component of the default `sessionLabel` (see
+   * below) — not otherwise consumed by this module. `undefined` falls back
+   * to the primary directory's basename, matching the pre-M8.2 behavior.
+   */
+  name?: string;
+  /**
+   * `VM.create()`'s `sessionLabel`. Defaults to
+   * `` `corb:${name}:${shortid}` `` (`docs/design.md` §5.6), where `name` is
+   * `options.name ?? path.basename(primaryEntry.hostPath)` and `shortid` is
+   * an 8-character id this function mints itself via `randomUUID().slice(0,
+   * 8)` before `VM.create()` — `sessionLabel` is a `VM.create()` *input*, so
+   * it cannot be derived from `vm.id` (which doesn't exist until
+   * `VM.create()` resolves). Purely a human-legible label; it is NOT the
+   * sidecar's join key — that's `vm.id` (`src/vm/registry.ts`, M8.1). An
+   * explicit `sessionLabel` here overrides this default entirely, same as
+   * before.
+   */
   sessionLabel?: string;
+  /**
+   * Raw `vm.max-session` config string (`src/config/schema.ts`'s
+   * `DURATION_RE`-validated format, e.g. `"4h"`), parsed internally via
+   * `parseDuration` (`src/util/duration.ts`) rather than requiring the
+   * caller to pre-parse it — this module already owns comparable raw-to-
+   * validated conversions itself (e.g. `toGlobRules`). `undefined` disables
+   * the watchdog entirely (no maximum session lifetime).
+   */
+  maxSession?: string;
   /**
    * A session's full effective egress config (`EffectiveConfig.egress`,
    * always present — see `src/config/load.ts`), passed straight through to
@@ -610,6 +641,15 @@ export interface RunSessionOptions {
    * by this module).
    */
   audit: AuditWriter;
+  /**
+   * The same plain path string the caller (`src/commands/run.ts`) already
+   * computed to construct `options.audit` via `createAuditWriter({ path:
+   * ... })`. `AuditWriter` has no `.path` getter of its own (`src/policy/
+   * audit.ts` is out of scope for this item), so this is threaded through
+   * separately — needed for `SessionSidecar.auditPath` (`src/vm/registry.ts`,
+   * M8.1).
+   */
+  auditPath: string;
   /**
    * Identifier correlating this session's audit events. Defaults to whatever
    * this call computes for `sessionLabel` (see below) — there is no real
@@ -690,11 +730,20 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   const primaryEntry = findPrimaryEntry(resolvedDirs, options.primary);
   const resolvedImage = resolveRuntimeImage(options.image);
 
-  const sessionLabel = options.sessionLabel ?? `corb-run:${path.basename(primaryEntry.hostPath)}`;
+  // `docs/design.md` §5.6's `"corb:<name>:<shortid>"` format. `shortid` is
+  // minted here, before `VM.create()`, since `sessionLabel` is one of that
+  // call's own inputs — it cannot be derived from `vm.id`, which doesn't
+  // exist until `VM.create()` resolves. See `RunSessionOptions.sessionLabel`'s
+  // own doc comment for why this is purely a human-legible label, not the
+  // sidecar's join key.
+  const labelName = options.name ?? path.basename(primaryEntry.hostPath);
+  const shortId = randomUUID().slice(0, 8);
+  const sessionLabel = options.sessionLabel ?? `corb:${labelName}:${shortId}`;
   // See `RunSessionOptions.sessionId`'s own doc comment: no real session-id
   // infrastructure exists yet (M8), so this reuses `sessionLabel` as a
   // temporary stand-in rather than minting anything new here.
   const sessionId = options.sessionId ?? sessionLabel;
+  const maxSessionMs = options.maxSession !== undefined ? parseDuration(options.maxSession) : undefined;
 
   const stdin = options.stdin ?? process.stdin;
   const stdout = options.stdout ?? process.stdout;
@@ -748,6 +797,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
 
   let vm: VM | undefined;
   let ttyHandle: TtyHandle | undefined;
+  let watchdogHandle: WatchdogHandle | undefined;
 
   // Installed before the VM even exists: a signal during boot must still
   // lead to a clean close of whatever got started, not just of a fully
@@ -755,6 +805,11 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   // something to restore/close.
   const controller = new ShutdownController({
     steps: [
+      // First, so the timer can never fire late after the VM is already
+      // gone (or mid-close) via some other shutdown trigger — exactly what
+      // `shutdown.ts`'s own module comment anticipates as "clearing a
+      // session watchdog (M8)".
+      { name: "clear-watchdog", run: () => watchdogHandle?.clear() },
       { name: "restore-tty", run: () => ttyHandle?.restore() },
       {
         name: "close-vm",
@@ -765,8 +820,22 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
         },
       },
       {
+        name: "remove-sidecar",
+        // After `close-vm`, matching that step's own precedent: closing the
+        // VM is the time-sensitive step (an un-closed VM leaves a real QEMU
+        // process running), so cleanup steps trail it. A no-op if `vm` is
+        // undefined (e.g. `VM.create()` itself threw before this point) or
+        // if no sidecar was ever written — `removeSessionSidecar` is
+        // idempotent either way (`src/vm/registry.ts`, M8.1).
+        run: () => {
+          if (vm) {
+            removeSessionSidecar(vm.id);
+          }
+        },
+      },
+      {
         name: "flush-audit",
-        // Independent of the other two steps, same discipline (a flush
+        // Independent of the other steps, same discipline (a flush
         // failure — e.g. a full disk — must not prevent the VM from
         // closing, and a VM-close failure must not prevent whatever's
         // already buffered from reaching disk). Runs last, after the VM is
@@ -826,6 +895,43 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       sessionLabel,
     });
 
+    // Watchdog: only started when a maximum session lifetime was actually
+    // configured (`options.maxSession` set). `docs/design.md` §7: "the host
+    // closes the VM" is the only reliable termination primitive Corb has, no
+    // exec timeout and no way to kill a guest process. 124 is the
+    // conventional `timeout(1)` exit code for "command timed out due to the
+    // time limit" — distinct from the signal-derived codes (129/130/143) and
+    // the uncaught-exception code (1) `shutdown.ts` already reserves.
+    if (maxSessionMs !== undefined) {
+      watchdogHandle = startWatchdog(maxSessionMs, () => {
+        options.audit.record({
+          channel: "session",
+          decision: "allow",
+          subject: sessionLabel,
+          reason: "watchdog-expired",
+          sessionId,
+        });
+        void controller.trigger("watchdog", 124);
+      });
+    }
+
+    // Sidecar: written as soon as `vm.id` is known, so `corb ls` (a later
+    // M8 item) can see this session while it's still running, not only after
+    // it exits. `pid: process.pid` matches Gondolin's own session-registry
+    // convention for the same session (`src/vm/registry.ts`'s module
+    // comment) — not `vm.getHostPid()`, a different value (the QEMU
+    // process, not the host `corb run` process).
+    const sidecar: SessionSidecar = {
+      id: vm.id,
+      sessionLabel,
+      dirs: resolvedDirs.map((d) => ({ name: d.name, hostPath: d.hostPath, mode: d.mode })),
+      image: { selector: resolvedImage.selector, buildId: resolvedImage.buildId },
+      auditPath: options.auditPath,
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+    };
+    writeSessionSidecar(sidecar);
+
     const identity = await readGuestIdentity(vm);
     const guestEnv = buildGuestEnv(egressConfig.env, hostEnv, identity);
 
@@ -857,13 +963,31 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     });
     await controller.trigger("exit", result.exitCode);
   } catch (err) {
-    options.audit.record({
-      channel: "session",
-      decision: "allow",
-      subject: sessionLabel,
-      reason: "error",
-      sessionId,
-    });
+    // Guarded (unlike `controller.trigger("error", ...)` below, which stays
+    // unconditional — it's already safely idempotent, per
+    // `ShutdownController.trigger()`'s own doc comment) because a pending
+    // `await proc` above rejects, not hangs or resolves, when some *other*
+    // trigger (the watchdog's `close-vm`, a SIGINT during an active exec)
+    // closes the VM out from under it — confirmed against the installed SDK
+    // (`node_modules/@earendil-works/gondolin/dist/src/vm/core.js`:
+    // `closeInternal()` → `server.close()` → `handleDisconnect()` →
+    // `rejectAll()` → `rejectExecSession()` on every pending exec session —
+    // and empirically, see `test/e2e/session-watchdog.e2e.ts`). Without this
+    // guard, that case would produce two audit lines for one session end: a
+    // correct one from the other trigger's own reason, immediately followed
+    // by a misleading `"error"` line here even though nothing actually went
+    // wrong. `controller.isTriggered` is read before this function's own
+    // `trigger("error", ...)` call below, so it only reflects whether some
+    // *other* trigger already started shutdown before this catch block ran.
+    if (!controller.isTriggered) {
+      options.audit.record({
+        channel: "session",
+        decision: "allow",
+        subject: sessionLabel,
+        reason: "error",
+        sessionId,
+      });
+    }
     await controller.trigger("error", 1, err);
     throw err;
   }

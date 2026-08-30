@@ -320,16 +320,24 @@ export async function runRunCommand(argv: string[]): Promise<void> {
 
   const dirs = resolved.fullConfig.dir.map(toWorkspaceDirSpec);
   const fullPiArgs = withProviderModelArgs(resolved.fullConfig.agent, piArgs);
-  const audit = createAuditWriter({ path: resolved.fullConfig.audit?.path ?? defaultAuditPath() });
+  // Hoisted so both `createAuditWriter()` and `runSession()`'s own
+  // `auditPath` option share the exact same string, rather than
+  // `defaultAuditPath()` being computed a second time and risking drift if
+  // its default ever changed between the two call sites.
+  const auditPath = resolved.fullConfig.audit?.path ?? defaultAuditPath();
+  const audit = createAuditWriter({ path: auditPath });
   await runSession({
     dirs,
     primary,
     piArgs: fullPiArgs,
+    ...(resolved.fullConfig.name !== undefined ? { name: resolved.fullConfig.name } : {}),
+    ...(resolved.fullConfig.vm?.["max-session"] !== undefined ? { maxSession: resolved.fullConfig.vm["max-session"] } : {}),
     egress: resolved.fullConfig.egress,
     ...(resolved.fullConfig.secrets !== undefined ? { secrets: resolved.fullConfig.secrets } : {}),
     git: resolved.fullConfig.git,
     policy: resolved.fullConfig.policy,
     dirConfigs: resolved.fullConfig.dir,
     audit,
+    auditPath,
   });
 }

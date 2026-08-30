@@ -12,17 +12,17 @@
 // arrive a second time (a user pressing Ctrl-C twice, an orchestrator
 // sending SIGTERM then SIGKILL) while the first teardown is still running.
 //
-// The real cleanup targets this eventually orchestrates — closing a live
-// `VM` (M1.6), flushing an audit log (M3), clearing a session watchdog (M8)
-// — don't exist as modules yet, so this cannot hardcode "call vm.close()"
-// today. Design landed on: an ordered list of named async steps, each one
-// independent of the others' success. `ShutdownController` runs every step
-// in order regardless of whether an earlier one threw, collects the
-// failures rather than aborting the rest of teardown on the first one (a
-// failure to flush the audit log must not skip closing the VM), and reports
-// them all afterward. M1.6 constructs one with `[restoreTty, closeVm]`; M3
-// and M8 append their own steps to that same list — this file does not need
-// to change when they do.
+// The real cleanup targets this orchestrates — closing a live `VM` (M1.6),
+// flushing an audit log (M3.4), clearing a session watchdog and removing a
+// session sidecar (M8.2) — live in other modules, not here. Design landed
+// on: an ordered list of named async steps, each one independent of the
+// others' success. `ShutdownController` runs every step in order regardless
+// of whether an earlier one threw, collects the failures rather than
+// aborting the rest of teardown on the first one (a failure to flush the
+// audit log must not skip closing the VM), and reports them all afterward.
+// `src/vm/session.ts`'s `runSession()` constructs one with
+// `[clear-watchdog, restore-tty, close-vm, remove-sidecar, flush-audit]` —
+// this file itself needed no change for any of those steps to be added.
 //
 // Testable without ever touching the test runner's own process: signal
 // registration and the exit function are both injectable, defaulting to the
