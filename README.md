@@ -1,0 +1,233 @@
+# Corb
+
+Corb is a command-line tool that boots a [Gondolin](https://earendil-works.github.io/gondolin/)
+micro-VM, mounts one or more host directories into it as a restricted workspace,
+and runs the [Pi](https://pi.dev) coding agent (`@earendil-works/pi-coding-agent`)
+interactively inside it. The properties it exists to provide: the model API key
+never enters the guest; network egress is restricted to an explicit allowlist;
+git and GitHub access are mediated by policy, with credentials staying on the
+host; per-path filesystem rules are enforced below the guest kernel, so no
+guest process can route around them; and every policy decision lands in one
+audit log. See [`docs/design.md`](docs/design.md) for the full architecture and
+the reasoning behind it.
+
+## Requirements
+
+- **Node.js >= 23.6.0** (`package.json`'s `engines.node`).
+- **Go >= 1.26** (`guest/go.mod`) — only needed to build the guest helper
+  binaries (`make guest`); not required to run an already-built image.
+- **QEMU** (`qemu-system-x86_64` / `qemu-system-aarch64`) and, on Linux,
+  read/write access to `/dev/kvm` — Gondolin boots a real, hardware-accelerated
+  micro-VM. Host platforms are Linux and macOS.
+- **Docker** — `corb image build` runs a `postBuild` step in a container
+  (`image/corb-image.json` sets `container.force: true, runtime: "docker"`;
+  see `docs/design.md`).
+- **`e2fsprogs`** (`mkfs.ext4`, `resize2fs`, `e2fsck`) reachable on `PATH`.
+  These are commonly installed only under `/sbin`/`/usr/sbin`; `corb image
+  build` accounts for that itself, but a manual invocation of these tools may
+  not.
+- **`cpio` and `lz4`** — used to assemble the guest initramfs.
+
+Run `corb doctor` after cloning to check all of the above (plus a few
+Corb-specific environment traps) against your actual machine.
+
+## Quickstart
+
+Corb is not published to npm yet — clone the repository and run it from a
+checkout.
+
+```sh
+git clone <this-repository> corb
+cd corb
+npm install
+
+# Build the Go guest helpers (dropcap, policygate) into guest/build/.
+make guest
+
+# Build and tag the guest VM image. Needs Docker, KVM, and e2fsprogs on PATH;
+# runs an in-VM verification gate suite before tagging (image/verify.ts).
+node src/cli.ts image build
+
+# Bind a model credential. Corb never hardcodes a provider — it binds
+# whatever host env var name Pi's own provider table expects, host-side, via
+# a [secrets.NAME] entry in config.toml. For Anthropic that's
+# ANTHROPIC_API_KEY.
+mkdir -p ~/.config/corb
+cat > ~/.config/corb/config.toml <<'EOF'
+[egress]
+allow = ["api.anthropic.com"]
+
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+EOF
+export ANTHROPIC_API_KEY=sk-...
+
+# Boot a session on the current directory. The first run against a new
+# workspace requires --trust-config to accept its effective policy.
+node src/cli.ts run --trust-config
+```
+
+This lands you in a live, interactive Pi TUI session with the current
+directory mounted read-write at `/work/<basename>` inside the guest.
+
+`npm run build` compiles `src/` to `dist/cli.js` (the `bin` target in
+`package.json`) for anyone who wants to `npm link` an installed `corb`
+command instead of invoking `node src/cli.ts` directly; both run the same
+code.
+
+## CLI surface
+
+| Command | What it does |
+|---|---|
+| `corb run [DIR] [flags] [-- PI_ARGS...]` | Boots a session and runs Pi interactively in the foreground. `DIR` defaults to the current directory. |
+| `corb explain [DIR] [flags] [--json]` | Prints the effective merged config and trust verdict for `DIR` without booting anything. |
+| `corb ls [--json]` | Lists known sessions, joining Gondolin's own session registry with Corb's sidecars. Read-only. |
+| `corb attach <session>` | Opens a new interactive shell inside a running session (a *new* shell — not a way to rejoin Pi's own TUI; see `src/vm/attach.ts`). |
+| `corb kill <session>` | Sends `SIGTERM` to a session's host process so it tears down cleanly (closes the VM, removes its sidecar, flushes its audit log). No `--force`/`SIGKILL` path, by design. |
+| `corb gc [--older-than DURATION] [--dry-run\|-n]` | Prunes Gondolin's own stale registry entries and Corb's orphaned session sidecars. Never prunes a sidecar whose recorded host pid is still alive. |
+| `corb doctor` | Checks the host environment (KVM, QEMU, Docker, Node/Go versions, e2fsprogs, cgroup delegation, required secrets, and a couple of Gondolin-specific sharp edges) and prints a report. |
+| `corb image build [--config FILE] [--tag REF] [--arch x86_64\|aarch64]` | Builds, verifies, and tags the guest VM image. |
+
+`corb run` and `corb explain` share the same flags:
+
+| Flag | |
+|---|---|
+| `--dir NAME=HOST[:ro\|:rw]` (repeatable) | Add or override a workspace directory. |
+| `--primary NAME` | Which directory becomes Pi's working directory (defaults to the positional `DIR`). |
+| `--trust-config` | Accept a `requires-confirmation` trust verdict and proceed (`corb run` only — required on the first run against any workspace, and again whenever the effective policy widens). |
+| `--dry-run` | (`corb run` only) Print what a real run would do — config, trust verdict — without booting a VM or requiring a secret to be bound. |
+| `--json` | (`corb explain`/`corb ls` only) Machine-readable output. |
+| `-- PI_ARGS...` | (`corb run` only) Everything after a literal `--` is forwarded to `pi` unmodified. |
+
+A few things worth being explicit about, since the design docs describe a
+larger target surface than what exists today:
+
+- **`corb image` only has `build`.** `image ls`, `image verify`, and `image
+  pin` are part of the design but are not implemented yet — `src/cli.ts`
+  dispatches `image build` specifically and falls through to a stub message
+  for anything else under `image`.
+- **`corb run` does not yet have** `--rule`, `--allow-host`, `--allow-repo`,
+  `--allow-push`/`--no-push`, `--no-network`, `--image`, `--memory`, `--cpus`,
+  `--max-session`, `--name`, `--session-dir`, `--env`, `--print-plan`, or
+  `--debug-log`. The corresponding settings (VM image/memory/cpus/session
+  limits, egress allowlist, git policy, per-path rules, agent provider/model)
+  are all read from `config.toml` (see below) — they are just not yet
+  exposed as `corb run` flags.
+
+## Configuration
+
+Corb reads one config file today: `~/.config/corb/config.toml`
+(overridable via `CORB_CONFIG_DIR`). Named per-workspace files
+(`~/.config/corb/workspaces/<name>.toml`, described in the design docs as the
+target model) are not implemented yet — `corb run`/`corb explain` instead
+take a directory path (the positional argument, defaulting to the current
+directory), which is merged with `config.toml` as a synthesized single-`dir`
+layer.
+
+```toml
+[vm]
+image       = "corb:0.1.0"
+memory      = "4G"
+cpus        = 4
+max-session = "4h"
+limits      = { memory-max = "6G", pids-max = 1024, cpu-quota = "400%" }
+
+[agent]
+provider = "anthropic"
+model    = "claude-opus-4-5"
+
+# Host env var -> bound as a host-side secret. The guest only ever holds a
+# placeholder; the real value is substituted on the wire, for allowed hosts
+# only (createHttpHooks({ secrets })).
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.GITHUB_TOKEN]
+hosts    = ["api.github.com"]
+optional = true
+
+[egress]
+allow                  = ["api.anthropic.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com"]
+block-internal-ranges  = true
+
+[git]
+allow-hosts = ["github.com"]
+allow-repos = ["you/your-repo"]
+allow-push  = false
+
+[[dir]]
+name = "reference"
+host = "/home/you/Code/reference-docs"
+mode = "ro"
+
+[[dir]]
+name  = "scratch"
+host  = "/home/you/.cache/corb/scratch"
+mode  = "rw"
+create = true
+rules = [
+  { glob = "**/.env*",     mode = "hidden",     reason = "local secrets file" },
+  { glob = "**/*_test.go", mode = "deny-write", reason = "tests are frozen for this session" },
+]
+
+[policy]
+enabled           = true
+secret-scan       = true
+max-changed-files = 40
+fail-open         = true
+
+[audit]
+path = "/home/you/.local/state/corb/audit.jsonl"
+```
+
+Note that `host` paths are used as-is (no `~` expansion) — use absolute
+paths.
+
+**Trust ratchet.** Corb hashes the effective config for a workspace and
+compares it against the last accepted hash, stored in
+`~/.config/corb/trusted.json`, keyed by the workspace's resolved absolute
+directory path. Any change that *widens* policy — a new allowed host, a
+directory gaining `rw`, `allow-push` turning on, a rule being removed, or any
+field the widening/narrowing table doesn't recognize — requires confirmation
+(`--trust-config`) before a real `corb run` proceeds; narrowing changes apply
+silently. The very first run against a workspace always requires
+confirmation, since there is nothing yet to compare against. `--dir` flags
+passed on the command line are always trusted (a human just typed them) and
+never participate in the ratchet.
+
+## Verification / testing
+
+- `npm test` — unit tests (Vitest), no VM boot, safe to run on every commit.
+- `npm run typecheck` / `npm run lint` — TypeScript and oxlint.
+- `make e2e` (or `CORB_E2E=1 npm run test:e2e` after building the guest binaries
+  and the image yourself) — the real end-to-end suite: boots actual VMs
+  against a freshly built guest image. Takes minutes and needs a KVM-capable
+  host.
+
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `lint`, `test`, and the Go
+`vet`/`build`/`test` steps for the guest module on every push and pull
+request. It does **not** run the e2e suite — nested virtualization isn't
+reliable on hosted runners — which is instead wired as a manual-only
+`workflow_dispatch` job (`.github/workflows/e2e.yml`).
+
+## Documentation map
+
+- [`docs/design.md`](docs/design.md) — Corb's own architecture and the
+  reasoning behind it.
+- [`docs/gondolin-notes.md`](docs/gondolin-notes.md) — verified facts,
+  sharp edges, and the risk register for the Gondolin SDK version Corb is
+  pinned to.
+- [`docs/spike-results.md`](docs/spike-results.md) — evidence from the
+  go/no-go spikes gating the early milestones.
+
+## Status
+
+M1 through M8 (walking skeleton through sessions/limits, plus the git/gh
+policy gate, VFS policy, and image hardening gates in between) and CI (M9.1)
+are complete — see `git log` for the full milestone-by-milestone history.
+M9 as a whole is an optional milestone; this README is M9.2 of it, still in
+progress.
+
+## License
+
+No license has been chosen for this project yet — `package.json` has no
+`license` field and there is no `LICENSE` file in this repository.
