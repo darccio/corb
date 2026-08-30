@@ -5,6 +5,7 @@ import { runRunCommand } from "./commands/run.ts";
 import { runExplainCommand } from "./commands/explain.ts";
 import { runDoctorCommand } from "./commands/doctor.ts";
 import { runLsCommand } from "./commands/ls.ts";
+import { runKillCommand } from "./commands/kill.ts";
 
 export const STUB_MESSAGE = "corb: not yet implemented";
 
@@ -16,8 +17,8 @@ export function run(argv: string[] = process.argv.slice(2)): string {
 }
 
 // `image build` (M1.3), `run` (M1.6), `explain` (M2.5), `doctor` (M3.5),
-// and `ls` (M8.4) are the real subcommands so far. Everything else —
-// attach, kill, gc, and any other `image` subcommand — keeps printing the
+// `ls` (M8.4) and `kill` (M8.5) are the real subcommands so far. Everything
+// else — attach, gc, and any other `image` subcommand — keeps printing the
 // M1.1 stub exactly as before; real subcommand parsing for the rest lands
 // in later milestones.
 async function main(argv: string[]): Promise<void> {
@@ -39,6 +40,10 @@ async function main(argv: string[]): Promise<void> {
   }
   if (argv[0] === "ls") {
     await runLsCommand(argv.slice(1));
+    return;
+  }
+  if (argv[0] === "kill") {
+    await runKillCommand(argv.slice(1));
     return;
   }
   console.log(run(argv));

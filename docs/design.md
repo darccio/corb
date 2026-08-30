@@ -746,9 +746,21 @@ orphan: a session killed without clean teardown, so the sidecar removal never
 ran. `corb ls` surfaces it, marked as not running, but never prunes it — it only
 reads, and pruning is `corb gc`'s job.
 
-**Not built yet — M8.5 through M8.7:** `corb attach`, `corb kill` and `corb gc`.
-Until those land, the recovery path for an orphan is seeing it in `corb ls` and
-cleaning it up by hand.
+`corb kill <session>` (M8.5) is the counterpart that acts on one. It resolves an
+id or unambiguous id prefix through Gondolin's own `findSession`, and sends
+`SIGTERM` to the session's owning host `corb run` process — the pid both
+registries record — so the signal lands in that process's shutdown controller
+and runs the full ordered teardown rather than cutting it short. There is
+deliberately no `--force`/`SIGKILL` path: SIGKILL cannot be caught, so it skips
+teardown entirely and leaves exactly the orphaned QEMU process and stale sidecar
+described above. It also never signals a session that is not currently alive
+(Gondolin's `alive` is a pid *and* socket check): a recorded pid whose process
+has died may since have been reused by an unrelated process. A stale or orphaned
+entry therefore gets an explanation and a non-zero exit, not a signal.
+
+**Not built yet — M8.6 and M8.7:** `corb gc` and `corb attach`. Until those land,
+the recovery path for an orphan is seeing it in `corb ls` and cleaning it up by
+hand.
 
 ---
 
