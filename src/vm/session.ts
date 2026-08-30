@@ -299,8 +299,17 @@ export class InvalidDirRuleError extends Error {
   }
 }
 
-/** The subset of `/etc/corb/image.json` (image/overlay/etc/corb/image.json) this session needs. */
-interface CorbImageJson {
+/**
+ * The subset of `/etc/corb/image.json` (image/overlay/etc/corb/image.json)
+ * this session needs.
+ *
+ * Exported (M8.7), alongside `parseCorbImageJson` below, so `src/vm/attach.ts`
+ * can reuse this exact validation for `corb attach`'s own one-shot read of
+ * the same file over a raw protocol connection, rather than duplicating the
+ * field-by-field checks a second time. Pure parsing logic, no behavior
+ * change to anything in this module.
+ */
+export interface CorbImageJson {
   user: string;
   uid: number;
   gid: number;
@@ -311,7 +320,7 @@ interface CorbImageJson {
   };
 }
 
-function parseCorbImageJson(text: string): CorbImageJson {
+export function parseCorbImageJson(text: string): CorbImageJson {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
