@@ -50,6 +50,7 @@ import { parseArgs } from "node:util";
 import { runSession, toGlobRules, type WorkspaceDirSpec } from "../vm/session.ts";
 import { readDelegatedControllersForCurrentUser } from "../vm/cgroup.ts";
 import { decideScope, reExecUnderScope } from "../vm/scope.ts";
+import { classifySessionSocketPath, describeSessionSocketOverflow, gondolinSessionsDir } from "../vm/sockpath.ts";
 import { acceptWorkspace, resolveWorkspace, type ResolvedWorkspace } from "../config/resolve.ts";
 import { renderText, renderTrust } from "../config/render.ts";
 import { defaultAuditPath } from "../config/paths.ts";
@@ -351,6 +352,39 @@ export async function runRunCommand(argv: string[]): Promise<void> {
       console.error(
         `corb: vm.limits configured, but the user cgroup does not delegate: ${decision.missingControllers.join(", ")}. Continuing without those limits (unlimited).`,
       );
+    }
+  }
+
+  // Gondolin session socket length (see `src/vm/sockpath.ts`'s module comment
+  // for the trap itself). `corb doctor` has a check for this too, but doctor
+  // is opt-in and a user who trips this will not have run it — so warn here,
+  // unprompted, on the path that actually creates the socket.
+  //
+  // **Warn and continue, never hard-fail.** The session is completely
+  // functional; only `corb ls`/`corb kill`/`corb gc`/`corb attach` degrade.
+  // Refusing to boot a working session over a degraded management surface
+  // would be the worse outcome, and this matches the precedent M8.3 set
+  // directly above for missing cgroup controllers.
+  //
+  // **Why here and not in `src/vm/session.ts`.** `runSession()` is where the
+  // other pre-boot validation lives, but all of that validation *throws* —
+  // it has no "print a warning and carry on" channel, and it writes to an
+  // injectable `options.stderr` rather than `console.error`. `runSession()`
+  // is also called directly, with fabricated options, by the e2e suite, which
+  // would then emit this warning on every such boot. Most decisively, the
+  // thing being warned about is the degradation of *corb subcommands*
+  // (`corb ls`, `corb kill`) — a CLI-surface concern that `session.ts`, which
+  // deliberately knows nothing about `src/config/` or the command layer, has
+  // no business describing.
+  //
+  // Placed *after* the scope re-exec block above, not before: a re-exec'd
+  // child re-enters this same function from the top with `CORB_SCOPED` set,
+  // so warning before that block would print once in the parent and again in
+  // the child. After it, exactly the process that boots the VM warns, once.
+  {
+    const fit = classifySessionSocketPath(gondolinSessionsDir());
+    if (!fit.fits) {
+      console.error(`corb: ${describeSessionSocketOverflow(fit)}`);
     }
   }
 

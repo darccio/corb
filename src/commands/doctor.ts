@@ -24,6 +24,12 @@ import { corbConfigDir, configTomlPath } from "../config/paths.ts";
 import { ConfigParseError, parseConfigLayer, type ConfigLayer } from "../config/schema.ts";
 import { ImageNotFoundError, resolveRuntimeImage } from "../vm/image.ts";
 import { readCgroupControllersText } from "../vm/cgroup.ts";
+import {
+  classifySessionSocketPath,
+  describeSessionSocketOverflow,
+  gondolinSessionsDir,
+  MAX_SESSIONS_DIR_LENGTH,
+} from "../vm/sockpath.ts";
 
 export type DoctorStatus = "ok" | "warn" | "fail";
 
@@ -571,6 +577,48 @@ function checkCgroupControllers(platform: NodeJS.Platform): DoctorCheckResult {
 }
 
 // ---------------------------------------------------------------------------
+// Gondolin session socket path length. See `src/vm/sockpath.ts`'s module
+// comment for the full trap: an over-long sessions directory makes every
+// session's unix socket bind fail with `EINVAL`, Gondolin swallows the error,
+// and the session runs fine while permanently reporting `alive: false`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Pure classification, taking the sessions directory as an argument so it is
+ * testable against a fabricated path (`classifyCgroupControllers` above is the
+ * closest model — same split, same reasons).
+ *
+ * **`warn`, not `fail`, deliberately.** Every other `fail` in this file means
+ * "corb cannot run": no `/dev/kvm`, no `qemu-system-*`, no `docker`, too old a
+ * Node, a required secret with no env var. This condition is categorically
+ * different — the VM boots, the agent works, and the session does everything
+ * it is supposed to do. What degrades is only the *session-management*
+ * surface: `corb ls` misreports a live session as `stale`, `corb kill` refuses
+ * to signal it, and `corb gc`/`corb attach` (M8.6/M8.7) would be misled the
+ * same way. Failing the whole report — and with it `corb doctor`'s exit code —
+ * over a machine on which corb genuinely runs would misrepresent the severity
+ * and train users to ignore the exit code. This matches the posture
+ * `cgroup-controllers` already takes for its own "works, but a feature
+ * silently degrades" case.
+ */
+export function classifySocketPathBudget(sessionsDir: string): DoctorCheckResult {
+  const fit = classifySessionSocketPath(sessionsDir);
+  if (!fit.fits) {
+    return warn("gondolin-socket-path", describeSessionSocketOverflow(fit));
+  }
+  return ok(
+    "gondolin-socket-path",
+    `session sockets fit: '${fit.sessionsDir}' yields a ${fit.socketPathLength}-character socket path ` +
+      `(limit ${fit.budget}; a sessions directory may be up to ${MAX_SESSIONS_DIR_LENGTH} chars).`,
+  );
+}
+
+/** Thin wrapper: derives the real Gondolin sessions directory from the real environment and classifies it. Nothing is bound, created, or written — this is a pure length computation over a derived path. */
+function checkSocketPathBudget(): DoctorCheckResult {
+  return classifySocketPathBudget(gondolinSessionsDir());
+}
+
+// ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
 
@@ -624,6 +672,7 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   checks.push(checkSecretsConfigured(configResult));
   checks.push(checkImageResolvable());
   checks.push(checkCgroupControllers(process.platform));
+  checks.push(checkSocketPathBudget());
 
   return buildDoctorReport(checks);
 }

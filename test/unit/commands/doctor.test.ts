@@ -22,6 +22,7 @@ import {
   classifyE2fsprogs,
   classifyGoInstall,
   classifyNodeVersion,
+  classifySocketPathBudget,
   classifySshAuthSock,
   compareVersionTuples,
   locateTool,
@@ -253,6 +254,41 @@ describe("commands/doctor: cgroup controllers classification", () => {
   });
 });
 
+describe("commands/doctor: Gondolin session socket path budget", () => {
+  // The boundary arithmetic itself (108 / 42 / 66) is owned and exhaustively
+  // tested by `test/unit/vm/sockpath.test.ts`; what matters here is only that
+  // this check maps a fit/no-fit verdict onto the right `DoctorCheckResult`.
+  it("a short sessions directory -> ok", () => {
+    const result = classifySocketPathBudget("/home/u/.cache/gondolin/sessions");
+    expect(result.status).toBe("ok");
+    expect(result.name).toBe("gondolin-socket-path");
+  });
+
+  it("a directory exactly at the 66-char boundary -> ok", () => {
+    expect(classifySocketPathBudget("/tmp/" + "d".repeat(61)).status).toBe("ok");
+  });
+
+  it("one character over -> warn, not fail (the VM still works; only session management degrades)", () => {
+    const result = classifySocketPathBudget("/tmp/" + "d".repeat(62));
+    expect(result.status).toBe("warn");
+    expect(result.status).not.toBe("fail");
+  });
+
+  it("the warn detail names the directory, the symptom, and an actionable remedy", () => {
+    const dir = "/tmp/" + "d".repeat(62);
+    const result = classifySocketPathBudget(dir);
+    expect(result.detail).toContain(dir);
+    expect(result.detail).toContain("109");
+    expect(result.detail).toContain("corb ls");
+    expect(result.detail).toContain("GONDOLIN_SESSIONS_DIR");
+  });
+
+  it("an over-long directory never fails the overall report (warn only)", () => {
+    const result = classifySocketPathBudget("/tmp/" + "d".repeat(400));
+    expect(buildDoctorReport([result]).ok).toBe(true);
+  });
+});
+
 describe("commands/doctor: required-secrets vs secrets-configured (config.toml + env)", () => {
   const absent: DoctorConfigLoad = { kind: "absent" };
   const parseError: DoctorConfigLoad = { kind: "parse-error", error: new ConfigParseError("config.toml", "bad TOML") };
@@ -369,6 +405,7 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
         "secrets-configured",
         "image-resolvable",
         "cgroup-controllers",
+        "gondolin-socket-path",
       ]),
     );
     expect(report.ok).toBe(report.checks.every((c) => c.status !== "fail"));
