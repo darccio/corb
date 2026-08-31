@@ -450,6 +450,13 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     piArgs: fullPiArgs,
     ...(resolved.fullConfig.name !== undefined ? { name: resolved.fullConfig.name } : {}),
     ...(resolved.fullConfig.vm?.["max-session"] !== undefined ? { maxSession: resolved.fullConfig.vm["max-session"] } : {}),
+    // `image`/`memory`/`cpus` were previously parsed, merged, rendered by
+    // `corb explain`, and trust-hashed, but never forwarded here — every
+    // session silently got `resolveRuntimeImage()`'s default image and the
+    // SDK's own default memory/cpus regardless of `[vm]` in config.toml.
+    ...(resolved.fullConfig.vm?.image !== undefined ? { image: resolved.fullConfig.vm.image } : {}),
+    ...(resolved.fullConfig.vm?.memory !== undefined ? { memory: resolved.fullConfig.vm.memory } : {}),
+    ...(resolved.fullConfig.vm?.cpus !== undefined ? { cpus: resolved.fullConfig.vm.cpus } : {}),
     egress: resolved.fullConfig.egress,
     ...(resolved.fullConfig.secrets !== undefined ? { secrets: resolved.fullConfig.secrets } : {}),
     git: resolved.fullConfig.git,

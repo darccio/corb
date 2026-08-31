@@ -587,6 +587,10 @@ export interface RunSessionOptions {
   piArgs: string[];
   /** Image selector override. Defaults to `resolveRuntimeImage()`'s own default (`corb:<pkgVersion>`). */
   image?: string;
+  /** VM memory size, qemu syntax (e.g. `"4G"`). Passed straight through to `VM.create()`; defaults to the SDK's own default (`"1G"`) when unset. */
+  memory?: string;
+  /** VM vCPU count. Passed straight through to `VM.create()`; defaults to the SDK's own default (`2`) when unset. */
+  cpus?: number;
   /**
    * The workspace's configured `EffectiveConfig.name` (`src/config/load.ts`).
    * Used as the `<name>` component of the default `sessionLabel` (see
@@ -961,6 +965,17 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       allowWebSockets: egressConfig.allowWebSockets,
       vfs: { mounts: vfsMounts },
       ssh: gitSshOptions,
+      // `vm.memory`/`vm.cpus` (`config.toml`'s `[vm]` table) were previously
+      // parsed, merged, trust-hashed, and rendered by `corb explain` without
+      // ever reaching here — every session silently got the SDK's own
+      // defaults ("1G"/2) regardless of what a workspace configured. Passed
+      // straight through: both option names and types match `VMOptions`
+      // (`node_modules/@earendil-works/gondolin/dist/src/vm/types.d.ts`)
+      // exactly, so no translation is needed, only conditional inclusion —
+      // `exactOptionalPropertyTypes` treats an explicit `memory: undefined`
+      // differently from the key being absent.
+      ...(options.memory !== undefined ? { memory: options.memory } : {}),
+      ...(options.cpus !== undefined ? { cpus: options.cpus } : {}),
       sessionLabel,
     });
 

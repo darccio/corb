@@ -391,6 +391,41 @@ describe("commands/run: runRunCommand", () => {
     });
   });
 
+  describe("[vm] config forwarding into runSession", () => {
+    it("forwards image/memory/cpus to runSession when [vm] sets them", async () => {
+      fs.writeFileSync(
+        path.join(configDir, "config.toml"),
+        ['[vm]', 'image = "corb:pinned-1.2.3"', 'memory = "8G"', "cpus = 6"].join("\n"),
+      );
+
+      await runRunCommand([workDir, "--trust-config"]);
+      expect(runSessionMock).toHaveBeenCalledTimes(1);
+      const [options] = runSessionMock.mock.calls[0] as [{ image?: string; memory?: string; cpus?: number }];
+      expect(options.image).toBe("corb:pinned-1.2.3");
+      expect(options.memory).toBe("8G");
+      expect(options.cpus).toBe(6);
+    });
+
+    it("omits image/memory/cpus from runSession's options entirely when [vm] does not set them", async () => {
+      await runRunCommand([workDir, "--trust-config"]);
+      expect(runSessionMock).toHaveBeenCalledTimes(1);
+      const [options] = runSessionMock.mock.calls[0] as [Record<string, unknown>];
+      expect("image" in options).toBe(false);
+      expect("memory" in options).toBe(false);
+      expect("cpus" in options).toBe(false);
+    });
+
+    it("forwards only the [vm] fields that are actually set, leaving the rest absent", async () => {
+      fs.writeFileSync(path.join(configDir, "config.toml"), ['[vm]', 'memory = "2G"'].join("\n"));
+
+      await runRunCommand([workDir, "--trust-config"]);
+      const [options] = runSessionMock.mock.calls[0] as [Record<string, unknown>];
+      expect(options.memory).toBe("2G");
+      expect("image" in options).toBe(false);
+      expect("cpus" in options).toBe(false);
+    });
+  });
+
   describe("--dir / --primary wiring into runSession", () => {
     it("passes fullConfig.dir (positional + --dir entries) and the resolved primary to runSession, after accepting trust", async () => {
       const extraDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-run-extra-"));

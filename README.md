@@ -114,6 +114,13 @@ larger target surface than what exists today:
   limits, egress allowlist, git policy, per-path rules, agent provider/model)
   are all read from `config.toml` (see below) — they are just not yet
   exposed as `corb run` flags.
+- **`[agent].extensions` and `[agent].append-system-prompt-file` are parsed
+  but not yet wired anywhere.** They're validated, merged across layers,
+  shown by `corb explain`, and participate in the trust ratchet like every
+  other field — but nothing forwards them to `pi`; only `[agent].provider`
+  and `[agent].model` actually reach it (`withProviderModelArgs`,
+  `src/commands/run.ts`). Setting either field today has no effect on a real
+  `corb run`.
 
 ## Configuration
 
