@@ -22,6 +22,7 @@ import {
 } from "../../../src/config/resolve.ts";
 import { ConfigParseError } from "../../../src/config/schema.ts";
 import type { EffectiveConfig } from "../../../src/config/load.ts";
+import { hashEffectiveConfig } from "../../../src/config/trust.ts";
 
 describe("config/resolve: resolveWorkspace", () => {
   let workDir: string;
@@ -111,7 +112,7 @@ describe("config/resolve: resolveWorkspace", () => {
     fs.writeFileSync(
       path.join(configDir, "trusted.json"),
       JSON.stringify({
-        [resolvedDir]: { configHash: "irrelevant-for-evaluateTrust", acceptedConfig: priorConfig, acceptedAt: 1000 },
+        [resolvedDir]: { configHash: hashEffectiveConfig(priorConfig), acceptedConfig: priorConfig, acceptedAt: 1000 },
       }),
     );
 
@@ -131,7 +132,7 @@ describe("config/resolve: resolveWorkspace", () => {
     fs.writeFileSync(
       path.join(configDir, "trusted.json"),
       JSON.stringify({
-        [resolvedDir]: { configHash: "irrelevant-for-evaluateTrust", acceptedConfig: narrowerPrior, acceptedAt: 1000 },
+        [resolvedDir]: { configHash: hashEffectiveConfig(narrowerPrior), acceptedConfig: narrowerPrior, acceptedAt: 1000 },
       }),
     );
     fs.writeFileSync(path.join(configDir, "config.toml"), ['[egress]', 'allow = ["api.anthropic.com"]'].join("\n"));
@@ -189,7 +190,7 @@ describe("config/resolve: resolveWorkspace", () => {
       fs.writeFileSync(
         path.join(configDir, "trusted.json"),
         JSON.stringify({
-          [resolvedDir]: { configHash: "irrelevant", acceptedConfig: priorConfig, acceptedAt: 1000 },
+          [resolvedDir]: { configHash: hashEffectiveConfig(priorConfig), acceptedConfig: priorConfig, acceptedAt: 1000 },
         }),
       );
 

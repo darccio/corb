@@ -56,7 +56,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { mergeConfigLayers, type DirConfig, type EffectiveConfig } from "./load.ts";
 import { parseConfigLayer, type ConfigLayer } from "./schema.ts";
-import { evaluateTrust, recordAcceptance, type TrustEvaluation, type TrustStore, type TrustedWorkspaceRecord } from "./trust.ts";
+import {
+  evaluateTrust,
+  hashEffectiveConfig,
+  recordAcceptance,
+  type TrustEvaluation,
+  type TrustStore,
+  type TrustedWorkspaceRecord,
+} from "./trust.ts";
 import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath } from "./paths.ts";
 
 /** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
@@ -223,6 +230,20 @@ function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: st
 // that parses as valid JSON but isn't shaped like a `TrustStore` (e.g. an
 // array, or an entry missing `configHash`) must fail loudly here rather than
 // quietly behaving like an empty store somewhere downstream.
+//
+// Also recomputes `hashEffectiveConfig(record.acceptedConfig)` and compares
+// it to the stored `configHash` — previously `configHash` was written by
+// `recordAcceptance` and shape-checked here, but never actually compared to
+// anything, so a `trusted.json` hand-edited (or corrupted by a partial
+// write) to change `acceptedConfig` without updating `configHash` to match
+// was silently accepted as a valid prior record: `evaluateTrust` only ever
+// looked at `acceptedConfig`, never at whether `configHash` attested to it.
+// This does not make `trusted.json` tamper-*proof* — an attacker with write
+// access can trivially recompute a matching hash with the same exported
+// function — but it does mean an *inconsistent* store (the two most likely
+// real causes: a hand-edit that forgot to update the hash, or a torn write)
+// fails loudly here instead of `evaluateTrust` silently comparing against
+// whatever `acceptedConfig` happens to contain.
 function validateTrustStoreShape(value: unknown, storePath: string): TrustStore {
   if (!isPlainObject(value)) {
     throw new TrustStoreError(storePath, "must contain a JSON object mapping workspace keys to trust records");
@@ -239,6 +260,13 @@ function validateTrustStoreShape(value: unknown, storePath: string): TrustStore 
     }
     if (!isPlainObject(record.acceptedConfig)) {
       throw new TrustStoreError(storePath, `entry '${key}' is missing an 'acceptedConfig' object field`);
+    }
+    const recomputed = hashEffectiveConfig(record.acceptedConfig as unknown as EffectiveConfig);
+    if (recomputed !== record.configHash) {
+      throw new TrustStoreError(
+        storePath,
+        `entry '${key}' has a 'configHash' that does not match its 'acceptedConfig' (store is corrupted or was hand-edited)`,
+      );
     }
   }
   return value as unknown as TrustStore;

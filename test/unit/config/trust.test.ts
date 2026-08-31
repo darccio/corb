@@ -299,6 +299,136 @@ describe("config/trust: evaluateTrust", () => {
     });
   });
 
+  describe("dir.mode: all six transitions (absent means 'rw' downstream — src/commands/run.ts, src/vm/session.ts)", () => {
+    function withScratchMode(config: EffectiveConfig, mode: "ro" | "rw" | undefined): EffectiveConfig {
+      const next = clone(config);
+      const scratch = next.dir.find((d) => d.name === "scratch");
+      if (scratch === undefined) {
+        throw new Error("test fixture missing 'scratch' dir");
+      }
+      if (mode === undefined) {
+        delete scratch.mode;
+      } else {
+        scratch.mode = mode;
+      }
+      return next;
+    }
+
+    it("'ro' -> 'rw' is widening", () => {
+      const previous = withScratchMode(baseConfig(), "ro");
+      const current = withScratchMode(previous, "rw");
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("requires-confirmation");
+      expect(result.widened).toContainEqual({ field: "dir.scratch.mode", description: "dir 'scratch' mode changed from 'ro' to 'rw'" });
+    });
+
+    it("'rw' -> 'ro' is narrowing", () => {
+      const previous = withScratchMode(baseConfig(), "rw");
+      const current = withScratchMode(previous, "ro");
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("trusted");
+      expect(result.narrowed).toContainEqual({ field: "dir.scratch.mode", description: "dir 'scratch' mode changed from 'rw' to 'ro'" });
+    });
+
+    it("undefined -> 'rw' is a no-op (both mean rw)", () => {
+      const previous = withScratchMode(baseConfig(), undefined);
+      const current = withScratchMode(previous, "rw");
+      const result = evaluateTrust(previous, current);
+      expect(result.widened.some((c) => c.field.startsWith("dir.scratch"))).toBe(false);
+      expect(result.narrowed.some((c) => c.field.startsWith("dir.scratch"))).toBe(false);
+    });
+
+    it("'rw' -> undefined is a no-op (both mean rw)", () => {
+      const previous = withScratchMode(baseConfig(), "rw");
+      const current = withScratchMode(previous, undefined);
+      const result = evaluateTrust(previous, current);
+      expect(result.widened.some((c) => c.field.startsWith("dir.scratch"))).toBe(false);
+      expect(result.narrowed.some((c) => c.field.startsWith("dir.scratch"))).toBe(false);
+    });
+
+    it("undefined -> 'ro' is narrowing (regression: previously silently ignored)", () => {
+      const previous = withScratchMode(baseConfig(), undefined);
+      const current = withScratchMode(previous, "ro");
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("trusted");
+      expect(result.narrowed).toContainEqual({ field: "dir.scratch.mode", description: "dir 'scratch' mode changed from 'rw' to 'ro'" });
+    });
+
+    it("'ro' -> undefined is widening (regression: deleting a 'mode = \"ro\"' line used to convert a read-only mount to read-write with no confirmation)", () => {
+      const previous = withScratchMode(baseConfig(), "ro");
+      const current = withScratchMode(previous, undefined);
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("requires-confirmation");
+      expect(result.widened).toContainEqual({ field: "dir.scratch.mode", description: "dir 'scratch' mode changed from 'ro' to 'rw'" });
+    });
+
+    it("'ro' -> 'rw' reports exactly one mode change, not a second duplicate from the fallback rule", () => {
+      const previous = withScratchMode(baseConfig(), "ro");
+      const current = withScratchMode(previous, "rw");
+      const result = evaluateTrust(previous, current);
+      const modeChanges = [...result.widened, ...result.narrowed].filter((c) => c.field === "dir.scratch.mode");
+      expect(modeChanges).toHaveLength(1);
+    });
+  });
+
+  describe("fail-closed: a field with no RULES entry defaults to widening (deny-list fallback, not an allow-list)", () => {
+    it("a new field on git.* is widening, not silently trusted", () => {
+      const previous = baseConfig();
+      const current = clone(previous) as EffectiveConfig & { git: EffectiveConfig["git"] & Record<string, unknown> };
+      current.git["allow-force-push"] = true;
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("requires-confirmation");
+      const unclassified = result.widened.find((c) => c.field === "git.allow-force-push");
+      expect(unclassified).toBeDefined();
+      expect(unclassified?.description).toContain("unclassified field");
+    });
+
+    it("a new field on policy.* is widening, not silently trusted", () => {
+      const previous = baseConfig();
+      const current = clone(previous) as EffectiveConfig & { policy: EffectiveConfig["policy"] & Record<string, unknown> };
+      current.policy["skip-scan-for"] = ["**"];
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("requires-confirmation");
+      const unclassified = result.widened.find((c) => c.field === "policy.skip-scan-for");
+      expect(unclassified).toBeDefined();
+    });
+
+    it("a new field on egress.* outside the classified leaves is widening", () => {
+      const previous = baseConfig();
+      const current = clone(previous) as EffectiveConfig & { egress: EffectiveConfig["egress"] & Record<string, unknown> };
+      current.egress["allow-dns"] = ["*"];
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("requires-confirmation");
+      const unclassified = result.widened.find((c) => c.field === "egress.allow-dns");
+      expect(unclassified).toBeDefined();
+    });
+
+    it("a new field on a dir[] entry is widening", () => {
+      const previous = baseConfig();
+      const current = clone(previous);
+      const scratch = current.dir.find((d) => d.name === "scratch") as (typeof current.dir)[number] & Record<string, unknown>;
+      if (scratch === undefined) {
+        throw new Error("test fixture missing 'scratch' dir");
+      }
+      scratch["escape-hatch"] = true;
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("requires-confirmation");
+      const unclassified = result.widened.find((c) => c.field === "dir.scratch.escape-hatch");
+      expect(unclassified).toBeDefined();
+    });
+
+    it("a wholly new top-level field is widening", () => {
+      const previous = baseConfig();
+      const current = clone(previous) as EffectiveConfig & Record<string, unknown>;
+      current.sandbox = { escape: true };
+      const result = evaluateTrust(previous, current);
+      expect(result.verdict).toBe("requires-confirmation");
+      const unclassified = result.widened.find((c) => c.field === "sandbox");
+      expect(unclassified).toBeDefined();
+      expect(unclassified?.description).toContain("unclassified field");
+    });
+  });
+
   describe("policy['max-changed-files'] unset-vs-set direction (judgment call)", () => {
     it("unset -> a finite limit is a narrowing (a cap now exists where none did)", () => {
       const previous = baseConfig();

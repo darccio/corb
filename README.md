@@ -183,17 +183,29 @@ path = "/home/you/.local/state/corb/audit.jsonl"
 Note that `host` paths are used as-is (no `~` expansion) — use absolute
 paths.
 
-**Trust ratchet.** Corb hashes the effective config for a workspace and
-compares it against the last accepted hash, stored in
-`~/.config/corb/trusted.json`, keyed by the workspace's resolved absolute
-directory path. Any change that *widens* policy — a new allowed host, a
-directory gaining `rw`, `allow-push` turning on, a rule being removed, or any
-field the widening/narrowing table doesn't recognize — requires confirmation
-(`--trust-config`) before a real `corb run` proceeds; narrowing changes apply
-silently. The very first run against a workspace always requires
+**Trust ratchet.** Corb stores the full effective config it was last accepted
+with for a workspace in `~/.config/corb/trusted.json`, keyed by the
+workspace's resolved absolute directory path, and structurally compares it
+against the effective config now. Any change that *widens* policy — a new
+allowed host, a directory gaining `rw`, `allow-push` turning on, a rule being
+removed, or any field the widening/narrowing table doesn't have a rule for —
+requires confirmation (`--trust-config`) before a real `corb run` proceeds;
+narrowing changes apply silently. A field with no widening/narrowing rule is
+a deny-list, not an allow-list: it defaults to requiring confirmation, so a
+new config field added without an accompanying rule fails safe rather than
+being silently trusted. Alongside `acceptedConfig`, each record also stores a
+sha256 hash of it (`configHash`); on read, Corb recomputes that hash and
+checks it still matches, refusing to treat the record as valid if it
+doesn't — a fast integrity check against a hand-edited or partially-written
+`trusted.json`, not a defense against a host process that already has write
+access to the file. The very first run against a workspace always requires
 confirmation, since there is nothing yet to compare against. `--dir` flags
 passed on the command line are always trusted (a human just typed them) and
-never participate in the ratchet.
+never participate in the ratchet. Corb also refuses to mount any host
+directory that is, or overlaps, its own `~/.config/corb`/`~/.local/state/corb`
+— see [`docs/adr/0006`](docs/adr/0006-workspace-config-outside-every-mount.md)
+— since a workspace-writable copy of `trusted.json` would otherwise let an
+agent pre-accept a wider config for a future run.
 
 ## Verification / testing
 
