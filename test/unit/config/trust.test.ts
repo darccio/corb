@@ -201,6 +201,39 @@ describe("config/trust: evaluateTrust", () => {
       });
     });
 
+    it("dir: rules reordered (same rules, different sequence) requires confirmation since enforcement is first-match-wins", () => {
+      const previous = baseConfig();
+      const corbPrev = previous.dir.find((d) => d.name === "corb");
+      if (corbPrev === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      corbPrev.rules = [
+        { glob: "secrets/**", mode: "hidden" },
+        { glob: "**", mode: "deny-write" },
+      ];
+      const current = clone(previous);
+      const corbCurr = current.dir.find((d) => d.name === "corb");
+      if (corbCurr === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      corbCurr.rules = [
+        { glob: "**", mode: "deny-write" },
+        { glob: "secrets/**", mode: "hidden" },
+      ];
+
+      const result = evaluateTrust(previous, current);
+
+      expect(result.verdict).toBe("requires-confirmation");
+      expect(result.widened).toContainEqual({
+        field: "dir.corb.rules",
+        description: "dir 'corb' rules reordered (first-match-wins order changed; treated as widening)",
+      });
+      // The Set-membership diff must not fire here: no rule was actually
+      // added or removed, only reordered.
+      expect(result.widened.some((c) => c.description.includes("lost rule"))).toBe(false);
+      expect(result.narrowed.some((c) => c.description.includes("gained rule"))).toBe(false);
+    });
+
     it("policy.enabled: true -> false", () => {
       const previous = baseConfig();
       const current = clone(previous);
