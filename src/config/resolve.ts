@@ -54,16 +54,35 @@
 // run.ts`, on `--trust-config` or an already-trusted verdict) calls it.
 import fs from "node:fs";
 import path from "node:path";
-import { mergeConfigLayers, type EffectiveConfig } from "./load.ts";
+import { mergeConfigLayers, type DirConfig, type EffectiveConfig } from "./load.ts";
 import { parseConfigLayer, type ConfigLayer } from "./schema.ts";
 import { evaluateTrust, recordAcceptance, type TrustEvaluation, type TrustStore, type TrustedWorkspaceRecord } from "./trust.ts";
-import { configTomlPath, corbConfigDir, trustStorePath } from "./paths.ts";
+import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath } from "./paths.ts";
 
 /** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
 export class WorkspaceDirectoryError extends Error {
   constructor(dir: string, reason: string) {
     super(`corb config: workspace directory '${dir}' ${reason}`);
     this.name = "WorkspaceDirectoryError";
+  }
+}
+
+/**
+ * Thrown when a `[[dir]]`/`--dir` host path is, or overlaps, one of Corb's
+ * own config/state directories. Enforces `docs/adr/0006`'s stated invariant
+ * ("workspace files live... entirely outside any directory a workspace
+ * mounts") — nothing checked this before: a mount that contained
+ * `~/.config/corb` handed a hostile guest read-write access to
+ * `config.toml`/`trusted.json`, letting it rewrite the config and pre-accept
+ * a matching trust record (`hashEffectiveConfig` is unkeyed, so the guest
+ * can reproduce it) for a future, wider-than-intended run.
+ */
+export class ForbiddenMountError extends Error {
+  constructor(hostPath: string, corbDir: string, corbDirKind: "config" | "state") {
+    super(
+      `corb config: mount host path '${hostPath}' overlaps Corb's own ${corbDirKind} directory '${corbDir}' — refusing to mount it (see docs/adr/0006-workspace-config-outside-every-mount.md)`,
+    );
+    this.name = "ForbiddenMountError";
   }
 }
 
@@ -121,6 +140,83 @@ function readConfigTomlLayer(configDir: string): ConfigLayer {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Resolves `rawPath` through symlinks as far as an existing ancestor allows,
+// so a symlinked ancestor is canonicalized even when the leaf path itself
+// doesn't exist yet — e.g. a `create: true` dir that hasn't been `mkdir`'d,
+// or Corb's own config/state dir on a first run. Falls back to a lexical
+// `path.resolve` only if no ancestor at all exists, which in practice means
+// the filesystem root itself is unreachable.
+function realpathOrResolve(rawPath: string): string {
+  const resolved = path.resolve(rawPath);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    // fall through to the ancestor walk below
+  }
+  const remainder: string[] = [];
+  let ancestor = resolved;
+  for (;;) {
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) {
+      return resolved;
+    }
+    remainder.unshift(path.basename(ancestor));
+    ancestor = parent;
+    try {
+      return path.join(fs.realpathSync(ancestor), ...remainder);
+    } catch {
+      // keep walking up
+    }
+  }
+}
+
+/** True when `target` is `base` itself, or lives anywhere under it. */
+function isSameOrDescendant(base: string, target: string): boolean {
+  if (base === target) {
+    return true;
+  }
+  const rel = path.relative(base, target);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+/**
+ * Refuses any `dir.host` that is, or overlaps, `configDir` or
+ * `corbStateDir()` — see `ForbiddenMountError`. Checked against
+ * `fullConfig.dir`, so it covers both `config.toml` `[[dir]]` entries and
+ * `--dir` CLI flags (`fullConfig` is `persistentConfig` merged with
+ * `cliLayer`, and `mergeDirEntry`/`mergeDirList` fold CLI overrides into the
+ * same name-keyed list rather than appending separately), and it covers
+ * `corb explain`/`--dry-run`, not just a real `corb run` — this function
+ * runs inside `resolveWorkspace`, before any VM boots and before
+ * `src/vm/session.ts`'s `create: true` `mkdir` for a dir that doesn't exist
+ * yet.
+ *
+ * Both overlap directions are checked: a mount that *contains* a corb
+ * directory (e.g. `corb run ~`, which contains `~/.config/corb`) hands the
+ * guest read-write access to `config.toml`/`trusted.json`/`audit.jsonl`; a
+ * mount that is *inside* a corb directory (e.g. `--dir
+ * x=~/.config/corb/workspaces:rw`) hands over a slice of the same thing
+ * directly. Both paths are resolved through `realpathOrResolve` first, so a
+ * symlink pointing at either directory is caught, not just a lexical match.
+ */
+function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: string): void {
+  const forbidden: Array<{ resolved: string; label: string; kind: "config" | "state" }> = [
+    { resolved: realpathOrResolve(configDir), label: configDir, kind: "config" },
+    { resolved: realpathOrResolve(corbStateDir()), label: corbStateDir(), kind: "state" },
+  ];
+  for (const entry of dirs) {
+    if (entry.host === undefined) {
+      continue;
+    }
+    const host = realpathOrResolve(entry.host);
+    for (const { resolved, label, kind } of forbidden) {
+      if (isSameOrDescendant(host, resolved) || isSameOrDescendant(resolved, host)) {
+        throw new ForbiddenMountError(entry.host, label, kind);
+      }
+    }
+  }
 }
 
 // Deliberately checks shape, not just "is it an object": a `trusted.json`
@@ -228,6 +324,7 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
   const trustEvaluation = evaluateTrust(priorRecord?.acceptedConfig, persistentConfig);
 
   const fullConfig = mergeConfigLayers([persistentConfig, cliLayer]);
+  assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir);
 
   return { dir: resolvedDir, persistentConfig, fullConfig, trustEvaluation, trustKey, priorRecord };
 }

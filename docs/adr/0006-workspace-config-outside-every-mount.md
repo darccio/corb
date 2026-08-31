@@ -62,5 +62,18 @@ what the next `corb run` invocation does.
   with CLI flags and a directory argument), while per-name addressing under
   `~/.config/corb/workspaces/<name>.toml` is reserved for a later milestone
   (`src/config/paths.ts`'s own comment) — `corb run`/`corb explain` take a
-  directory path today, not a workspace name. The rule this ADR records (never
-  inside a mount) already holds for the file that does exist.
+  directory path today, not a workspace name.
+* Good, because the rule this ADR records (never inside a mount) is now
+  actively **enforced**, not merely true by convention. Originally this said
+  "the rule already holds for the file that does exist" — but nothing checked
+  it: `corb run ~` (or any `[[dir]]`/`--dir` host path containing
+  `~/.config/corb`) mounted `config.toml`/`trusted.json` read-write into the
+  guest with no error, letting a hostile agent rewrite the config and
+  pre-accept a matching trust record for a future, wider-than-intended run —
+  `hashEffectiveConfig` is an unkeyed hash the guest can reproduce.
+  `src/config/resolve.ts`'s `assertNoMountOverlapsCorbDirs` now refuses any
+  mount whose host path is, or overlaps (in either direction, and through
+  symlinks — `realpathOrResolve`), `corbConfigDir()` or `corbStateDir()`. It
+  runs inside `resolveWorkspace`, so it covers `--dir` flags as well as
+  `[[dir]]` entries, and `corb explain`/`--dry-run` as well as a real
+  `corb run`.

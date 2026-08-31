@@ -14,6 +14,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ConfigReadError,
+  ForbiddenMountError,
   TrustStoreError,
   WorkspaceDirectoryError,
   acceptWorkspace,
@@ -220,6 +221,90 @@ describe("config/resolve: resolveWorkspace", () => {
       expect(resolved.fullConfig.policy.enabled).toBe(true);
       expect(resolved.fullConfig.policy["secret-scan"]).toBe(true);
       expect(resolved.fullConfig.policy["fail-open"]).toBe(true);
+    });
+  });
+
+  describe("mount host paths overlapping Corb's own config/state dirs are refused", () => {
+    let stateDir: string;
+    let previousStateDir: string | undefined;
+
+    beforeEach(() => {
+      stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-state-"));
+      previousStateDir = process.env.CORB_STATE_DIR;
+      process.env.CORB_STATE_DIR = stateDir;
+    });
+
+    afterEach(() => {
+      if (previousStateDir === undefined) {
+        delete process.env.CORB_STATE_DIR;
+      } else {
+        process.env.CORB_STATE_DIR = previousStateDir;
+      }
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    });
+
+    it("a --dir whose host is exactly the config dir is rejected", () => {
+      expect(() =>
+        resolveWorkspace(workDir, { dir: [{ name: "cfg", host: configDir, mode: "rw" }] }, { configDir }),
+      ).toThrow(ForbiddenMountError);
+    });
+
+    it("a --dir whose host is exactly the state dir is rejected", () => {
+      expect(() =>
+        resolveWorkspace(workDir, { dir: [{ name: "state", host: stateDir, mode: "rw" }] }, { configDir }),
+      ).toThrow(ForbiddenMountError);
+    });
+
+    it("a --dir whose host is an ancestor of the config dir is rejected", () => {
+      const ancestor = path.dirname(fs.realpathSync(configDir));
+      expect(() =>
+        resolveWorkspace(workDir, { dir: [{ name: "home", host: ancestor, mode: "rw" }] }, { configDir }),
+      ).toThrow(ForbiddenMountError);
+    });
+
+    it("a --dir whose host is a path *inside* the config dir is rejected", () => {
+      const nested = path.join(configDir, "workspaces");
+      fs.mkdirSync(nested);
+      expect(() =>
+        resolveWorkspace(workDir, { dir: [{ name: "nested", host: nested, mode: "rw" }] }, { configDir }),
+      ).toThrow(ForbiddenMountError);
+    });
+
+    it("a symlink pointing at the config dir is rejected (realpath, not lexical, comparison)", () => {
+      const linkParent = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-symlink-"));
+      const link = path.join(linkParent, "config-alias");
+      fs.symlinkSync(configDir, link);
+      try {
+        expect(() =>
+          resolveWorkspace(workDir, { dir: [{ name: "alias", host: link, mode: "rw" }] }, { configDir }),
+        ).toThrow(ForbiddenMountError);
+      } finally {
+        fs.rmSync(linkParent, { recursive: true, force: true });
+      }
+    });
+
+    it("a config.toml [[dir]] entry (not just --dir) whose host overlaps is also rejected", () => {
+      fs.writeFileSync(
+        path.join(configDir, "config.toml"),
+        ['[[dir]]', 'name = "cfg"', `host = ${JSON.stringify(configDir)}`, 'mode = "rw"'].join("\n"),
+      );
+      expect(() => resolveWorkspace(workDir, {}, { configDir })).toThrow(ForbiddenMountError);
+    });
+
+    it("a sibling path merely sharing a name prefix with the config dir is accepted", () => {
+      const sibling = `${configDir}-sibling`;
+      fs.mkdirSync(sibling);
+      try {
+        expect(() =>
+          resolveWorkspace(workDir, { dir: [{ name: "sibling", host: sibling, mode: "rw" }] }, { configDir }),
+        ).not.toThrow();
+      } finally {
+        fs.rmSync(sibling, { recursive: true, force: true });
+      }
+    });
+
+    it("a normal workspace directory unrelated to config/state dirs is accepted", () => {
+      expect(() => resolveWorkspace(workDir, {}, { configDir })).not.toThrow();
     });
   });
 
