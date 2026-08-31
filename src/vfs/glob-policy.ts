@@ -217,7 +217,7 @@
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { ERRNO, isWriteFlag, MemoryProvider } from "@earendil-works/gondolin";
-import { DEFAULT_FUSE_MOUNT, normalizeGuestPath } from "./glob.ts";
+import { normalizeGuestPath } from "./glob.ts";
 import { decideFsAccessForPath, isEntryHidden, ruleMayMatchUnderDirectory, type FsAccessOutcome, type FsErrno, type FsOpKind, type GlobRule } from "./policy.ts";
 
 // ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ import { decideFsAccessForPath, isEntryHidden, ruleMayMatchUnderDirectory, type 
  * non-allow policy decision:
  *
  *   - `path` — the rule-relative path the decision was made against (no
- *     leading `/`, no mount prefix, no `fuseMount` alias — the same shape
+ *     leading `/`, no mount prefix — the same shape
  *     `src/vfs/policy.ts`'s `matchRule` expects, e.g. `".env"` or
  *     `"a/b/secret"`, with the bare mount root spelled `""`). Never a raw
  *     absolute guest path or a real host path — this module never learns a
@@ -280,18 +280,6 @@ export interface GlobPolicyDenyEvent {
 export interface GlobPolicyOptions {
   readonly rules: readonly GlobRule[];
   readonly onDeny: (event: GlobPolicyDenyEvent) => void;
-  /**
-   * The SDK's `fuseMount` alias prefix to strip before rule matching
-   * (`docs/design.md` §3, "Path aliasing"). Defaults to
-   * `src/vfs/glob.ts`'s `DEFAULT_FUSE_MOUNT` (`"/data"`, the SDK's own
-   * factory default), matching that module's own documented stance: nothing
-   * in this codebase currently makes `fuseMount` configurable, so this
-   * default should track the SDK's default rather than the other way
-   * around. Exposed here (rather than hardcoded) purely so a future caller
-   * that *does* make it configurable has somewhere to plug the real value
-   * in without editing this file.
-   */
-  readonly fuseMount?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +409,6 @@ interface FileHandleLike {
 export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOptions): P {
   const rules = opts.rules;
   const onDeny = opts.onDeny;
-  const fuseMount = opts.fuseMount ?? DEFAULT_FUSE_MOUNT;
   const backendAny = backend as ProviderLike;
 
   // The symlink-bypass defense (`resolveForRecheck`/`resolveForRecheckSync`
@@ -502,7 +489,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       const rulePath = toRulePath(normalizedAbs);
       auditAndThrow(op, syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "realpath could not resolve this path while checking for symlink indirection; failing closed");
     }
-    const resolvedNormalized = normalizeGuestPath(resolved, fuseMount);
+    const resolvedNormalized = normalizeGuestPath(resolved);
     if (createPath) {
       const { base } = splitAbs(normalizedAbs);
       return toRulePath(joinAbs(resolvedNormalized, base));
@@ -523,7 +510,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       const rulePath = toRulePath(normalizedAbs);
       auditAndThrow(op, syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "realpath could not resolve this path while checking for symlink indirection; failing closed");
     }
-    const resolvedNormalized = normalizeGuestPath(resolved, fuseMount);
+    const resolvedNormalized = normalizeGuestPath(resolved);
     if (createPath) {
       const { base } = splitAbs(normalizedAbs);
       return toRulePath(joinAbs(resolvedNormalized, base));
@@ -766,7 +753,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   // =======================================================================
 
   async function open(rawPath: string, flags: string, mode?: number): Promise<unknown> {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const op: FsOpKind = isWriteFlag(flags) ? "write" : "read";
     // 'w'/'a'-family flags always imply O_CREAT in Node's flag-string
     // convention (unlike 'r+', which requires the target to already exist)
@@ -780,7 +767,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   function openSync(rawPath: string, flags: string, mode?: number): unknown {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const op: FsOpKind = isWriteFlag(flags) ? "write" : "read";
     const createPath = /[wa]/.test(flags);
     const decision = decideSync(op, "open", normalized, createPath);
@@ -793,7 +780,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   /** `stat`/`lstat` never shadow (`TABLE.stat` is `ALLOW` in every mode including `shadow-write`) — always routes to `backend` once `decide` doesn't throw. Kept generic (branches on `decision` anyway) so a future table change can't silently start leaking to the wrong backend. */
   function makeStatLike(methodName: "stat" | "lstat") {
     return async function statLike(rawPath: string, options?: object): Promise<unknown> {
-      const normalized = normalizeGuestPath(rawPath, fuseMount);
+      const normalized = normalizeGuestPath(rawPath);
       const decision = await decide("stat", methodName, normalized, false);
       const target = decision === "shadowed" ? shadowAny : backendAny;
       return (target[methodName] as AnyFn)(normalized, options);
@@ -801,7 +788,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
   function makeStatLikeSync(methodName: "statSync" | "lstatSync") {
     return function statLikeSync(rawPath: string, options?: object): unknown {
-      const normalized = normalizeGuestPath(rawPath, fuseMount);
+      const normalized = normalizeGuestPath(rawPath);
       const decision = decideSync("stat", methodName, normalized, false);
       const target = decision === "shadowed" ? shadowAny : backendAny;
       return (target[methodName] as AnyFn)(normalized, options);
@@ -809,7 +796,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   async function readdir(rawPath: string, options?: object): Promise<unknown> {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("read", "readdir", normalized, false);
     const target = decision === "shadowed" ? shadowAny : backendAny;
     const entries = (await (target.readdir as AnyFn)(normalized, options)) as Array<string | { name: string }>;
@@ -821,7 +808,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   function readdirSync(rawPath: string, options?: object): unknown {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("read", "readdirSync", normalized, false);
     const target = decision === "shadowed" ? shadowAny : backendAny;
     const entries = (target.readdirSync as AnyFn)(normalized, options) as Array<string | { name: string }>;
@@ -834,7 +821,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
 
   function makeMutateLike(methodName: "mkdir" | "rmdir" | "unlink", createPath: boolean) {
     return async function mutateLike(rawPath: string, options?: object): Promise<unknown> {
-      const normalized = normalizeGuestPath(rawPath, fuseMount);
+      const normalized = normalizeGuestPath(rawPath);
       const decision = await decide("mutate", methodName, normalized, createPath);
       if (decision === "shadowed") {
         if (methodName === "mkdir") {
@@ -851,7 +838,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
   function makeMutateLikeSync(methodName: "mkdirSync" | "rmdirSync" | "unlinkSync", createPath: boolean) {
     return function mutateLikeSync(rawPath: string, options?: object): unknown {
-      const normalized = normalizeGuestPath(rawPath, fuseMount);
+      const normalized = normalizeGuestPath(rawPath);
       const decision = decideSync("mutate", methodName, normalized, createPath);
       if (decision === "shadowed") {
         if (methodName === "mkdirSync") {
@@ -868,8 +855,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   async function rename(rawOld: string, rawNew: string): Promise<void> {
-    const oldNorm = normalizeGuestPath(rawOld, fuseMount);
-    const newNorm = normalizeGuestPath(rawNew, fuseMount);
+    const oldNorm = normalizeGuestPath(rawOld);
+    const newNorm = normalizeGuestPath(rawNew);
     // Source is expected to exist; destination may or may not (POSIX rename
     // permits overwriting an existing destination), so it is treated as a
     // create-path for the bypass recheck — the more conservative of the two
@@ -887,8 +874,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   function renameSync(rawOld: string, rawNew: string): void {
-    const oldNorm = normalizeGuestPath(rawOld, fuseMount);
-    const newNorm = normalizeGuestPath(rawNew, fuseMount);
+    const oldNorm = normalizeGuestPath(rawOld);
+    const newNorm = normalizeGuestPath(rawNew);
     const oldMode = decideSync("rename", "renameSync", oldNorm, false);
     const newMode = decideSync("rename", "renameSync", newNorm, true);
     if (isDeniedDirectoryRenameSync(oldNorm, "renameSync")) {
@@ -902,8 +889,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   async function link(rawExisting: string, rawNew: string): Promise<void> {
-    const existingNorm = normalizeGuestPath(rawExisting, fuseMount);
-    const newNorm = normalizeGuestPath(rawNew, fuseMount);
+    const existingNorm = normalizeGuestPath(rawExisting);
+    const newNorm = normalizeGuestPath(rawNew);
     // Both endpoints are gated under the same "link" category, per
     // `docs/design.md` §3: "creating a new, unrestricted name for a
     // restricted inode is exactly the bypass to prevent" — the existing
@@ -917,8 +904,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   function linkSync(rawExisting: string, rawNew: string): void {
-    const existingNorm = normalizeGuestPath(rawExisting, fuseMount);
-    const newNorm = normalizeGuestPath(rawNew, fuseMount);
+    const existingNorm = normalizeGuestPath(rawExisting);
+    const newNorm = normalizeGuestPath(rawNew);
     const existingMode = decideSync("link", "linkSync", existingNorm, false);
     const newMode = decideSync("link", "linkSync", newNorm, true);
     if (existingMode === "shadowed" || newMode === "shadowed") {
@@ -929,13 +916,13 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   async function readlink(rawPath: string, options?: object): Promise<unknown> {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("readlink", "readlink", normalized, false);
     const target = decision === "shadowed" ? shadowAny : backendAny;
     return (target.readlink as AnyFn)(normalized, options);
   }
   function readlinkSync(rawPath: string, options?: object): unknown {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("readlink", "readlinkSync", normalized, false);
     const target = decision === "shadowed" ? shadowAny : backendAny;
     return (target.readlinkSync as AnyFn)(normalized, options);
@@ -956,10 +943,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
    * it).
    */
   function resolveSymlinkTargetAbs(normalizedSymlinkPath: string, target: string): string {
-    let raw = target;
-    if (fuseMount !== "/" && (raw === fuseMount || raw.startsWith(`${fuseMount}/`))) {
-      raw = raw.slice(fuseMount.length) || "/";
-    }
+    const raw = target;
     const abs = raw.startsWith("/") ? raw : path.posix.join(path.posix.dirname(normalizedSymlinkPath), raw);
     return path.posix.normalize(abs);
   }
@@ -1045,7 +1029,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     // against its own name by `decide()` below. `checkSymlinkTargetPolicy`
     // additionally gates what `target` resolves *into* — see that function's
     // own doc comment for why this is not redundant with `decide()`.
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("link", "symlink", normalized, true);
     await checkSymlinkTargetPolicy(normalized, target, "symlink");
     if (decision === "shadowed") {
@@ -1054,7 +1038,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     return (backendAny.symlink as AnyFn)(target, normalized, type);
   }
   function symlinkSync(target: string, rawPath: string, type?: string): unknown {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("link", "symlinkSync", normalized, true);
     checkSymlinkTargetPolicySync(normalized, target, "symlinkSync");
     if (decision === "shadowed") {
@@ -1065,20 +1049,20 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
 
   /** Guest-facing `realpath`/`realpathSync` — distinct from this closure's own *internal* `resolveForRecheck`/`resolveForRecheckSync` defensive helpers above, which call `backendRealpath`/`backendRealpathSync` directly (unwrapped, no policy decision) purely to detect symlink indirection for every *other* operation. This pair is the actual guest-visible operation, gated like any other: `TABLE.realpath` never shadows (canonicalizing a path's spelling discloses existence and shape, not content — see `src/vfs/policy.ts`'s own reasoning), so it always ends up delegating to `backend` once `decide` doesn't throw. */
   async function realpath(rawPath: string, options?: object): Promise<unknown> {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("realpath", "realpath", normalized, false);
     const target = decision === "shadowed" ? shadowAny : backendAny;
     return (target.realpath as AnyFn)(normalized, options);
   }
   function realpathSync(rawPath: string, options?: object): unknown {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("realpath", "realpathSync", normalized, false);
     const target = decision === "shadowed" ? shadowAny : backendAny;
     return (target.realpathSync as AnyFn)(normalized, options);
   }
 
   async function access(rawPath: string, mode?: number): Promise<void> {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     // None of the access-* categories ever yields "shadowed" (`W_OK`'s
     // shadow-write column is `ALLOW`, per `src/vfs/policy.ts`'s own
     // reasoning: "access is a pure permission query... the truthful answer
@@ -1090,7 +1074,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     return (backendAny.access as AnyFn)(normalized, mode);
   }
   function accessSync(rawPath: string, mode?: number): void {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     for (const category of accessCategories(mode)) {
       decideSync(category, "accessSync", normalized, false);
     }
@@ -1098,8 +1082,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   async function copyFile(rawSrc: string, rawDest: string, mode?: number): Promise<void> {
-    const srcNorm = normalizeGuestPath(rawSrc, fuseMount);
-    const destNorm = normalizeGuestPath(rawDest, fuseMount);
+    const srcNorm = normalizeGuestPath(rawSrc);
+    const destNorm = normalizeGuestPath(rawDest);
     await decide("copy-source", "copyFile", srcNorm, false);
     const destMode = await decide("copy-dest", "copyFile", destNorm, true);
     if (destMode === "shadowed") {
@@ -1110,8 +1094,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     return (backendAny.copyFile as AnyFn)(srcNorm, destNorm, mode);
   }
   function copyFileSync(rawSrc: string, rawDest: string, mode?: number): void {
-    const srcNorm = normalizeGuestPath(rawSrc, fuseMount);
-    const destNorm = normalizeGuestPath(rawDest, fuseMount);
+    const srcNorm = normalizeGuestPath(rawSrc);
+    const destNorm = normalizeGuestPath(rawDest);
     decideSync("copy-source", "copyFileSync", srcNorm, false);
     const destMode = decideSync("copy-dest", "copyFileSync", destNorm, true);
     if (destMode === "shadowed") {
@@ -1126,13 +1110,13 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const isAsync = methodName === "readFile";
     return isAsync
       ? async function readFileLike(rawPath: string, options?: unknown): Promise<unknown> {
-          const normalized = normalizeGuestPath(rawPath, fuseMount);
+          const normalized = normalizeGuestPath(rawPath);
           const decision = await decide("read", methodName, normalized, false);
           const target = decision === "shadowed" ? shadowAny : backendAny;
           return (target[methodName] as AnyFn)(normalized, options);
         }
       : function readFileLikeSync(rawPath: string, options?: unknown): unknown {
-          const normalized = normalizeGuestPath(rawPath, fuseMount);
+          const normalized = normalizeGuestPath(rawPath);
           const decision = decideSync("read", methodName, normalized, false);
           const target = decision === "shadowed" ? shadowAny : backendAny;
           return (target[methodName] as AnyFn)(normalized, options);
@@ -1143,7 +1127,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const isAsync = methodName === "writeFile" || methodName === "appendFile";
     return isAsync
       ? async function writeFileLike(rawPath: string, data: unknown, options?: unknown): Promise<unknown> {
-          const normalized = normalizeGuestPath(rawPath, fuseMount);
+          const normalized = normalizeGuestPath(rawPath);
           // 'writeFile'/'appendFile' both create-if-missing (base-class
           // defaults open with 'w'/'a' respectively; RealFSProvider has no
           // override for either — see finding #2 above), so both are
@@ -1153,7 +1137,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
           return (target[methodName] as AnyFn)(normalized, data, options);
         }
       : function writeFileLikeSync(rawPath: string, data: unknown, options?: unknown): unknown {
-          const normalized = normalizeGuestPath(rawPath, fuseMount);
+          const normalized = normalizeGuestPath(rawPath);
           const decision = decideSync("write", methodName, normalized, true);
           const target = decision === "shadowed" ? shadowAny : backendAny;
           return (target[methodName] as AnyFn)(normalized, data, options);
@@ -1161,7 +1145,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   async function existsOp(rawPath: string): Promise<boolean> {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     try {
       const decision = await decide("exists", "exists", normalized, false);
       const target = decision === "shadowed" ? shadowAny : backendAny;
@@ -1174,7 +1158,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     }
   }
   function existsSyncOp(rawPath: string): boolean {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     try {
       const decision = decideSync("exists", "existsSync", normalized, false);
       const target = decision === "shadowed" ? shadowAny : backendAny;
@@ -1185,7 +1169,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   async function truncateOp(rawPath: string, length: number): Promise<void> {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("write", "truncate", normalized, false);
     if (decision === "shadowed") {
       let handle: FileHandleLike;
@@ -1208,7 +1192,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     return (backendAny.truncate as AnyFn)(normalized, length);
   }
   function truncateSyncOp(rawPath: string, length: number): void {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("write", "truncateSync", normalized, false);
     if (decision === "shadowed") {
       let handle: FileHandleLike;
@@ -1230,7 +1214,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
 
   function makeWatchLike(methodName: "watch" | "watchAsync" | "watchFile") {
     return function watchLike(rawPath: string, options?: object, listener?: (...args: unknown[]) => void): unknown {
-      const normalized = normalizeGuestPath(rawPath, fuseMount);
+      const normalized = normalizeGuestPath(rawPath);
       // The whole `watch*` family is read-adjacent, never content-disclosing
       // or mutating on its own — `src/vfs/policy.ts`'s own documented
       // conclusion is to reuse `decideFsAccess(mode, "read")` wholesale
@@ -1243,7 +1227,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     };
   }
   function unwatchFile(rawPath: string, listener?: (...args: unknown[]) => void): void {
-    const normalized = normalizeGuestPath(rawPath, fuseMount);
+    const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("read", "unwatchFile", normalized, false);
     const target = decision === "shadowed" ? shadowAny : backendAny;
     (target.unwatchFile as AnyFn)(normalized, listener);

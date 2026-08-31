@@ -321,15 +321,15 @@ export function decideFsAccess(mode: RuleMode | undefined, op: FsOpKind): FsAcce
  *
  * `path` must already be in the form `src/vfs/glob.ts`'s `globToRegExp`
  * expects: relative to the *directory's own root* (no leading `/`, no
- * mount-point or `fuseMount`-alias prefix) — exactly the convention every
- * real pattern in `docs/design.md` §3's example rule list uses (`"go.sum"`,
+ * mount-point prefix) — exactly the convention every real pattern in
+ * `docs/design.md` §3's example rule list uses (`"go.sum"`,
  * `".git/config"`, a leading `"**\/"` for "anywhere in the tree"). Stripping
- * a real VFS-received absolute path down to that form — undoing
- * `fuseMount` aliasing via `normalizeGuestPath` *and* stripping the specific
- * directory's own mount-root prefix (`/work/<name>`) — is `src/vfs/
- * glob-policy.ts`'s job (M5.3), not this function's: this module has no
- * concept of mount points at all, matching `src/vfs/glob.ts`'s own module
- * comment ("this function has no opinion on mount roots or path aliasing").
+ * a real VFS-received absolute path down to that form — normalizing it via
+ * `normalizeGuestPath` *and* stripping the specific directory's own
+ * mount-root prefix (`/work/<name>`) — is `src/vfs/glob-policy.ts`'s job
+ * (M5.3), not this function's: this module has no concept of mount points
+ * at all, matching `src/vfs/glob.ts`'s own module comment ("this function
+ * has no opinion on mount roots or path aliasing").
  */
 export function matchRule(rules: readonly GlobRule[], path: string): GlobRule | undefined {
   for (const rule of rules) {
@@ -546,8 +546,8 @@ function patternMayMatchAtOrUnder(pattern: string, dirSegments: readonly string[
  * array is `false`), matching "no configured rules" being equivalent to "no
  * rule can possibly match anything" everywhere else in this module.
  *
- * See `matchRule`'s doc comment for the required (mount-root-relative,
- * `fuseMount`-alias-stripped) shape of `dirPath`.
+ * See `matchRule`'s doc comment for the required (mount-root-relative)
+ * shape of `dirPath`.
  */
 export function ruleMayMatchUnderDirectory(rules: readonly GlobRule[], dirPath: string): boolean {
   const dirSegments = splitDirSegments(dirPath);

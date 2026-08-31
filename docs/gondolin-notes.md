@@ -303,9 +303,20 @@ vfs: {
 }
 ```
 
-Routing is longest-matching-prefix. Note the aliasing: every VFS path is *also*
-reachable under `fuseMount`, so a mount at `/work` typically appears at both
-`/work` and `/data/work`. Any path-shaped policy must account for both spellings.
+Routing is longest-matching-prefix. Note the aliasing: from the guest's own
+point of view, every VFS path is *also* reachable under `fuseMount`, so a
+mount at `/work` typically appears at both `/work` and `/data/work`. This does
+**not**, however, mean a `VirtualProvider`'s own methods ever see both
+spellings: `MountRouterProvider` is the thing that dispatches a FUSE request
+to the matching mount's provider, and it does so with the path already made
+relative to that mount — a request that arrived at the guest kernel as
+`/data/work/foo` reaches the provider the same way one that arrived as
+`/work/foo` does. Path-shaped policy written *inside* a `VirtualProvider` (or
+a wrapper around one, e.g. corb's `withGlobPolicy`) therefore has nothing to
+account for here; corb learned this the hard way after `normalizeGuestPath`
+briefly stripped a `/data` prefix defensively — see `docs/design.md` §3 "Path
+aliasing" for the corrected explanation and what that stripping actually
+broke.
 
 `VirtualProvider` requires `readonly`, `supportsSymlinks`, `supportsWatch`, and
 both async **and `*Sync`** variants of `open`, `stat`, `lstat`, `readdir`,
@@ -495,7 +506,7 @@ file semantics).
 | 11 | No guest→host RPC | Use an `onRequest` sentinel-host short-circuit |
 | 12 | No in-guest hardening at all | Privilege drop is yours; DoS is an explicit non-goal |
 | 13 | SSH egress and mapped TCP bypass HTTP hooks and secrets | Police those paths separately |
-| 14 | Every VFS path is aliased under `fuseMount` | Path policy must cover both spellings |
+| 14 | Every VFS path is aliased under `fuseMount`, but only from the guest's point of view | `MountRouterProvider` dispatches with an already mount-relative path, so a `VirtualProvider`'s own path policy never sees the alias and needs no handling for it |
 | 15 | Adding guest packages requires an image rebuild | Alpine-only image builder |
 | 16 | `exec` is concurrent, but `vm.fs`'s file ops are not | `readFile`/`writeFile`/`deleteFile` wait for **zero** live execs, so they never complete during a long-running interactive exec |
 | 17 | `maxQueuedExecs` defaults to 64, counted session-wide | Past it `exec` fails with `queue_full`; every attach client draws on the same budget |

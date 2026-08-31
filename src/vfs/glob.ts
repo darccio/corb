@@ -24,8 +24,9 @@
 //   - `globToRegExp` — converts one `GlobRule.glob` pattern into an anchored
 //     `RegExp`.
 //   - `normalizeGuestPath` — canonicalizes a raw VFS-provider-received path
-//     into the form a future caller should run both rule-matching *and*
-//     `globToRegExp`'s regexes against.
+//     (slash normalization plus `..` rejection) into the form a future
+//     caller should run both rule-matching *and* `globToRegExp`'s regexes
+//     against.
 //
 // Neither function talks to the SDK or to a real filesystem — this file has
 // zero runtime dependency on `@earendil-works/gondolin`, matching the plan's
@@ -161,21 +162,6 @@ export function globToRegExp(pattern: string): RegExp {
 // ---------------------------------------------------------------------------
 
 /**
- * The SDK's own `fuseMount` default (`docs/gondolin-notes.md` §7:
- * `fuseMount: "/data", // default`). Hardcoded here rather than sourced from
- * `src/config/`, because nothing in this codebase currently exposes
- * `vfs.fuseMount` as a configurable value — `VM.create()` is always called
- * with the SDK's own default. If a future item ever makes `fuseMount`
- * configurable (passed through to `VM.create({ vfs: { fuseMount } })`),
- * `normalizeGuestPath`'s call sites must start passing that configured
- * value in explicitly instead of relying on this constant, and this
- * constant should stop being treated as anything other than "the SDK's
- * factory default" — it must track `VM.create()`'s own default, not the
- * other way around.
- */
-export const DEFAULT_FUSE_MOUNT = "/data";
-
-/**
  * Thrown by `normalizeGuestPath` when the raw path contains a `..` path
  * segment. See `normalizeGuestPath`'s own doc comment for why this fails
  * closed instead of resolving `..` away.
@@ -191,25 +177,25 @@ export class GuestPathTraversalError extends Error {
  * Canonicalizes a raw path as received by a `VirtualProvider` method (or
  * built by one, e.g. `readdir`'s per-entry join) into the form a future
  * caller (`withGlobPolicy`, M5.3) should run both rule-matching and
- * `globToRegExp`'s regexes against. Three things, in order:
+ * `globToRegExp`'s regexes against. Two things, in order:
  *
- *   1. **Strip the `fuseMount` alias prefix.** `docs/design.md` §3's "Path
- *      aliasing" subsection: every VFS path is also reachable under the
- *      SDK's `fuseMount` (default `/data`), so `/work/repo/.env` is also
- *      `/data/work/repo/.env` — "path normalisation must strip the alias
- *      prefix before rule matching, or every rule has a trivial second
- *      spelling that misses." The canonical (post-strip) form this function
- *      produces is the `/work/...`-style spelling, i.e. `/data` itself
- *      normalizes to the bare mount root `/`. The prefix is matched at a
- *      `/`-boundary (`fuseMount` itself, or `fuseMount` followed by `/`) so
- *      that an unrelated path which merely starts with the same characters
- *      (e.g. `/database/foo` against a `/data` `fuseMount`) is left alone.
- *   2. **Collapse redundant `/` separators.** The top-level plan's §6.2
+ * (This function used to also strip a `/data` `fuseMount` alias prefix, on
+ * the theory that every VFS path is also reachable under the SDK's
+ * `fuseMount`. That theory was wrong: the SDK's `MountRouterProvider`
+ * dispatches to each mount's `VirtualProvider` with a path already made
+ * relative to that mount, so a `fuseMount`-prefixed spelling never reaches
+ * this codebase's provider methods in the first place, and corb mounts
+ * workspaces at `/mnt/corb-raw/<name>` regardless. The strip's only live
+ * effect was on a *legitimate* top-level directory literally named `data`
+ * in a workspace — voiding VFS rules under it. See `docs/design.md` §3
+ * "Path aliasing" for the corrected explanation.)
+ *
+ *   1. **Collapse redundant `/` separators.** The top-level plan's §6.2
  *      calls this out directly: `readdir` joins with the raw template
  *      `` `${path}/${name}` ``, which produces a `//` whenever `path` is the
  *      root path `/` itself. Any run of two or more consecutive `/`
  *      characters collapses to one.
- *   3. **Fail closed on `..`.** Every guest-supplied path that reaches host
+ *   2. **Fail closed on `..`.** Every guest-supplied path that reaches host
  *      code must be "normalised first and then re-checked for containment
  *      in its mount root" (`docs/design.md` §1); a naive
  *      normalize-by-resolving-`..` step is exactly the kind of thing that
@@ -291,7 +277,7 @@ export class GuestPathTraversalError extends Error {
  *
  * Deliberately not attempted: collapsing `.` (single-dot) segments. Unlike
  * `..`, a lone `.` segment is not a safety concern (it never escapes
- * anything), so it is out of scope for what this function's three
+ * anything), so it is out of scope for what this function's two
  * documented jobs above require, and no realistic guest-supplied VFS path
  * reaching a `VirtualProvider` method actually contains one — FUSE resolves
  * `.` components in the guest kernel before a path ever reaches host code
@@ -299,20 +285,13 @@ export class GuestPathTraversalError extends Error {
  * produced by *this codebase's own future join code*, not the guest, and so
  * is exactly the kind of thing this function must handle).
  */
-export function normalizeGuestPath(rawPath: string, fuseMount: string = DEFAULT_FUSE_MOUNT): string {
+export function normalizeGuestPath(rawPath: string): string {
   if (rawPath.split("/").includes("..")) {
     throw new GuestPathTraversalError(rawPath);
   }
 
   let normalized = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
   normalized = normalized.replace(/\/{2,}/g, "/");
-
-  if (fuseMount !== "/" && (normalized === fuseMount || normalized.startsWith(`${fuseMount}/`))) {
-    normalized = normalized.slice(fuseMount.length);
-    if (normalized === "") {
-      normalized = "/";
-    }
-  }
 
   if (normalized.length > 1 && normalized.endsWith("/")) {
     normalized = normalized.slice(0, -1);

@@ -1,10 +1,10 @@
 // Unit tests for `src/vfs/glob.ts` — M5.1. Table-driven for `globToRegExp`,
 // per the top-level plan's §8 verification list ("`globToRegExp`
-// table-driven"), plus dedicated tests for `normalizeGuestPath`'s three
-// documented behaviors (alias-prefix stripping, `//`-collapsing, `..`
-// rejection).
+// table-driven"), plus dedicated tests for `normalizeGuestPath`'s two
+// documented behaviors (`//`-collapsing, `..` rejection).
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FUSE_MOUNT, globToRegExp, GuestPathTraversalError, normalizeGuestPath } from "../../../src/vfs/glob.ts";
+import { globToRegExp, GuestPathTraversalError, normalizeGuestPath } from "../../../src/vfs/glob.ts";
+import { decideFsAccessForPath, matchRule, type GlobRule } from "../../../src/vfs/policy.ts";
 
 describe("vfs/glob globToRegExp", () => {
   // Every real pattern from `docs/design.md` §3's example rule list and the
@@ -151,20 +151,12 @@ describe("vfs/glob globToRegExp", () => {
 });
 
 describe("vfs/glob normalizeGuestPath", () => {
-  it("strips the default /data fuseMount alias prefix", () => {
-    expect(normalizeGuestPath("/data/work/repo/.env")).toBe("/work/repo/.env");
-  });
-
-  it("normalizes the fuseMount root itself to the bare root path", () => {
-    expect(normalizeGuestPath(DEFAULT_FUSE_MOUNT)).toBe("/");
-  });
-
   it("leaves an already-canonical /work/... path untouched", () => {
     expect(normalizeGuestPath("/work/repo/.env")).toBe("/work/repo/.env");
   });
 
-  it("does not strip a path that merely starts with the same characters as fuseMount", () => {
-    expect(normalizeGuestPath("/database/foo")).toBe("/database/foo");
+  it("leaves a real top-level data/ directory's path untouched (no alias stripping)", () => {
+    expect(normalizeGuestPath("/data/work/repo/.env")).toBe("/data/work/repo/.env");
   });
 
   it("collapses the readdir `${path}/${name}` // join bug", () => {
@@ -181,12 +173,8 @@ describe("vfs/glob normalizeGuestPath", () => {
     expect(normalizeGuestPath("/")).toBe("/");
   });
 
-  it("combines alias-stripping and // collapsing in one call", () => {
-    expect(normalizeGuestPath("/data//work/repo//.env")).toBe("/work/repo/.env");
-  });
-
-  it("respects a custom fuseMount argument instead of the default", () => {
-    expect(normalizeGuestPath("/custom/work/repo/.env", "/custom")).toBe("/work/repo/.env");
+  it("collapses // in a path under a real top-level data/ directory, without stripping data/ as an alias", () => {
+    expect(normalizeGuestPath("/data//work/repo//.env")).toBe("/data/work/repo/.env");
   });
 
   it("rejects a path containing a .. segment", () => {
@@ -203,5 +191,39 @@ describe("vfs/glob normalizeGuestPath", () => {
 
   it("the .. rejection error message names the offending raw path", () => {
     expect(() => normalizeGuestPath("/a/../b")).toThrow(/a\/\.\.\/b/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: the removed /data fuseMount strip must not resurface, checked
+// through the real matching pipeline (normalizeGuestPath -> rule-relative
+// path -> matchRule/decideFsAccessForPath), not just normalizeGuestPath in
+// isolation. `toRulePath` mirrors `src/vfs/glob-policy.ts`'s own (unexported)
+// helper of the same name exactly: strip the leading "/" that a
+// normalizeGuestPath()-normalized absolute path always carries; the bare
+// root becomes "".
+// ---------------------------------------------------------------------------
+
+function toRulePath(normalizedAbs: string): string {
+  return normalizedAbs === "/" ? "" : normalizedAbs.slice(1);
+}
+
+describe("vfs/glob + vfs/policy: /data is a real directory, not an alias to strip (regression)", () => {
+  it("a rule on data/secrets/** matches a real /data/secrets/... guest path (previously voided: the old strip turned it into /secrets/..., which the rule never matched)", () => {
+    const rules: GlobRule[] = [{ glob: "data/secrets/**", mode: "hidden", reason: "secrets" }];
+    const rulePath = toRulePath(normalizeGuestPath("/data/secrets/key.pem"));
+
+    expect(rulePath).toBe("data/secrets/key.pem");
+    expect(matchRule(rules, rulePath)?.glob).toBe("data/secrets/**");
+    expect(decideFsAccessForPath(rules, rulePath, "stat").outcome).toEqual({ kind: "deny", errno: "ENOENT" });
+  });
+
+  it("a root-level rule on .env does not spuriously match /data/.env (previously it did: the old strip turned /data/.env into /.env, one level too deep)", () => {
+    const rules: GlobRule[] = [{ glob: ".env", mode: "deny-read", reason: "env" }];
+    const rulePath = toRulePath(normalizeGuestPath("/data/.env"));
+
+    expect(rulePath).toBe("data/.env");
+    expect(matchRule(rules, rulePath)).toBeUndefined();
+    expect(decideFsAccessForPath(rules, rulePath, "read").outcome).toEqual({ kind: "allow" });
   });
 });

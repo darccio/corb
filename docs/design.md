@@ -344,10 +344,26 @@ walking the subtree.
 
 ### Path aliasing
 
-Every VFS path is also reachable under the SDK's `fuseMount` (default `/data`),
-so `/work/repo/.env` is also `/data/work/repo/.env`. Path normalisation must
-strip the alias prefix before rule matching, or every rule has a trivial second
-spelling that misses.
+The SDK exposes a guest-wide `fuseMount` (default `/data`) under which every
+mounted path is *also* reachable — but that alias never reaches corb's own
+`VirtualProvider` code, and so needs no handling in `normalizeGuestPath` or
+anywhere else in `src/vfs/`. The SDK's `MountRouterProvider` is the thing that
+actually dispatches a FUSE request to a mount's provider, and it does so with
+the path already made relative to that mount, before corb's code ever sees it
+— a request that arrived at the guest kernel as `/data/work/repo/.env` reaches
+corb's provider as `/work/repo/.env` (or, per how corb structures its own
+mounts, `/mnt/corb-raw/<name>`-relative) exactly the same as one that arrived
+as `/work/repo/.env` directly. There is no second, `/data`-prefixed spelling
+for rule matching to worry about.
+
+An earlier revision of `normalizeGuestPath` stripped a `/data` prefix on the
+theory that this aliasing needed defending against here. It didn't: the strip
+had no legitimate input to fire on (the alias never arrives), so its only live
+effect was on a workspace with a real top-level directory named `data` —
+`/data/secrets/**` normalized down to `/secrets/...`, missing every rule
+written for it, and `.env` spuriously matched `/data/.env`. That code has been
+removed; see `src/vfs/glob.ts`'s `normalizeGuestPath` for the corrected
+(slash-normalization-only) behavior.
 
 ### Why this is the strong layer
 
