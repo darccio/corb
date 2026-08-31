@@ -636,6 +636,22 @@ Timestamps come from the host clock, not the guest, and the file is written by
 the host process to a location the guest has no mount for. The guest cannot
 forge, reorder or truncate it.
 
+Each event is written to disk (`fs.writeSync` on an append-mode fd) as soon
+as it is recorded, not buffered in memory for a later flush. An earlier
+version buffered and required an explicit flush, on the reasoning that
+batching writes is cheaper — true, but beside the point for a log whose job
+is to still be trustworthy after something has gone wrong: buffering meant a
+`SIGKILL`, an OOM kill, or any abnormal exit that skipped the normal shutdown
+sequence discarded the *entire session's* log, including whatever triggered
+the kill. A guest could also force that outcome deliberately — loop a denied
+operation to grow the unbounded in-memory buffer, which was a host-memory DoS
+on top of the log-loss problem. `subject`/`reason` are additionally capped in
+length (`MAX_SUBJECT_BYTES`/`MAX_REASON_BYTES`, `src/policy/audit.ts`), since
+several channels build `subject` from guest-controlled input (a VFS path, an
+HTTP path) and an unbounded string is the same guest-driven growth problem in
+miniature. The log file is created `0600` and its directory `0700` — an
+existing, more permissive log file is tightened to `0600` on first use too.
+
 The in-guest gate has no durable log of its own by design; its outcomes are
 recorded on the host when the sentinel handler runs. Local table denials that
 never reach the host are best-effort and are reported on stderr only.

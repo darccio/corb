@@ -1,13 +1,14 @@
-// Unit tests for `src/policy/audit.ts` — M3.1. Covers the "buffered, not
-// written until flush()" contract, JSONL shape, multi-record batching,
-// append-not-clobber across two flush cycles, directory auto-creation, the
-// injected clock, and the end-to-end redaction pass (the concrete version
-// of `docs/design.md` §6's "plant a known secret, assert its absence").
+// Unit tests for `src/policy/audit.ts` — M3.1. Covers the "write-through,
+// not written-until-flush()" contract, JSONL shape, multi-record batching,
+// append-not-clobber across two flush cycles, directory/file creation and
+// their permissions, subject/reason truncation, the injected clock, and the
+// end-to-end redaction pass (the concrete version of `docs/design.md` §6's
+// "plant a known secret, assert its absence").
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createAuditWriter, type AuditEvent } from "../../../src/policy/audit.ts";
+import { createAuditWriter, MAX_REASON_BYTES, MAX_SUBJECT_BYTES, type AuditEvent } from "../../../src/policy/audit.ts";
 
 describe("policy/audit AuditWriter", () => {
   let dir: string;
@@ -30,10 +31,87 @@ describe("policy/audit AuditWriter", () => {
       .map((line) => JSON.parse(line));
   }
 
-  it("does not write anything to disk until flush() is called", () => {
+  it("record() writes to disk immediately, before flush() is ever called", () => {
     const writer = createAuditWriter({ path: logPath, now: () => 1000 });
     writer.record({ channel: "http", decision: "allow", subject: "GET example.com/", sessionId: "s1" });
+    expect(fs.existsSync(logPath)).toBe(true);
+    expect(readLines()).toEqual([{ ts: 1000, channel: "http", decision: "allow", subject: "GET example.com/", sessionId: "s1" }]);
+  });
+
+  it("nothing touches disk until the first record() call — construction alone opens no file", () => {
+    createAuditWriter({ path: logPath, now: () => 1000 });
     expect(fs.existsSync(logPath)).toBe(false);
+  });
+
+  it("flush() is a safe no-op when nothing was ever recorded (no fd was ever opened)", () => {
+    const writer = createAuditWriter({ path: logPath, now: () => 1000 });
+    expect(() => writer.flush()).not.toThrow();
+    expect(fs.existsSync(logPath)).toBe(false);
+  });
+
+  it("flush() is idempotent — calling it twice does not throw", () => {
+    const writer = createAuditWriter({ path: logPath, now: () => 1000 });
+    writer.record({ channel: "http", decision: "allow", subject: "GET example.com/", sessionId: "s1" });
+    writer.flush();
+    expect(() => writer.flush()).not.toThrow();
+  });
+
+  it("record() after flush() reopens the file and appends, rather than losing further events", () => {
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    writer.record({ channel: "session", decision: "allow", subject: "start", sessionId: "s1" });
+    writer.flush();
+    writer.record({ channel: "session", decision: "allow", subject: "after-flush", sessionId: "s1" });
+    expect((readLines() as AuditEvent[]).map((e) => e.subject)).toEqual(["start", "after-flush"]);
+  });
+
+  it("creates the log file with 0600 permissions", () => {
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    writer.record({ channel: "gate", decision: "allow", subject: "op", sessionId: "s1" });
+    const mode = fs.statSync(logPath).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
+  it("tightens an existing, more permissive log file to 0600 on first use", () => {
+    fs.writeFileSync(logPath, "", { mode: 0o644 });
+    expect(fs.statSync(logPath).mode & 0o777).toBe(0o644);
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    writer.record({ channel: "gate", decision: "allow", subject: "op", sessionId: "s1" });
+    expect(fs.statSync(logPath).mode & 0o777).toBe(0o600);
+  });
+
+  it("creates a newly-created target directory with 0700 permissions", () => {
+    const nestedDir = path.join(dir, "nested-perms");
+    const nestedPath = path.join(nestedDir, "audit.jsonl");
+    const writer = createAuditWriter({ path: nestedPath, now: () => 1 });
+    writer.record({ channel: "gate", decision: "allow", subject: "op", sessionId: "s1" });
+    expect(fs.statSync(nestedDir).mode & 0o777).toBe(0o700);
+  });
+
+  it("truncates an oversized subject to MAX_SUBJECT_BYTES, marking that it happened", () => {
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    const oversized = "x".repeat(MAX_SUBJECT_BYTES + 500);
+    writer.record({ channel: "vfs", decision: "deny", subject: oversized, sessionId: "s1" });
+
+    const lines = readLines() as AuditEvent[];
+    expect(Buffer.byteLength(lines[0]?.subject ?? "", "utf8")).toBeLessThanOrEqual(MAX_SUBJECT_BYTES);
+    expect(lines[0]?.subject).toContain("[truncated]");
+  });
+
+  it("truncates an oversized reason to MAX_REASON_BYTES, marking that it happened", () => {
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    const oversized = "y".repeat(MAX_REASON_BYTES + 500);
+    writer.record({ channel: "vfs", decision: "deny", subject: "op", reason: oversized, sessionId: "s1" });
+
+    const lines = readLines() as AuditEvent[];
+    expect(Buffer.byteLength(lines[0]?.reason ?? "", "utf8")).toBeLessThanOrEqual(MAX_REASON_BYTES);
+    expect(lines[0]?.reason).toContain("[truncated]");
+  });
+
+  it("a subject under the byte cap is left untouched", () => {
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    writer.record({ channel: "vfs", decision: "deny", subject: "/work/repo/.env", sessionId: "s1" });
+    const lines = readLines() as AuditEvent[];
+    expect(lines[0]?.subject).toBe("/work/repo/.env");
   });
 
   it("flush() writes one valid JSON object per line, matching the recorded event", () => {
