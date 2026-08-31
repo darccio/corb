@@ -217,6 +217,31 @@ describe("vm/shutdown ShutdownController", () => {
     expect(exit).toHaveBeenCalledExactlyOnceWith(1);
   });
 
+  it("code after `await trigger()` only runs because the injected exit() doesn't actually terminate — the real default does", async () => {
+    // This is the hazard behind `src/vm/session.ts`'s runSession(): its
+    // catch block does `await controller.trigger("error", 1, err); throw
+    // err;`, relying on `trigger()`'s returned promise to resolve so the
+    // `throw` can run. It only resolves here because `exit` is `vi.fn()` —
+    // a stand-in that records the call and returns, rather than acting on
+    // it. The real default (`shutdown.ts`'s `exitFn = options.exit ??
+    // ((code) => process.exit(code))`) terminates the process synchronously
+    // instead, so in production the `throw err` right after `trigger()` is
+    // unreachable: nothing after it — including `cli.ts`'s top-level
+    // `.catch()`, which is what prints the error at all — ever runs. That
+    // gap is why `runSession()`'s catch block now writes to `stderr`
+    // *before* calling `trigger()`, rather than relying on the `throw` to
+    // surface the error further up the call stack.
+    const exit = vi.fn();
+    const controller = new ShutdownController({ steps: [], exit });
+    let ranAfterTrigger = false;
+
+    await controller.trigger("test", 1);
+    ranAfterTrigger = true;
+
+    expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+    expect(ranAfterTrigger).toBe(true); // would never flip to true against a real, un-injected process.exit
+  });
+
   it("never touches the real process: exit() and process registration are fully injected", () => {
     // A canary: if this test ever accidentally exercised the real
     // `process.exit`, the test process itself would die and no assertions

@@ -1078,6 +1078,21 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
         sessionId,
       });
     }
+    // `controller.trigger()` resolves *through* `exitFn`, whose real-process
+    // default is `process.exit()` (`src/vm/shutdown.ts`) — so in production,
+    // `await controller.trigger(...)` below never returns, and `throw err`
+    // right after it is unreachable. Without reporting `err` here first,
+    // that meant every error on this path — a missing secret, a VM boot
+    // failure, any of the `WorkspaceDirectoryError`/`ImageNotFoundError`-
+    // shaped failures this function can throw — surfaced as a bare
+    // non-zero exit code with no output at all: `cli.ts`'s top-level
+    // `.catch()` never ran, and `ShutdownController.trigger()`'s own `cause`
+    // parameter is threaded into `ShutdownReport` but nothing ever reads it
+    // back out. Writing to `stderr` here — the same injectable stream
+    // `runSession()` already uses elsewhere (see above) rather than a bare
+    // `console.error` — is what makes the error visible in the case that
+    // actually matters, before whatever happens to `exitFn` next.
+    stderr.write(`corb run: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
     await controller.trigger("error", 1, err);
     throw err;
   }
