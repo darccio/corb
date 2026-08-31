@@ -114,6 +114,64 @@ describe("policy/github githubApiGate", () => {
     });
   });
 
+  describe("percent-encoding cannot be used to smuggle a path past deny-paths", () => {
+    it("a single percent-encoded path segment is still denied (URL.pathname never decodes on its own)", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({ "deny-paths": ["**/actions/secrets/**"] }, audit, "s");
+      // %73 = 's': "actions/%73ecrets/FOO" decodes to "actions/secrets/FOO".
+      const result = gate(req("https://api.github.com/repos/dario/corb/actions/%73ecrets/FOO", "GET"));
+      expect(result).toBeInstanceOf(Response);
+      expect((result as Response).status).toBe(403);
+    });
+
+    it("a double percent-encoded path segment is still denied (decoding runs to a fixpoint)", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({ "deny-paths": ["**/actions/secrets/**"] }, audit, "s");
+      // %2573 decodes to %73 decodes to 's'.
+      const result = gate(req("https://api.github.com/repos/dario/corb/actions/%2573ecrets/FOO", "GET"));
+      expect(result).toBeInstanceOf(Response);
+      expect((result as Response).status).toBe(403);
+    });
+
+    it("/user/keys** still denies a percent-encoded spelling", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({ "deny-paths": ["/user/keys**"] }, audit, "s");
+      const result = gate(req("https://api.github.com/%75ser/keys/123", "GET"));
+      expect(result).toBeInstanceOf(Response);
+      expect((result as Response).status).toBe(403);
+    });
+
+    it("a malformed percent-escape in the path is denied outright, fail-closed", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({ "deny-paths": ["**/actions/secrets/**"] }, audit, "s");
+      const result = gate(req("https://api.github.com/repos/dario/corb/%ZZ", "GET")) as Response;
+      expect(result).toBeInstanceOf(Response);
+      expect(result.status).toBe(403);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ decision: "deny", reason: "malformed percent-encoding in request path" }),
+      );
+    });
+
+    it("a legitimate percent-encoded path matching no deny-paths pattern still passes through", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate(
+        { "deny-paths": ["**/actions/secrets/**", "**/actions/variables/**", "/user/keys**"] },
+        audit,
+        "s",
+      );
+      // %20 = space, in an issue title-ish path segment unrelated to any deny pattern.
+      expect(gate(req("https://api.github.com/repos/dario/corb/issues/my%20issue", "GET"))).toBeUndefined();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it("malformed percent-encoding does not cause a deny when deny-paths is not configured at all", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({ methods: ["GET"] }, audit, "s");
+      expect(gate(req("https://api.github.com/repos/dario/corb/%ZZ", "GET"))).toBeUndefined();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+  });
+
   it("a request violating neither methods nor deny-paths (both configured) passes through", () => {
     const audit = fakeAudit();
     const gate = githubApiGate(

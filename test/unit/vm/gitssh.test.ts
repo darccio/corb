@@ -72,6 +72,15 @@ describe("vm/gitssh matchAnyGlob", () => {
   it("matches case-insensitively against a differently-cased pattern", () => {
     expect(matchAnyGlob(["Dario/Corb"], "dario/corb")).toBe(true);
   });
+
+  it("treats a literal '?' in a pattern as a literal character, not a regex quantifier", () => {
+    // A pattern like "dario/repos?" means the literal string "dario/repos?"
+    // — it must not be interpreted as "the 's' is optional" (which would
+    // also match "dario/repo", a different, unintended repo).
+    expect(matchAnyGlob(["dario/repos?"], "dario/repos?")).toBe(true);
+    expect(matchAnyGlob(["dario/repos?"], "dario/repos")).toBe(false);
+    expect(matchAnyGlob(["dario/repos?"], "dario/reposx")).toBe(false);
+  });
 });
 
 function fakeGit(overrides: Partial<EffectiveGitConfig> = {}): EffectiveGitConfig {

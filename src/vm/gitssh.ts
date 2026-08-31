@@ -118,15 +118,23 @@ export function normalizeRepo(repo: string): string {
  * `*` matches within a single path segment (never across `/`), which is the
  * only wildcard shape `git.allow-repos` actually needs
  * (`docs/design.md`'s own example: `dario/*-docs`). This is not a
- * general-purpose glob engine — no `**`, no `?`, no character classes — that
- * is `src/vfs/glob.ts`'s job once it exists (M5), for filesystem policy
- * globs that do need to cross path segments. Building that here would be
- * scope creep for a repo-name allowlist.
+ * general-purpose glob engine — no `**`, no `?` as a wildcard, no character
+ * classes — that is `src/vfs/glob.ts`'s job once it exists (M5), for
+ * filesystem policy globs that do need to cross path segments. Building that
+ * here would be scope creep for a repo-name allowlist.
+ *
+ * `?` is not a supported wildcard, but it must still be *escaped* like every
+ * other regex metacharacter a literal repo name could contain — an operator
+ * writing `allow-repos = ["you/repos?"]` (meaning the single literal
+ * character `?`) must not have it silently reinterpreted as a regex
+ * quantifier making the `s` optional, which would also match `you/repo`.
+ * `src/policy/github.ts` and `src/vfs/glob.ts`'s own escape classes both
+ * already include `?` for this reason.
  */
 function globToRegExp(pattern: string): RegExp {
   const escaped = pattern
     .split("*")
-    .map((segment) => segment.replace(/[.+^${}()|[\]\\]/g, "\\$&"))
+    .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
     .join("[^/]*");
   return new RegExp(`^${escaped}$`);
 }

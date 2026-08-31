@@ -50,6 +50,30 @@ function pathGlobToRegExp(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
+// `URL.pathname` never percent-decodes — `"%73ecrets"` stays exactly that,
+// not `"secrets"` — so matching `deny-paths` against the raw pathname alone
+// misses `GET /repos/o/r/actions/%73ecrets/FOO`: GitHub itself decodes
+// during routing and serves the real `.../actions/secrets/...` endpoint,
+// so the pattern `"**/actions/secrets/**"` never fires. Decoding is
+// repeated to a fixpoint (capped at `MAX_DECODE_ITERATIONS`, so a
+// pathological input cannot spin this forever) so a *double*-encoded
+// segment (`%2573` -> `%73` -> `s`) is also caught, not just a single
+// decode.
+const MAX_DECODE_ITERATIONS = 4;
+
+/** Throws (via `decodeURIComponent`) if `pathname` contains a malformed percent-escape (e.g. a lone `%ZZ`) at any point during the fixpoint iteration — see the caller for why that is treated as a deny, matching `docs/adr/0005`'s allowlist-never-blocklist posture: an ambiguous path must not be given the benefit of the doubt. */
+function decodeToFixpoint(pathname: string): string {
+  let current = pathname;
+  for (let i = 0; i < MAX_DECODE_ITERATIONS; i++) {
+    const next = decodeURIComponent(current);
+    if (next === current) {
+      return current;
+    }
+    current = next;
+  }
+  return current;
+}
+
 // 403, matching Gondolin's own default for a hostname-allowlist denial
 // (`HttpRequestBlockedError`, per `test/e2e/egress.e2e.ts`'s module
 // comment). Plain text, no headers or URL echoed back from the request that
@@ -91,9 +115,13 @@ function denyResponse(reason: string): Response {
  *      `methods = ["GET", "POST", "PATCH"]` itself. There is no built-in
  *      default method list.
  *   5. `githubApi["deny-paths"]`, if set, is a glob *blocklist* matched
- *      against the pathname: any matching pattern denies, regardless of
- *      method — even a method the allowlist above would otherwise have
- *      permitted.
+ *      against the pathname — both its raw form and its percent-decoded
+ *      form (see `decodeToFixpoint`), since `URL.pathname` never decodes on
+ *      its own and GitHub itself does during routing: any matching pattern
+ *      denies, regardless of method — even a method the allowlist above
+ *      would otherwise have permitted. A pathname containing a malformed
+ *      percent-escape is denied outright (fail-closed on ambiguous input)
+ *      rather than matched against its raw form only.
  *   6. If neither restriction is configured (the block exists only to set
  *      `hosts`, say), the gate matches the host and denies nothing.
  *
@@ -112,6 +140,13 @@ export function githubApiGate(
   audit: AuditWriter,
   sessionId: string,
 ): (req: Request) => Response | undefined {
+  // Compiled once per gate (i.e. once per session), not once per request:
+  // `githubApi["deny-paths"]` is fixed for the lifetime of this closure, so
+  // recompiling every pattern's regex on every single request — as an
+  // earlier version of this function did, inside the per-request closure
+  // below — was wasted work on the hot path of every allowed request too.
+  const compiledDenyPaths = githubApi?.["deny-paths"]?.map((pattern) => ({ pattern, regex: pathGlobToRegExp(pattern) }));
+
   return (req: Request): Response | undefined => {
     if (githubApi === undefined) {
       return undefined;
@@ -133,10 +168,17 @@ export function githubApiGate(
       return denyResponse(reason);
     }
 
-    const denyPaths = githubApi["deny-paths"];
-    if (denyPaths !== undefined) {
-      for (const pattern of denyPaths) {
-        if (pathGlobToRegExp(pattern).test(url.pathname)) {
+    if (compiledDenyPaths !== undefined) {
+      let decodedPathname: string;
+      try {
+        decodedPathname = decodeToFixpoint(url.pathname);
+      } catch {
+        const reason = "malformed percent-encoding in request path";
+        audit.record({ channel: "http", decision: "deny", subject, reason, sessionId });
+        return denyResponse(reason);
+      }
+      for (const { pattern, regex } of compiledDenyPaths) {
+        if (regex.test(url.pathname) || regex.test(decodedPathname)) {
           const reason = `path denied: ${pattern}`;
           audit.record({ channel: "http", decision: "deny", subject, reason, sessionId });
           return denyResponse(reason);
