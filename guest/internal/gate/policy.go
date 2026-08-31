@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -110,28 +111,42 @@ type LocalDenial struct {
 // program name, i.e. os.Args[1:]) and reports whether the invocation is
 // denied locally.
 //
-// Subcommand matching looks only at args[0] (i.e. os.Args[1], if present),
-// per the spec this implements: git/gh's own global-flag-before-subcommand
-// forms (e.g. "git -C /path commit") are not unwound here. This mirrors
-// docs/design.md §4's flow description literally ("resolve the tool from
-// argv[0]... run any content check attached to the subcommand") and keeps
-// the check a single, auditable string comparison rather than a partial
-// reimplementation of git's own argv grammar.
+// Subcommand matching looks only at args[0] (i.e. os.Args[1], if present).
+// git/gh's own global-flag-before-subcommand forms (e.g. "git -C /path
+// commit") are not unwound here -- a global flag like "-C" simply shifts
+// args[0] away from being the subcommand at all. That is exactly why "-C",
+// "--git-dir", and "--work-tree" are themselves listed in git's
+// blockedFlags (src/vm/session.ts's GATE_CONFIG): the flag check below scans
+// every arg, not just args[0], so it still catches the invocation even
+// though the subcommand check does not.
 //
-// Flag matching checks every arg for either an exact match against a
-// blocked flag, or (for "--long" flags) a "--long=value" prefix match,
-// since that's the other common way to spell a long flag on the command
-// line. This is a heuristic, not a full reimplementation of git/gh's flag
+// Flag matching checks every arg for:
+//   - an exact match against a blocked flag (covers a short flag like "-C"
+//     with a separate value, e.g. "-C /path", and a long flag with a
+//     separate value, e.g. "--git-dir /path");
+//   - for a "--long" blocked flag, a "--long=value" prefix match, since
+//     that's the other common way to spell a long flag;
+//   - for a short "-x" blocked flag, a glued-value prefix match ("-xvalue",
+//     e.g. "-C/path" or "-cfoo.bar=baz"), which git also accepts and which
+//     neither of the two rules above would catch. This is explicitly not
+//     applied to long flags: "--cached" must never match a blocked "-c",
+//     which the "--" exclusion below guarantees.
+//
+// This is a heuristic, not a full reimplementation of git/gh's flag
 // grammar: docs/design.md §4 notes the table "can afford to be stricter"
-// than a security-critical one would dare, since a bypass here is
-// low-severity (the real enforcement is host-side).
+// than a security-critical one would dare. The real enforcement for gated
+// subcommands (commit, push) is the host-side content check in
+// docs/design.md §5 -- but that check is itself reached only through the
+// same argv[0]/flag dispatch this function performs (see GatedHook), so an
+// arg-parsing gap here is not merely a local-table bypass: it can also skip
+// the content check entirely. That is why "-C"/"--git-dir"/"--work-tree"
+// and glued short-flag values are covered explicitly rather than left to
+// this table's general "can afford to be stricter" slack.
 func CheckLocal(policy ToolPolicy, args []string) (LocalDenial, bool) {
 	if len(args) > 0 {
 		sub := args[0]
-		for _, blocked := range policy.BlockedSubcommands {
-			if sub == blocked {
-				return LocalDenial{Kind: "subcommand", Match: sub}, true
-			}
+		if slices.Contains(policy.BlockedSubcommands, sub) {
+			return LocalDenial{Kind: "subcommand", Match: sub}, true
 		}
 	}
 	for _, arg := range args {
@@ -140,6 +155,10 @@ func CheckLocal(policy ToolPolicy, args []string) (LocalDenial, bool) {
 				return LocalDenial{Kind: "flag", Match: blocked}, true
 			}
 			if strings.HasPrefix(blocked, "--") && strings.HasPrefix(arg, blocked+"=") {
+				return LocalDenial{Kind: "flag", Match: blocked}, true
+			}
+			if len(blocked) == 2 && blocked[0] == '-' && blocked[1] != '-' &&
+				!strings.HasPrefix(arg, "--") && strings.HasPrefix(arg, blocked) && len(arg) > len(blocked) {
 				return LocalDenial{Kind: "flag", Match: blocked}, true
 			}
 		}

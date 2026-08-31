@@ -325,6 +325,25 @@ describe.skipIf(!process.env.CORB_E2E)("policygate-content e2e (real VM boot)", 
       expect(result.stderr).toContain("is blocked in this sandbox");
     });
 
+    it("git -C does not bypass the content check: a commit with an AWS-access-key-shaped string via 'git -C .' still exits 87", async () => {
+      // Regression for the args[0]-only dispatch bug: `git -C . commit` used
+      // to have args[0] == "-C", so neither CheckLocal's subcommand check nor
+      // policygate's GatedHook dispatch (also keyed on args[0]) ever saw
+      // "commit" at all, and the commit went through with zero content check.
+      const result = await guestShellA(
+        `echo "aws_key = ${AKIA_STRING}" > ${SECRET_FILE_NAME}-via-dash-c && git add ${SECRET_FILE_NAME}-via-dash-c && git -C . commit -m "add secret via -C"`,
+      );
+      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(87);
+      expect(result.stderr).toContain("blocked by corb policy");
+      expect(result.stderr).toContain("secret-in-diff");
+    });
+
+    it("git -C does not bypass the locally-blocked config subcommand", async () => {
+      const result = await guestShellA(`git -C . config user.name nope`);
+      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(86);
+      expect(result.stderr).toContain("is blocked in this sandbox");
+    });
+
     it("a write to a deny-write-covered path is denied at the vfs layer, and the host file is unchanged", async () => {
       const result = await guestShellA(`echo overwrite >> ${PROTECTED_FILE_NAME}`);
       expect(result.ok, "a write to a deny-write path unexpectedly succeeded").toBe(false);

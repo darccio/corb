@@ -17,7 +17,7 @@ func TestLoadConfig(t *testing.T) {
 			"git": {
 				"real": "/usr/local/libexec/git-real",
 				"blockedSubcommands": ["config", "credential", "filter-branch", "init"],
-				"blockedFlags": ["-c", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign"]
+				"blockedFlags": ["-c", "-C", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign", "--git-dir", "--work-tree"]
 			},
 			"gh": {
 				"real": "/usr/local/libexec/gh-real",
@@ -135,7 +135,7 @@ func TestCheckLocal(t *testing.T) {
 	policy := ToolPolicy{
 		Real:               "/usr/local/libexec/git-real",
 		BlockedSubcommands: []string{"config", "credential", "filter-branch", "init"},
-		BlockedFlags:       []string{"-c", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign"},
+		BlockedFlags:       []string{"-c", "-C", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign", "--git-dir", "--work-tree"},
 	}
 
 	tests := []struct {
@@ -153,7 +153,14 @@ func TestCheckLocal(t *testing.T) {
 		{name: "blocked long flag exact match", args: []string{"--exec-path", "commit"}, wantBlocked: true, wantKind: "flag", wantMatch: "--exec-path"},
 		{name: "blocked long flag with equals form", args: []string{"--config-env=foo=bar", "commit"}, wantBlocked: true, wantKind: "flag", wantMatch: "--config-env"},
 		{name: "unblocked subcommand that merely contains a blocked one as substring", args: []string{"configure-thing"}, wantBlocked: false},
-		{name: "short flag not falsely matched via equals form", args: []string{"commit", "-c=foo"}, wantBlocked: false},
+		{name: "short flag glued value now matches via prefix, not just equals form", args: []string{"commit", "-c=foo"}, wantBlocked: true, wantKind: "flag", wantMatch: "-c"},
+		{name: "git -C with a separate value bypasses no local check", args: []string{"-C", "/repo", "commit", "-m", "x"}, wantBlocked: true, wantKind: "flag", wantMatch: "-C"},
+		{name: "git -C with a glued value is still caught", args: []string{"-C/repo", "commit", "-m", "x"}, wantBlocked: true, wantKind: "flag", wantMatch: "-C"},
+		{name: "git -C used to retarget the config subcommand is caught by the flag check", args: []string{"-C", "/repo", "config", "user.email", "a@b"}, wantBlocked: true, wantKind: "flag", wantMatch: "-C"},
+		{name: "glued -c value with an embedded equals is still caught", args: []string{"-cfoo.bar=baz", "commit"}, wantBlocked: true, wantKind: "flag", wantMatch: "-c"},
+		{name: "--git-dir with an equals form is caught", args: []string{"--git-dir=/r/.git", "--work-tree=/r", "commit", "-m", "x"}, wantBlocked: true, wantKind: "flag", wantMatch: "--git-dir"},
+		{name: "--git-dir with a separate value is caught", args: []string{"--git-dir", "/r/.git", "commit"}, wantBlocked: true, wantKind: "flag", wantMatch: "--git-dir"},
+		{name: "a long flag is never falsely matched by a short blocked flag's glued-value rule", args: []string{"diff", "--cached"}, wantBlocked: false},
 	}
 
 	for _, tt := range tests {

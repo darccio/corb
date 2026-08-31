@@ -205,7 +205,24 @@ export const GATE_CONFIG = {
     git: {
       real: "/usr/local/libexec/real-git",
       blockedSubcommands: ["config", "credential", "filter-branch", "init"],
-      blockedFlags: ["-c", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign"],
+      // "-C", "--git-dir", and "--work-tree" retarget which repository git
+      // operates on (or which config file it reads), and are also how the
+      // "config" subcommand block above can otherwise be bypassed: "git -C
+      // /repo config user.email x" has args[0] == "-C", so the subcommand
+      // check never sees "config" at all — only the flag check below does.
+      // See CheckLocal's doc comment (guest/internal/gate/policy.go) for how
+      // each spelling (separate value and glued short-flag value) is caught.
+      blockedFlags: [
+        "-c",
+        "-C",
+        "--config-env",
+        "--exec-path",
+        "--upload-pack",
+        "--receive-pack",
+        "--no-gpg-sign",
+        "--git-dir",
+        "--work-tree",
+      ],
     },
     gh: {
       real: "/usr/local/libexec/real-gh",

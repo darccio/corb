@@ -424,7 +424,7 @@ var policies = map[string]toolPolicy{
 	"git": {
 		real:               "/usr/local/libexec/real-git",
 		blockedSubcommands: []string{"config", "credential", "filter-branch", "init"},
-		blockedFlags:       []string{"-c", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign"},
+		blockedFlags:       []string{"-c", "-C", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign", "--git-dir", "--work-tree"},
 		gated: map[string]hookSpec{
 			"commit": {name: "git.commit", collect: collectStagedDiff},
 			"push":   {name: "git.push", collect: collectPushRange},
@@ -455,10 +455,23 @@ permissions problem in a transcript. `86` and `87` are unused by shells and by
 git, so both an agent reading its own tool output and a human reading a log can
 grep for them and know unambiguously what happened.
 
-Because a bypass is low-severity, the table can afford to be *stricter* than a
-security-critical one would dare, including duplicating restrictions that
-`onRequest` also enforces host-side, so failures surface instantly and readably
-rather than as a generic 403 several network hops later.
+The table can afford to be *stricter* than a security-critical one would dare
+— including duplicating restrictions that `onRequest` also enforces host-side
+— so failures surface instantly and readably rather than as a generic 403
+several network hops later. But a gap here is not merely a local-table
+bypass: `commit`/`push`'s out-of-guest content check (§5) is dispatched from
+the *same* `argv[0]` the local table matches on (`GatedHook`, keyed on the
+subcommand at `args[0]`), so an argv-parsing gap that hides the subcommand
+from the local check also hides it from the content check. `git -C /path
+commit` is the concrete case: git's own global-flag-before-subcommand form
+shifts `args[0]` away from `"commit"` entirely. It is *not* unwound into a
+subcommand match — instead `-C`, `--git-dir`, and `--work-tree` are
+themselves listed in `blockedFlags`, since the flag check scans every arg
+rather than only `args[0]` and so still catches the invocation regardless of
+where the subcommand ends up. See `CheckLocal`'s doc comment in
+`guest/internal/gate/policy.go` for the exact matching rules, including how a
+short flag's glued-value spelling (`-C/path`, not just `-C /path`) is also
+covered.
 
 ---
 

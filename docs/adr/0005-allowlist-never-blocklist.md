@@ -64,7 +64,14 @@ an allowlist's failure mode is a false denial — visible and safe.
   is accepted specifically because the gate's failure mode is bounded: a bypass
   there means "the guest does something to itself," never "the host does
   something on the guest's behalf" (see the no-host-side-execution ADR), so the
-  cost of an incomplete enumeration is tolerable only in that one place.
+  cost of an incomplete enumeration is tolerable only in that one place. This
+  bound is narrower than it first looks, though: §4/§5's out-of-guest content
+  check for `commit`/`push` is dispatched off the *same* `args[0]` the local
+  blocklist matches on, so an incomplete `blockedFlags` entry (e.g. missing
+  `-C`, which shifts `args[0]` away from the subcommand entirely) can silently
+  skip the content check too — not just the local table. `blockedFlags` must
+  therefore cover every flag that can relocate or hide the subcommand, not only
+  ones that are separately dangerous in their own right.
 * Neutral, because this pushes ongoing maintenance cost onto keeping the
   allowlists current (new egress hosts, new allowed GitHub API paths) rather
   than onto tracking a moving target of things to forbid.
