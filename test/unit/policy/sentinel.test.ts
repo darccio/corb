@@ -179,6 +179,15 @@ describe("policy/sentinel sentinel", () => {
       expect(json.violations?.[0]?.rule).toBe("malformed-request");
     });
 
+    it("changedFiles: null denies, same as any other non-array — the guest must always send [] for empty, never null", async () => {
+      const audit = fakeAudit();
+      const gate = sentinel(fakePolicy(), [], audit, "s");
+      const result = (await gate(policyReq(cleanRequestBody({ changedFiles: null })))) as Response;
+      const json = await readResponseJson(result);
+      expect(json.allowed).toBe(false);
+      expect(json.violations?.[0]?.rule).toBe("malformed-request");
+    });
+
     it("changedFiles containing a non-string entry denies", async () => {
       const audit = fakeAudit();
       const gate = sentinel(fakePolicy(), [], audit, "s");
@@ -252,6 +261,22 @@ describe("policy/sentinel sentinel", () => {
       const result = (await gate(policyReq(cleanRequestBody()))) as Response;
       expect(result.status).toBe(200);
       expect(result.headers.get("content-type")).toBe("application/json");
+      const json = await readResponseJson(result);
+      expect(json).toEqual({ allowed: true, rateLimited: false });
+      expect(audit.record).toHaveBeenCalledWith({
+        channel: "gate",
+        decision: "allow",
+        subject: "git.commit",
+        reason: "ok",
+        sessionId: "s",
+      });
+    });
+
+    it("genuinely empty content (no changed files, empty diff) allows — regression test for a nil-vs-[] guest marshaling bug that made this deny as malformed-request", async () => {
+      const audit = fakeAudit();
+      const gate = sentinel(fakePolicy(), [], audit, "s");
+      const result = (await gate(policyReq(cleanRequestBody({ changedFiles: [], diff: "" })))) as Response;
+      expect(result.status).toBe(200);
       const json = await readResponseJson(result);
       expect(json).toEqual({ allowed: true, rateLimited: false });
       expect(audit.record).toHaveBeenCalledWith({
