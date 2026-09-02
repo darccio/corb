@@ -380,6 +380,51 @@ export class InvalidDirRuleError extends Error {
 }
 
 /**
+ * Thrown before any VM is created when a workspace directory's `rules[]`
+ * entry has a `glob` that can never match any real path: one that starts
+ * with `/`, ends with `/`, or contains an empty `//` segment. `src/vfs/
+ * policy.ts`'s `matchRule` doc comment states the contract every real
+ * example glob in `docs/design.md` §3 and `test/unit/vfs/glob.test.ts`
+ * already follows: `path` (what a compiled glob is tested against) is
+ * "relative to the *directory's own root* (no leading `/`, no mount-point
+ * prefix)" — and `src/vfs/glob.ts`'s `normalizeGuestPath` always strips a
+ * trailing `/` from a real candidate path too. A glob spelled with a
+ * leading or trailing `/` (an operator writing `glob = "/secrets/**"`,
+ * reading naturally as "from the root of the mount") compiles
+ * (`globToRegExp`) to a regex that requires exactly the leading/trailing
+ * `/` no real candidate path ever has, so it matches nothing, ever —
+ * silently. Before this check existed, `toGlobRules` accepted such a rule
+ * outright: the mount booted, `corb explain` showed the rule as active, and
+ * everything the rule was supposed to cover was fully readable and
+ * writable, with no error and no warning. That is a fail-open bug wearing a
+ * rule's clothing, and it is worse than no rule at all — a rule that is
+ * visibly absent does not create false confidence the way one that silently
+ * never fires does.
+ *
+ * Deliberately a hard rejection, not an auto-strip-and-proceed: a glob like
+ * `"secrets/"` is genuinely ambiguous (did the operator mean "the directory
+ * itself", matching `matchRule`'s exact-string semantics for a `**`-free
+ * pattern, or typo `"secrets/**"`?), and guessing the intent would silently
+ * paper over the exact "looks like it's protecting something but isn't"
+ * problem this error exists to surface loudly instead of quietly working
+ * around.
+ *
+ * A bare empty-string glob (`glob = ""`) is deliberately not rejected by
+ * this check — none of "starts with `/`", "ends with `/`", or "contains
+ * `//`" is true of `""` — that is a separate, weirder edge case this item
+ * does not address.
+ */
+export class UnmatchableDirRuleGlobError extends Error {
+  constructor(dirName: string, index: number, glob: string, reason: string) {
+    super(
+      `corb run: workspace directory '${dirName}' rules[${index}]'s glob '${glob}' ${reason} ` +
+        "and can never match a real path (rules match a mount-relative path with no leading or trailing '/')",
+    );
+    this.name = "UnmatchableDirRuleGlobError";
+  }
+}
+
+/**
  * The subset of `/etc/corb/image.json` (image/overlay/etc/corb/image.json)
  * this session needs.
  *
@@ -515,9 +560,12 @@ const DEFAULT_RULE_REASON = "no reason configured for this rule";
  * empty, never `undefined`, per that module's own comment — of still-partial
  * `DirRuleConfig` entries) into `src/vfs/policy.ts`'s fully-required
  * `GlobRule[]`, throwing `InvalidDirRuleError` for any entry missing `glob`
- * or `mode`. See `InvalidDirRuleError`'s own doc comment for why those two
- * fields are hard errors and `DEFAULT_RULE_REASON`'s for why a missing
- * `reason` is not.
+ * or `mode`, and `UnmatchableDirRuleGlobError` for a present `glob` that can
+ * never match anything (a leading `/`, a trailing `/`, or an embedded `//`
+ * — see that error's own doc comment for why this is a hard rejection
+ * rather than an auto-corrected warning). See `InvalidDirRuleError`'s own
+ * doc comment for why the missing-field cases are hard errors and
+ * `DEFAULT_RULE_REASON`'s for why a missing `reason` is not.
  *
  * Exported (unlike this module's other internal `resolveWorkspaceDirs`
  * helpers) so `src/commands/run.ts`'s `toWorkspaceDirSpec` can call it
@@ -535,6 +583,25 @@ export function toGlobRules(dirName: string, rules: readonly DirRuleConfig[]): G
     }
     if (rule.mode === undefined) {
       throw new InvalidDirRuleError(dirName, index, "mode");
+    }
+    // A glob's shape must match `src/vfs/policy.ts`'s `matchRule` contract
+    // (mount-relative, no leading or trailing `/`) or it can never match a
+    // real candidate path — see `UnmatchableDirRuleGlobError`'s own doc
+    // comment. Checked in this order (leading, then trailing, then
+    // embedded) purely so the reported reason is the first one that
+    // applies; a glob could in principle trip more than one (e.g. a bare
+    // `"/"` both starts and ends with `/`), and there is no meaningful
+    // "worse" ordering among the three, so whichever check runs first wins.
+    // An empty-string glob trips none of these three checks and is
+    // deliberately left alone — see that error's own doc comment.
+    if (rule.glob.startsWith("/")) {
+      throw new UnmatchableDirRuleGlobError(dirName, index, rule.glob, "starts with '/'");
+    }
+    if (rule.glob.endsWith("/")) {
+      throw new UnmatchableDirRuleGlobError(dirName, index, rule.glob, "ends with '/'");
+    }
+    if (rule.glob.includes("//")) {
+      throw new UnmatchableDirRuleGlobError(dirName, index, rule.glob, "contains an empty '//' segment");
     }
     return { glob: rule.glob, mode: rule.mode, reason: rule.reason ?? DEFAULT_RULE_REASON };
   });

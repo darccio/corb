@@ -56,6 +56,91 @@ function segmentToRegexSource(segment: string): string {
 }
 
 /**
+ * Collapses a run of two or more consecutive `"**"` segments into a single
+ * `"**"` segment — e.g. the three segments `**`, `**`, `.env` (what a
+ * pattern that opens with two consecutive `**` tokens ahead of a literal
+ * splits into) become just `**`, `.env` — before `globToRegExp`'s
+ * construction loop ever sees them. `**` means "zero or more entire path
+ * segments" (this file's own documented semantics), so a run of them is
+ * trivially equivalent to one `**` under that definition alone — every glob
+ * implementation treats a run of consecutive `**` tokens the same as a
+ * single `**` in that spot.
+ *
+ * This is a real correctness fix, not a defensive simplification: the
+ * four-branch construction loop below classifies a `**` segment by whether
+ * it merely *has* a neighbor on each side (`i > 0` / `i < length - 1`), not
+ * by whether that neighbor is itself a literal. Two adjacent `**` segments
+ * each see the other as "a neighbor is present" and so, when also flanked by
+ * real literals on their far sides, each independently emits the "both
+ * neighbors" fragment — which owns a *leading* separator of its own —
+ * stacking two of those fragments back to back between the same pair of
+ * literals, with a bare, unwanted separator stitching them together that no
+ * real candidate path ever has (`normalizeGuestPath` collapses a doubled
+ * separator down to one). Concretely: two consecutive `**` segments sitting
+ * between two literals used to compile to a regex requiring a literal `/`
+ * standing on its own right where the two `**` fragments met, so it matched
+ * nothing at all, not even the shape it plainly meant to match. Collapsing
+ * first sidesteps the bug at its root rather than teaching the four-branch
+ * logic to special-case a `**`-flanked-by-`**` neighbor as "no neighbor".
+ */
+function collapseConsecutiveDoubleStars(segments: readonly string[]): string[] {
+  const collapsed: string[] = [];
+  for (const segment of segments) {
+    if (segment === "**" && collapsed[collapsed.length - 1] === "**") {
+      continue;
+    }
+    collapsed.push(segment);
+  }
+  return collapsed;
+}
+
+/**
+ * Memoizes `globToRegExp`'s compiled output, keyed by the raw pattern
+ * string. `globToRegExp` is a pure function — the same `pattern` string
+ * always produces an equivalent `RegExp` — so caching it is safe, and it
+ * turns this module's hot path from "recompile from scratch on every call"
+ * into "compile once per distinct pattern, ever."
+ *
+ * This matters because `globToRegExp` is not a cold, config-load-time-only
+ * function: `src/vfs/policy.ts`'s `matchRule` calls it inline, once per
+ * rule, on every `matchRule` invocation, and `matchRule` itself is reached
+ * from `src/vfs/glob-policy.ts`'s `decideFsAccessForPath` at least twice per
+ * real guest filesystem operation (once against the requested path, once
+ * against the resolved/realpath'd path — that file's own "check the
+ * resolved path too" symlink-bypass defense) and from `isEntryHidden` once
+ * per `readdir` entry. A workspace with several rules, and an agent running
+ * something like `rg` over a large tree, adds up to an enormous number of
+ * otherwise-wasted `RegExp` compilations for a fixed, small set of glob
+ * strings that never change for the mount's lifetime.
+ *
+ * `src/policy/github.ts`'s `githubApiGate` hit the identical problem for its
+ * own `deny-paths` matching (see that function's own `compiledDenyPaths`
+ * comment: "Compiled once per gate ... not once per request ... was wasted
+ * work on the hot path"), but that fix's exact mechanism — precomputing an
+ * array of `{pattern, regex}` once inside a long-lived closure built once
+ * per session — does not transplant here: `src/vfs/policy.ts` is
+ * deliberately a pure, stateless, zero-Gondolin-dependency module (its own
+ * module comment: "the whole policy semantics table stays unit-testable
+ * with zero VM boot"), and `matchRule`/`decideFsAccessForPath`/`GlobRule`
+ * are its public, already-tested API, taken as plain data on every call —
+ * changing that signature to require pre-compiled regexes would ripple into
+ * `glob-policy.ts`'s call sites and `test/unit/vfs/policy.test.ts`'s
+ * existing tests for no real benefit. A plain module-level cache here
+ * achieves the identical outcome (compiled once per unique pattern, not
+ * once per call) with zero signature changes anywhere else in the codebase.
+ *
+ * No eviction policy, deliberately: glob patterns come from a workspace's
+ * config, a small, bounded set fixed for the lifetime of one mount, and
+ * `corb run` (`src/commands/run.ts`'s `runRunCommand`) is a short-lived,
+ * single-session process — there is no long-lived server loop that would
+ * keep feeding this cache new, ever-changing patterns from unrelated
+ * sessions. So this can only ever grow to the number of distinct glob
+ * strings actually configured across every mounted directory in one run,
+ * never unboundedly.
+ */
+const globRegExpCache = new Map<string, RegExp>();
+
+/**
  * Converts one `GlobRule.glob` pattern (`docs/design.md` §3) into an
  * anchored `RegExp` that performs a *whole-string* match (`^...$`) against a
  * candidate path.
@@ -98,11 +183,19 @@ function segmentToRegexSource(segment: string): string {
  * tested against (and deciding whether that string carries a leading `/`)
  * is `src/vfs/policy.ts`'s job (M5.2), not this function's.
  *
- * Construction: the pattern is split on `/` into segments. Each `**`
- * segment becomes one of four fragments depending on whether it has a
- * literal neighbor on each side (not on its position in the *whole*
- * pattern, so this generalizes correctly even to patterns with more than
- * two `**` tokens, though none of the real examples need more than two):
+ * Construction: the pattern is split on `/` into segments, and any run of
+ * two or more consecutive `**` segments is first collapsed into a single
+ * `**` (`collapseConsecutiveDoubleStars` above — `**`'s own "zero or more
+ * segments" semantics make a run of them trivially equivalent to one; this
+ * closes a real compiler bug, not just a defensive simplification, since the
+ * four-branch logic below does not otherwise recognize a `**` neighbor as
+ * anything other than an ordinary literal neighbor — see that function's own
+ * doc comment for the failure this collapse prevents). Each `**` segment
+ * then becomes one of four fragments depending on whether it has a literal
+ * neighbor on each side (not on its position in the *whole* pattern, so this
+ * generalizes correctly to patterns with more than two, non-consecutive `**`
+ * tokens — a literal, then `**`, then another literal, then `**` again, then
+ * a final literal — though none of the real examples need more than two):
  *
  *   - no neighbors at all (the whole pattern is just `**`) → `.*`
  *   - a right neighbor only (leading `**`) → `(?:[^/]+/)*`, placed with no
@@ -130,7 +223,11 @@ function segmentToRegexSource(segment: string): string {
  * (see above), so adding a second one would double it up.
  */
 export function globToRegExp(pattern: string): RegExp {
-  const segments = pattern.split("/");
+  const cached = globRegExpCache.get(pattern);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const segments = collapseConsecutiveDoubleStars(pattern.split("/"));
   let source = "";
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i] as string;
@@ -154,7 +251,9 @@ export function globToRegExp(pattern: string): RegExp {
     }
     source += segmentToRegexSource(segment);
   }
-  return new RegExp(`^${source}$`);
+  const regex = new RegExp(`^${source}$`);
+  globRegExpCache.set(pattern, regex);
+  return regex;
 }
 
 // ---------------------------------------------------------------------------

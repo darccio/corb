@@ -43,7 +43,7 @@ import {
 } from "../../../src/commands/run.ts";
 import type { EffectiveConfig } from "../../../src/config/load.ts";
 import type { AuditWriter } from "../../../src/policy/audit.ts";
-import { InvalidDirRuleError } from "../../../src/vm/session.ts";
+import { InvalidDirRuleError, UnmatchableDirRuleGlobError } from "../../../src/vm/session.ts";
 
 describe("commands/run: parseRunArgs --dry-run", () => {
   it("defaults dryRun to false when not passed", () => {
@@ -656,6 +656,51 @@ describe("commands/run: runRunCommand", () => {
       fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
 
       await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow(InvalidDirRuleError);
+      expect(runSessionMock).not.toHaveBeenCalled();
+    });
+
+    it("a [[dir]].rules entry with a leading-/ glob throws UnmatchableDirRuleGlobError before runSession is ever called", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      const configToml = [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        "rules = [",
+        '  { glob = "/secrets/**", mode = "hidden", reason = "leading slash typo" },',
+        "]",
+      ].join("\n");
+      fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
+
+      await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow(UnmatchableDirRuleGlobError);
+      expect(runSessionMock).not.toHaveBeenCalled();
+    });
+
+    it("a [[dir]].rules entry with a trailing-/ glob throws UnmatchableDirRuleGlobError before runSession is ever called", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      const configToml = [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        "rules = [",
+        '  { glob = "secrets/", mode = "hidden", reason = "trailing slash typo" },',
+        "]",
+      ].join("\n");
+      fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
+
+      await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow(UnmatchableDirRuleGlobError);
+      expect(runSessionMock).not.toHaveBeenCalled();
+    });
+
+    it("a [[dir]].rules entry with an embedded // in its glob throws UnmatchableDirRuleGlobError before runSession is ever called", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      const configToml = [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        "rules = [",
+        '  { glob = "secrets//key.pem", mode = "hidden", reason = "malformed double slash" },',
+        "]",
+      ].join("\n");
+      fs.writeFileSync(path.join(configDir, "config.toml"), configToml);
+
+      await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow(UnmatchableDirRuleGlobError);
       expect(runSessionMock).not.toHaveBeenCalled();
     });
   });

@@ -266,6 +266,16 @@ new GlobPolicyProvider(new RealFSProvider(hostPath), [
 ], onDeny)
 ```
 
+A glob is always matched against a path relative to its own directory's
+root, with no leading or trailing `/` — every example above follows that
+convention. That is not a style preference, it is the contract a compiled
+glob is tested against (`src/vfs/policy.ts`'s `matchRule`), so a
+`[[dir]].rules[]` glob spelled with a leading `/`, a trailing `/`, or an
+embedded `//` can never match a real path. `toGlobRules` (`src/vm/
+session.ts`) rejects such a glob at config-validation time, before any VM
+boots, rather than silently mounting a rule that looks active — `corb
+explain` would show it — while matching nothing.
+
 ### Semantics matrix
 
 | Operation | no rule | `deny-write` | `deny-read` | `hidden` | `shadow-write` |

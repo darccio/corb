@@ -148,6 +148,46 @@ describe("vfs/glob globToRegExp", () => {
       expect(globToRegExp(pattern).test("a[1]{2}\\b")).toBe(true);
     });
   });
+
+  describe("consecutive ** runs collapse to a single ** (regression)", () => {
+    // Before the fix, a run of two or more consecutive `**` segments
+    // compiled to a pattern requiring a literal `/` between the two `**`
+    // groups that no real (normalizeGuestPath-normalized) candidate path
+    // ever has, so it matched nothing at all — see `collapseConsecutiveDoubleStars`'s
+    // own doc comment in `src/vfs/glob.ts` for the full mechanism.
+    it("a middle run of two ** segments matches the same paths as a single middle **", () => {
+      expect(globToRegExp("**/**/.env").test("a/b/.env")).toBe(true);
+      expect(globToRegExp("**/**/.env").test(".env")).toBe(true);
+    });
+
+    it("a leading run of two ** segments matches the same paths as a single leading **", () => {
+      expect(globToRegExp("**/**/x").test("x")).toBe(true);
+      expect(globToRegExp("**/**/x").test("a/b/x")).toBe(true);
+    });
+
+    it("a trailing run of two ** segments matches the same paths as a single trailing **", () => {
+      expect(globToRegExp("x/**/**").test("x")).toBe(true);
+      expect(globToRegExp("x/**/**").test("x/a/b")).toBe(true);
+    });
+  });
+
+  describe("globToRegExp caches its compiled output (regression)", () => {
+    it("returns the exact same RegExp instance for two calls with an identical pattern string", () => {
+      const first = globToRegExp("**/some/pattern/*.go");
+      const second = globToRegExp("**/some/pattern/*.go");
+      // `toBe`, not `toEqual`: two independently-compiled-but-equivalent
+      // regexes would also satisfy `toEqual` (same source/flags), so only
+      // reference identity actually proves a cache hit occurred rather than
+      // two separate compilations that happen to agree.
+      expect(second).toBe(first);
+    });
+
+    it("returns a different instance for a different pattern string (the cache is keyed by pattern, not a single shared value)", () => {
+      const a = globToRegExp("**/a");
+      const b = globToRegExp("**/b");
+      expect(a).not.toBe(b);
+    });
+  });
 });
 
 describe("vfs/glob normalizeGuestPath", () => {
