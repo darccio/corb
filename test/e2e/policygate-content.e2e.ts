@@ -360,6 +360,24 @@ describe.skipIf(!process.env.CORB_E2E)("policygate-content e2e (real VM boot)", 
       expect(result.stderr).toContain("secret-in-diff");
     });
 
+    it("git commit -a does not bypass the content check: an already-tracked file edited with a secret and committed via '-a' still exits 87", async () => {
+      // Regression for the collectStagedDiff-always-diffs---cached bug
+      // (guest/internal/gate/collect.go): "git commit -a"/"--all" stages
+      // every already-tracked file's working-tree modifications at commit
+      // time -- after policygate's collector has already run "git diff
+      // --cached" and returned. The file below is committed once (clean)
+      // so it's tracked, then edited with a secret and committed again via
+      // "-a" with no intervening "git add". Pre-fix, "--cached" would see
+      // nothing staged, the content check would inspect an empty diff, and
+      // the secret would be committed uninspected.
+      const result = await guestShellA(
+        `echo "clean" > ${SECRET_FILE_NAME}-via-dash-a && git add ${SECRET_FILE_NAME}-via-dash-a && git commit -m "track file" && echo "aws_key = ${AKIA_STRING}" > ${SECRET_FILE_NAME}-via-dash-a && git commit -a -m "add secret via -a"`,
+      );
+      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(87);
+      expect(result.stderr).toContain("blocked by corb policy");
+      expect(result.stderr).toContain("secret-in-diff");
+    });
+
     it("git -C does not bypass the locally-blocked config subcommand", async () => {
       const result = await guestShellA(`git -C . config user.name nope`);
       expect(result.exitCode, `stderr: ${result.stderr}`).toBe(86);

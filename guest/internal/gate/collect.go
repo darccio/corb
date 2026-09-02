@@ -56,18 +56,117 @@ func truncate(s string) string {
 	return s[:maxDiffBytes] + "\n... [truncated by policygate, diff exceeds collector limit]\n"
 }
 
-// collectStagedDiff gathers content for "git commit": the names of staged
-// files and the staged diff itself. realGit is the resolved real-git path
-// (gate.json's "real" for git), so this shells out to the actual binary
-// and never recurses into policygate. args is unused here (kept for a
-// uniform HookSpec.Collect signature with collectPushRange) since "what's
-// staged" doesn't depend on any commit flags the caller passed.
-func collectStagedDiff(realGit string, _ []string) (Content, error) {
-	names, err := runRealGit(realGit, "diff", "--cached", "--name-only")
+// commitStagesAll reports whether a "git commit" invocation's args (full
+// argv, subcommand included at index 0) requests "-a"/"--all".
+//
+// "--all" is matched exactly: confirmed against a real git binary that
+// --all takes no value ("git commit --all=true" is a hard parse error,
+// "option `all' does not accept a value"), so there is no "--all=..."
+// spelling to also match. Confirmed too that there is no unambiguous
+// abbreviation shorter than the full "--all": "git commit --al" is
+// itself rejected as ambiguous ("could be --allow-empty or
+// --allow-empty-message"), so "--all" spelled out in full is the only
+// long-flag form that ever reaches this function as a live commit.
+//
+// "-a" is matched by prefix, excluding the "--" long-flag form, because
+// -a routinely bundles with other short flags ("git commit -am msg" is
+// at least as common as the unbundled "-a -m msg"). Confirmed against a
+// real git binary: within a bundled short-flag token, the first
+// character's meaning never changes based on what follows it in the same
+// token -- a later character is either another boolean short flag in the
+// same bundle, or a glued value belonging to the *last* value-taking
+// flag in the bundle, and either way it cannot retroactively change what
+// an earlier character meant. So any token starting "-a" (that isn't the
+// "--" long form) is unambiguously the boolean -a/--all, regardless of
+// what follows: -a, -am, -av, -amv, ... . Verified directly: "git commit
+// --dry-run -amv" stages the unstaged tracked-file change (so -a took
+// effect) while "v" becomes -m's message text, with no parse error. Also
+// verified the converse, that a non-leading 'a' consumed as another
+// flag's value does *not* trigger --all: "git commit --dry-run -ma"
+// (message text "a") leaves the unstaged change alone.
+//
+// This intentionally does not detect "-a" in a non-leading position,
+// e.g. "-va" (where -v is also boolean) -- verified that real git applies
+// --all there too ("git commit --dry-run -va" also stages the change),
+// so this is a known, narrower gap than what commitStagesAll actually
+// catches. See collectStagedDiff's doc comment for why this gap (and the
+// separate pathspec-argument gap) are documented rather than solved.
+func commitStagesAll(args []string) bool {
+	for _, arg := range args {
+		if arg == "--all" {
+			return true
+		}
+		if strings.HasPrefix(arg, "-a") && !strings.HasPrefix(arg, "--") {
+			return true
+		}
+	}
+	return false
+}
+
+// collectStagedDiff gathers content for "git commit": the names of
+// affected files and a diff, sized to what the pending commit will
+// actually record. realGit is the resolved real-git path (gate.json's
+// "real" for git), so this shells out to the actual binary and never
+// recurses into policygate. args is the commit invocation's full argv
+// (subcommand included at index 0, e.g. ["commit", "-a", "-m", "x"]),
+// used only to detect "-a"/"--all" via commitStagesAll -- no other
+// commit flag changes what this collector needs to look at.
+//
+// Plain "git commit" (no -a/--all): diffs the index against HEAD ("git
+// diff --cached"), exactly as before commitStagesAll existed. This is
+// exact, not approximate, for the plain case: with nothing else on the
+// command line, "git commit" commits exactly the index, so the
+// index-vs-HEAD diff is exactly what's about to be recorded.
+//
+// "git commit -a"/"--all": git stages every already-tracked file's
+// working-tree modification and deletion at commit time -- after this
+// collector would otherwise have already run and returned, so a plain
+// "git diff --cached" can miss the entire change (e.g. an already-tracked
+// file edited to add a secret, never "git add"-ed, then committed with
+// "-a": "--cached" sees nothing staged, and the content check that's
+// supposed to gate this commit inspects an empty diff while the real
+// commit goes on to include the secret). When commitStagesAll(args) is
+// true, this instead diffs the worktree against HEAD ("git diff HEAD"),
+// which is the exactly-correct replacement, not an approximation:
+// worktree-vs-HEAD already covers everything index-vs-HEAD would show,
+// plus every additional tracked-file modification/deletion "-a" is about
+// to sweep in, and -- like "-a" itself -- it still excludes untracked
+// files (HEAD only knows about paths it already tracks), so it does not
+// over-collect relative to what "-a" is actually about to stage.
+//
+// Two known, deliberately unsolved gaps remain, documented here in the
+// same spirit as collectPushRange's own documented gaps below:
+//
+//  1. Pathspec arguments (e.g. "git commit -m x path/to/file") commit
+//     only the current on-disk content of those paths, regardless of
+//     index state -- another way the actual commit can diverge from
+//     "git diff --cached". Reliably distinguishing a pathspec from a
+//     flag's own value (e.g. -m's message text) would require this
+//     collector to know git commit's full flag-arity table, which is
+//     exactly the unbounded-enumeration trap
+//     docs/adr/0005-allowlist-never-blocklist.md rejects for the policy
+//     table itself. Not attempted.
+//  2. "-a" bundled in a non-leading position among other boolean short
+//     flags (e.g. "-va", if -v is also boolean) is not detected by
+//     commitStagesAll, even though real git does apply --all there too
+//     (confirmed empirically -- see commitStagesAll's doc comment).
+//     Correctly recognizing that requires knowing every other short
+//     flag's arity as well, the same trap as (1). Not attempted.
+//
+// Both are real, narrower gaps than the ordinary, non-adversarial
+// "-a"/"-am"/"--all" usage this function now handles exactly -- which is
+// itself unremarkable, extremely common git usage, not an adversarial
+// spelling.
+func collectStagedDiff(realGit string, args []string) (Content, error) {
+	diffSpec := "--cached"
+	if commitStagesAll(args) {
+		diffSpec = "HEAD"
+	}
+	names, err := runRealGit(realGit, "diff", diffSpec, "--name-only")
 	if err != nil {
 		return Content{}, fmt.Errorf("collecting staged file list: %w", err)
 	}
-	diff, err := runRealGit(realGit, "diff", "--cached")
+	diff, err := runRealGit(realGit, "diff", diffSpec)
 	if err != nil {
 		return Content{}, fmt.Errorf("collecting staged diff: %w", err)
 	}
