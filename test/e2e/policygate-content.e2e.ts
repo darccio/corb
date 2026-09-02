@@ -325,17 +325,22 @@ describe.skipIf(!process.env.CORB_E2E)("policygate-content e2e (real VM boot)", 
       expect(result.stderr).toContain("is blocked in this sandbox");
     });
 
-    it("git -C does not bypass the content check: a commit with an AWS-access-key-shaped string via 'git -C .' still exits 87", async () => {
-      // Regression for the args[0]-only dispatch bug: `git -C . commit` used
-      // to have args[0] == "-C", so neither CheckLocal's subcommand check nor
-      // policygate's GatedHook dispatch (also keyed on args[0]) ever saw
-      // "commit" at all, and the commit went through with zero content check.
+    it("git -C is blocked locally before the content check ever runs: a commit with an AWS-access-key-shaped string via 'git -C .' exits 86", async () => {
+      // `-C` is itself an entry in `blockedFlags` (`src/vm/session.ts`'s
+      // `GATE_CONFIG`), and `main()` (`guest/cmd/policygate/main.go`) calls
+      // `gate.CheckLocal()` before it ever dispatches to the content check,
+      // exiting 86 immediately on any local-table match. So this commit
+      // still never gets its secret through unnoticed -- but it's the local
+      // flag block catching it, not the content check: the content-check
+      // dispatch code later in main() is unreachable once CheckLocal has
+      // already blocked.
       const result = await guestShellA(
         `echo "aws_key = ${AKIA_STRING}" > ${SECRET_FILE_NAME}-via-dash-c && git add ${SECRET_FILE_NAME}-via-dash-c && git -C . commit -m "add secret via -C"`,
       );
-      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(87);
-      expect(result.stderr).toContain("blocked by corb policy");
-      expect(result.stderr).toContain("secret-in-diff");
+      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(86);
+      // Matches `guest/internal/gate/format.go`'s `FormatLocalDenial` for a
+      // "flag" denial.
+      expect(result.stderr).toContain("is blocked in this sandbox");
     });
 
     it("git -C does not bypass the locally-blocked config subcommand", async () => {
