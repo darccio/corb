@@ -1405,6 +1405,38 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   // the backend's own capabilities, not an operation to gate.
   const passthroughCapabilities = new Set(["readonly", "supportsSymlinks", "supportsWatch"]);
 
+  // Generic JS/Node object-protocol members: not part of the VirtualProvider
+  // operation vocabulary (same reasoning as the symbol passthrough in the
+  // `get` trap below), so passed straight through rather than gated or,
+  // worse, made to look like a recognized-but-absent VirtualProvider method.
+  // Fixes a real bug: these are all inherited from `Object.prototype`, so
+  // `prop in optionalFactories` used to wrongly match them (`in` walks the
+  // prototype chain); the correct `Object.hasOwn` check below no longer
+  // does, which is right, but without this explicit passthrough they'd fall
+  // to the final catch-all instead and become throwing functions — still
+  // broken, just differently (e.g. `String(provider)` would go from
+  // throwing "cannot convert to primitive" to throwing `EPERM: toString`).
+  //
+  // `"__proto__"` is inherited the same way and thus affected by the same
+  // `in`-based bug, but is deliberately left out: unlike the members below,
+  // it is never invoked implicitly by a JS coercion/serialization protocol
+  // (nothing calls `.__proto__` as a function), and standards-compliant
+  // prototype reflection (`Object.getPrototypeOf`) bypasses this `get` trap
+  // entirely and already returns the right answer regardless of this set.
+  // Leaving it to fall through to the fail-closed catch-all below is inert
+  // in practice and consistent with that catch-all's own stated philosophy.
+  const passthroughJsProtocolMembers = new Set([
+    "constructor",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toLocaleString",
+    "toString",
+    "valueOf",
+    "toJSON", // JSON.stringify's own protocol hook — not on Object.prototype, but same "not a VFS operation" reasoning
+    "then", // thenable-detection (`await`/`Promise.resolve`) — ditto
+  ]);
+
   // Required VirtualProvider members: always present on any conforming
   // backend, always wrapped.
   const requiredHandlers: ProviderLike = {
@@ -1495,6 +1527,12 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       if (typeof prop === "symbol") {
         return Reflect.get(target, prop, receiver);
       }
+      // See the comment on `passthroughJsProtocolMembers` above: same
+      // passthrough reasoning as the symbol case just above, for the
+      // string-keyed equivalents.
+      if (passthroughJsProtocolMembers.has(prop)) {
+        return Reflect.get(target, prop, receiver);
+      }
       if (passthroughCapabilities.has(prop)) {
         return Reflect.get(target, prop, target);
       }
@@ -1506,7 +1544,15 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       // `undefined`, matching real absence — see the comment on
       // `optionalFactories` above for why this matters for feature
       // detection elsewhere in the SDK.
-      if (prop in optionalFactories) {
+      //
+      // `Object.hasOwn` (not the `in` operator) is deliberate: `in` walks
+      // the prototype chain, and `optionalFactories` is a plain object
+      // literal, so it inherits `Object.prototype` members like `toString`
+      // and `constructor` — `"toString" in optionalFactories` is `true`
+      // even though `optionalFactories` declares no such key. Those members
+      // are handled by `passthroughJsProtocolMembers` above instead; this
+      // check must only match `optionalFactories`'s own declared keys.
+      if (Object.hasOwn(optionalFactories, prop)) {
         return undefined;
       }
       // Anything else is a property this module has never heard of — most

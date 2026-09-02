@@ -446,6 +446,65 @@ describe("withGlobPolicy: unrecognized VirtualProvider members", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Generic JS/Node object-protocol members (toString, valueOf, then, etc.):
+// `prop in optionalFactories` used to wrongly match these — they are all
+// inherited from `Object.prototype`, and `in` walks the prototype chain —
+// so the `get` trap treated them as recognized-but-absent VirtualProvider
+// members and returned `undefined`, which breaks `String(provider)`
+// (`Cannot convert object to primitive value`) and similar generic-object
+// usage that has nothing to do with VFS policy. See the
+// `passthroughJsProtocolMembers` comment in src/vfs/glob-policy.ts.
+// ---------------------------------------------------------------------------
+
+describe("withGlobPolicy: generic JS/Node object-protocol passthrough", () => {
+  it("exposes a callable toString that does not throw", () => {
+    const { wrapped } = setup([]);
+    expect(typeof wrapped.toString).toBe("function");
+    expect(() => wrapped.toString()).not.toThrow();
+  });
+
+  it("does not throw on String()/template-literal coercion", () => {
+    const { wrapped } = setup([]);
+    expect(() => String(wrapped)).not.toThrow();
+    expect(() => `${wrapped}`).not.toThrow();
+  });
+
+  it("does not throw JSON.stringify-ing a structure containing the wrapped provider (the original repro)", () => {
+    const { wrapped } = setup([]);
+    expect(() => JSON.stringify({ x: wrapped })).not.toThrow();
+  });
+
+  it("exposes `then` as undefined, not a function, so it is never mistaken for a thenable", async () => {
+    const { wrapped } = setup([]);
+    const asAny = wrapped as unknown as Record<string, unknown>;
+    expect(typeof asAny["then"]).toBe("undefined");
+    // `await`/`Promise.resolve` use the same thenable-detection: with `then`
+    // absent, the wrapped provider must resolve as an ordinary value, not
+    // something to chain onto.
+    await expect(Promise.resolve(wrapped)).resolves.toBe(wrapped);
+  });
+
+  it("exposes a callable hasOwnProperty that does not throw when called", () => {
+    const { wrapped } = setup([]);
+    expect(typeof wrapped.hasOwnProperty).toBe("function");
+    expect(() => wrapped.hasOwnProperty("open")).not.toThrow();
+  });
+
+  it("still denies a genuinely unrecognized, VFS-shaped member outside the new passthrough set", () => {
+    const { wrapped } = setup([]);
+    const asAny = wrapped as unknown as Record<string, unknown>;
+    // `utimes` is a real Node `fs` operation but not part of `VirtualProvider`
+    // (see node_modules/@earendil-works/gondolin's own type) and not part of
+    // `passthroughJsProtocolMembers` — locks in that the passthrough widened
+    // to exactly the JS-protocol set and nothing more, not to VFS operation
+    // names in general.
+    const value = asAny["utimes"];
+    expect(typeof value).toBe("function");
+    expect(() => (value as () => unknown)()).toThrow(/EPERM/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // shadow-write: appears to succeed, real backend untouched, read-after-write
 // resolution (a genuine behavioral choice this item is responsible for
 // resolving — see src/vfs/glob-policy.ts's module comment for the reasoning)
