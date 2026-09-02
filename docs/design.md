@@ -417,6 +417,7 @@ type toolPolicy struct {
 	real               string
 	blockedSubcommands []string
 	blockedFlags       []string
+	allowedGlobalFlags []string // value-less flags allowed before the subcommand
 	gated              map[string]hookSpec // subcommand -> out-of-guest content check
 }
 
@@ -425,6 +426,7 @@ var policies = map[string]toolPolicy{
 		real:               "/usr/local/libexec/real-git",
 		blockedSubcommands: []string{"config", "credential", "filter-branch", "init"},
 		blockedFlags:       []string{"-c", "-C", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign", "--git-dir", "--work-tree"},
+		allowedGlobalFlags: []string{"-P", "--no-pager", "--bare", "--no-replace-objects", "--no-lazy-fetch", "--no-optional-locks", "--no-advice", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs"},
 		gated: map[string]hookSpec{
 			"commit": {name: "git.commit", collect: collectStagedDiff},
 			"push":   {name: "git.push", collect: collectPushRange},
@@ -438,9 +440,14 @@ var policies = map[string]toolPolicy{
 }
 ```
 
-Flow: resolve the tool from `argv[0]`, consult the table, run any content check
-attached to the subcommand, then `exec` the real binary in-guest as the same
-unprivileged user. The gate never asks the host to execute anything.
+Flow: resolve the tool from `argv[0]`, then resolve the actual subcommand by
+walking past any leading flags on that tool's `allowedGlobalFlags`
+(`ResolveSubcommand`, `guest/internal/gate/policy.go`) — git and `gh` both
+accept a global-flag-before-subcommand form, e.g. `git --no-pager commit`, so
+the subcommand is not always `argv[1]`. Consult the table using that resolved
+subcommand, run any content check attached to it, then `exec` the real binary
+in-guest as the same unprivileged user. The gate never asks the host to
+execute anything.
 
 ### Exit codes
 
@@ -460,18 +467,31 @@ The table can afford to be *stricter* than a security-critical one would dare
 — so failures surface instantly and readably rather than as a generic 403
 several network hops later. But a gap here is not merely a local-table
 bypass: `commit`/`push`'s out-of-guest content check (§5) is dispatched from
-the *same* `argv[0]` the local table matches on (`GatedHook`, keyed on the
-subcommand at `args[0]`), so an argv-parsing gap that hides the subcommand
-from the local check also hides it from the content check. `git -C /path
-commit` is the concrete case: git's own global-flag-before-subcommand form
-shifts `args[0]` away from `"commit"` entirely. It is *not* unwound into a
-subcommand match — instead `-C`, `--git-dir`, and `--work-tree` are
-themselves listed in `blockedFlags`, since the flag check scans every arg
-rather than only `args[0]` and so still catches the invocation regardless of
-where the subcommand ends up. See `CheckLocal`'s doc comment in
-`guest/internal/gate/policy.go` for the exact matching rules, including how a
-short flag's glued-value spelling (`-C/path`, not just `-C /path`) is also
-covered.
+the *same* resolved subcommand the local table matches on (`GatedHook`), so a
+subcommand-resolution gap that hides the subcommand from the local check also
+hides it from the content check. `git -C /path commit` is the concrete case
+found in review: git's own global-flag-before-subcommand form shifts the
+subcommand out of `args[0]` entirely, and an earlier version of this gate
+tried to close that by listing `-C`, `--git-dir`, and `--work-tree` in
+`blockedFlags` — a blocklist of the specific flags its authors had thought to
+enumerate, which did not generalize to the many other global flags git
+accepts in that same position (`--no-pager`, `--bare`,
+`--literal-pathspecs`, and more), each an equally valid bypass of both the
+local table and the content check.
+The actual fix is `allowedGlobalFlags`/`ResolveSubcommand`: an allowlist
+(ADR 0005) of the value-less flags permitted to precede the subcommand, so
+the resolved-subcommand check above sees `"commit"` regardless of which
+allowed flag preceded it, and any other leading flag is denied by
+construction rather than by enumeration. `-C`, `--git-dir`, and `--work-tree`
+still stay listed in `blockedFlags` too, as redundant defense-in-depth — they
+retarget which repository or config file git reads, so this table denies
+them outright on top of them also failing the allowlist independently — but
+`blockedFlags` is no longer what closes the argv-shifting gap itself. See
+`ResolveSubcommand`'s doc comment in `guest/internal/gate/policy.go` for the
+exact flag-walking/allowlist rules, and `CheckLocal`'s doc comment there for
+how the two mechanisms are ordered against each other, including how a short
+flag's glued-value spelling (`-C/path`, not just `-C /path`) is still
+covered by `blockedFlags`.
 
 ---
 

@@ -223,11 +223,67 @@ export const GATE_CONFIG = {
         "--git-dir",
         "--work-tree",
       ],
+      // Allowlist (ADR 0005) of value-less flags permitted to precede the
+      // subcommand -- git/gh's own global-flag-before-subcommand form, e.g.
+      // "git --no-pager commit". See ResolveSubcommand's doc comment
+      // (guest/internal/gate/policy.go) for why this is restricted to
+      // value-less flags only: a value-taking flag would force this gate to
+      // model git's own global-flag arity table, which is exactly the
+      // incompletable blocklist ADR 0005 rejects.
+      //
+      // This is a deliberately curated set, not "every value-less git
+      // global flag":
+      //   - "-P"/"--no-pager" is the actual reported bypass, and the most
+      //     likely one an agent legitimately needs (forcing non-interactive
+      //     output).
+      //   - "--bare", "--literal-pathspecs", "--no-optional-locks", and
+      //     "--no-replace-objects" were named in the original bug report as
+      //     bypass examples. None of them retarget which repository or
+      //     config file git operates on (unlike "-C"/"--git-dir"/
+      //     "--work-tree" above, which stay blocked), and none take a
+      //     value, so allowing them costs nothing security-relevant.
+      //   - "--no-lazy-fetch", "--no-advice", "--glob-pathspecs",
+      //     "--noglob-pathspecs", and "--icase-pathspecs" are the same
+      //     shape (value-less, no retargeting) and included for
+      //     completeness. Confirmed against a real git binary (2.55.0, via
+      //     `git --help`'s own usage synopsis and successful non-error
+      //     invocation) that every flag below is a real, recognized global
+      //     option before landing this list.
+      //
+      // Deliberately EXCLUDED:
+      //   - "-p"/"--paginate": forcing a pager ON in a non-interactive/piped
+      //     guest exec can hang waiting for pager input that will never
+      //     arrive -- a functionality footgun with no corresponding
+      //     security benefit, so this stays off rather than allow-and-hope.
+      //   - "--namespace=", "--attr-source=", "--list-cmds=",
+      //     "--super-prefix=": all take a value, and none have a legitimate
+      //     use in this codebase's git usage.
+      allowedGlobalFlags: [
+        "-P",
+        "--no-pager",
+        "--bare",
+        "--no-replace-objects",
+        "--no-lazy-fetch",
+        "--no-optional-locks",
+        "--no-advice",
+        "--literal-pathspecs",
+        "--glob-pathspecs",
+        "--noglob-pathspecs",
+        "--icase-pathspecs",
+      ],
     },
     gh: {
       real: "/usr/local/libexec/real-gh",
       blockedSubcommands: ["auth", "secret", "ssh-key", "gpg-key", "config"],
       blockedFlags: ["--with-token"],
+      // Empty, deliberately: nothing in this codebase's guest-side gh usage
+      // (grepped across docs/, image/, src/, test/) invokes gh with a
+      // global flag preceding the subcommand. gh's own gatedHooks map
+      // (guest/internal/gate/policy.go) is also empty -- there is no
+      // content check for gh a bypass could skip -- so unlike git's list
+      // above, this is pure defense-in-depth on the local
+      // BlockedSubcommands table, not a fix for a live vulnerability.
+      allowedGlobalFlags: [],
     },
   },
 };

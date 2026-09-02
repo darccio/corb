@@ -338,6 +338,28 @@ describe.skipIf(!process.env.CORB_E2E)("policygate-content e2e (real VM boot)", 
       expect(result.stderr).toContain("secret-in-diff");
     });
 
+    it("git --no-pager does not bypass the content check: a commit with an AWS-access-key-shaped string via 'git --no-pager' still exits 87", async () => {
+      // Regression for the actual headline finding this suite's sibling
+      // "-C" case above did not cover: "-C" is (still) caught as a
+      // BlockedFlags entry regardless of ResolveSubcommand, so that test
+      // alone would have kept passing even with the ADR-0005 allowlist gap
+      // wide open. "--no-pager" was never in blockedFlags, so
+      // "git --no-pager commit" is what would have sailed through
+      // uninspected on pre-fix HEAD: args[0] == "--no-pager", so neither
+      // CheckLocal's old args[0]-only subcommand check nor policygate's old
+      // GatedHook dispatch (also keyed on args[0]) ever saw "commit" at all.
+      // guest/internal/gate/policy.go's ResolveSubcommand/AllowedGlobalFlags
+      // is what closes this: "--no-pager" is on git's allowedGlobalFlags
+      // (src/vm/session.ts's GATE_CONFIG) precisely so it can be walked past
+      // to find the real subcommand, rather than mistaken for one.
+      const result = await guestShellA(
+        `echo "aws_key = ${AKIA_STRING}" > ${SECRET_FILE_NAME}-via-no-pager && git add ${SECRET_FILE_NAME}-via-no-pager && git --no-pager commit -m "add secret via --no-pager"`,
+      );
+      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(87);
+      expect(result.stderr).toContain("blocked by corb policy");
+      expect(result.stderr).toContain("secret-in-diff");
+    });
+
     it("git -C does not bypass the locally-blocked config subcommand", async () => {
       const result = await guestShellA(`git -C . config user.name nope`);
       expect(result.exitCode, `stderr: ${result.stderr}`).toBe(86);

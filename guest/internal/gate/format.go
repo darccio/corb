@@ -15,6 +15,8 @@ func FormatLocalDenial(tool string, denial LocalDenial) string {
 		return fmt.Sprintf("%s: '%s %s' is blocked in this sandbox\n", tool, tool, denial.Match)
 	case "flag":
 		return fmt.Sprintf("%s: the flag %q is blocked in this sandbox\n", tool, denial.Match)
+	case "global-flag":
+		return fmt.Sprintf("%s: the global flag %q is not permitted before a subcommand in this sandbox\n", tool, denial.Match)
 	default:
 		// Should not happen: CheckLocal always sets a non-empty Kind
 		// alongside a true bool return. Keep a safe, still-informative

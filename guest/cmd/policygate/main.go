@@ -97,9 +97,29 @@ func main() {
 		os.Exit(localDenyExitCode)
 	}
 
-	if len(args) > 0 {
-		if hook, gated := gate.GatedHook(tool, args[0]); gated {
-			runContentCheck(tool, args, policy, hook)
+	// Dispatch off the *resolved* subcommand (past any allowed global
+	// flags, e.g. "git --no-pager commit"), not args[0] -- see
+	// gate.ResolveSubcommand's doc comment for why args[0] alone used to
+	// let a global flag hide the subcommand from this dispatch entirely,
+	// skipping the content check below along with it.
+	//
+	// This calls gate.ResolveSubcommand a second time (CheckLocal above
+	// already called it once internally). That's deliberate, not an
+	// oversight: it's a cheap, pure computation over a short argv slice,
+	// and doing it twice here is simpler than threading extra return
+	// values through CheckLocal's public signature, which is exercised by
+	// many existing table-test cases that would otherwise need rewriting.
+	// By the time this line runs, CheckLocal has already returned
+	// blocked: false -- so if ResolveSubcommand were going to deny on a
+	// global flag, this process would already have exited above. That
+	// means resolution.Found == false here only ever means "no subcommand
+	// was invoked at all" (empty args, or args that are entirely allowed
+	// global flags), a legitimate case, not a leftover bypass.
+	resolution, _, _ := gate.ResolveSubcommand(policy, args)
+	if resolution.Found {
+		if hook, gated := gate.GatedHook(tool, resolution.Subcommand); gated {
+			dispatchArgs := append([]string{resolution.Subcommand}, resolution.Rest...)
+			runContentCheck(tool, dispatchArgs, policy, hook)
 		}
 	}
 
