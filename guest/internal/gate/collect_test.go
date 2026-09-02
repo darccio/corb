@@ -92,6 +92,9 @@ func TestCollectStagedDiff(t *testing.T) {
 		if len(content.ChangedFiles) != 0 {
 			t.Errorf("ChangedFiles = %#v, want empty", content.ChangedFiles)
 		}
+		if content.ChangedFiles == nil {
+			t.Error("ChangedFiles = nil, want a non-nil empty slice: a nil slice marshals to JSON null, which the host's Array.isArray shape check rejects as malformed")
+		}
 		if content.Diff != "" {
 			t.Errorf("Diff = %q, want empty", content.Diff)
 		}
@@ -154,6 +157,26 @@ func TestCollectPushRange(t *testing.T) {
 		}
 		if len(content.ChangedFiles) != 1 || content.ChangedFiles[0] != "bar.txt" {
 			t.Errorf("ChangedFiles = %#v, want only [bar.txt] (just what's ahead of upstream)", content.ChangedFiles)
+		}
+	})
+}
+
+func TestSplitNonEmptyLines(t *testing.T) {
+	t.Run("empty input returns a non-nil empty slice", func(t *testing.T) {
+		got := splitNonEmptyLines("")
+		if got == nil {
+			t.Fatal("splitNonEmptyLines(\"\") = nil, want a non-nil empty slice: a nil slice marshals to JSON null, which the host's Array.isArray shape check rejects as malformed")
+		}
+		if len(got) != 0 {
+			t.Errorf("splitNonEmptyLines(\"\") = %#v, want empty", got)
+		}
+	})
+
+	t.Run("non-empty input splits on newlines, dropping the empty trailing line", func(t *testing.T) {
+		got := splitNonEmptyLines("a.txt\nb.txt\n")
+		want := []string{"a.txt", "b.txt"}
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Errorf("splitNonEmptyLines() = %#v, want %#v", got, want)
 		}
 	})
 }

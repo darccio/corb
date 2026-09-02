@@ -142,10 +142,15 @@ func collectPushRange(realGit string, _ []string) (Content, error) {
 
 // splitNonEmptyLines splits git's newline-separated output into a slice,
 // dropping any empty trailing line (and any other empty lines, which
-// git's --name-only output does not otherwise produce).
+// git's --name-only output does not otherwise produce). Always returns a
+// non-nil slice: encoding/json marshals a nil []string as JSON null rather
+// than [], and the host's shape validation (docs/design.md §5) requires
+// changedFiles to be a JSON array, so a nil result here would make every
+// gated op with zero changed files (e.g. a plain "git commit" with nothing
+// staged) get denied as a malformed request instead of allowed.
 func splitNonEmptyLines(s string) []string {
 	if s == "" {
-		return nil
+		return []string{}
 	}
 	lines := strings.Split(s, "\n")
 	out := make([]string, 0, len(lines))

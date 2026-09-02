@@ -122,3 +122,29 @@ func TestCheckContent(t *testing.T) {
 		}
 	})
 }
+
+// TestPolicyCheckRequestJSON pins down the wire format for a zero-changed-
+// files request: a gated op with nothing to report (e.g. "git commit" with
+// nothing staged) must still marshal changedFiles as a JSON array, since
+// docs/design.md §5's host-side shape validation requires an array and
+// treats anything else -- including a bare "null" -- as a malformed
+// request. A nil []string here would regress that: encoding/json marshals
+// nil as null, not [].
+func TestPolicyCheckRequestJSON(t *testing.T) {
+	t.Run("empty ChangedFiles marshals to a JSON array, not null", func(t *testing.T) {
+		req := PolicyCheckRequest{Op: "git.commit", ChangedFiles: splitNonEmptyLines(""), Diff: ""}
+
+		body, err := json.Marshal(req)
+		if err != nil {
+			t.Fatalf("json.Marshal() unexpected error: %v", err)
+		}
+
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(body, &raw); err != nil {
+			t.Fatalf("json.Unmarshal() unexpected error: %v", err)
+		}
+		if string(raw["changedFiles"]) != "[]" {
+			t.Errorf(`changedFiles = %s, want "[]" (a nil slice marshals as null, which fails the host's Array.isArray shape check)`, raw["changedFiles"])
+		}
+	})
+}
