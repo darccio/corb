@@ -234,6 +234,110 @@ describe("config/trust: evaluateTrust", () => {
       expect(result.narrowed.some((c) => c.description.includes("gained rule"))).toBe(false);
     });
 
+    it("dir: a broader rule prepended ahead of an existing rule requires confirmation (regression: previously misclassified as pure narrowing)", () => {
+      const previous = baseConfig();
+      const corbPrev = previous.dir.find((d) => d.name === "corb");
+      if (corbPrev === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      corbPrev.rules = [{ glob: "**/.env", mode: "hidden" }];
+      const current = clone(previous);
+      const corbCurr = current.dir.find((d) => d.name === "corb");
+      if (corbCurr === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      // The new rule is broader (`shadow-write` matches everything) and is
+      // prepended *ahead of* the still-present `.env` rule. Nothing is lost
+      // (`.env`'s rule is untouched), so a plain Set-membership diff sees
+      // this as pure narrowing (one rule gained). But enforcement
+      // (first-match-wins) now hits the prepended rule before ever reaching
+      // `.env`'s, silently shadowing it -- this must require confirmation.
+      corbCurr.rules = [
+        { glob: "**", mode: "shadow-write" },
+        { glob: "**/.env", mode: "hidden" },
+      ];
+
+      const result = evaluateTrust(previous, current);
+
+      expect(result.verdict).toBe("requires-confirmation");
+      expect(result.widened).toContainEqual({
+        field: "dir.corb.rules",
+        description:
+          "dir 'corb' rules changed in a way that is not a safe append (first-match-wins order may have changed; treated as widening)",
+      });
+      // The rule causing the widening must not also be reported as a
+      // separate, narrowing "gained rule" addition alongside the widening
+      // flag -- that would misleadingly suggest part of this change is
+      // safely narrowing when the whole change requires confirmation.
+      expect(result.narrowed.some((c) => c.field === "dir.corb.rules")).toBe(false);
+    });
+
+    it("dir: a rule appended purely at the end (existing rule unchanged and in the same position) is trusted", () => {
+      const previous = baseConfig();
+      const corbPrev = previous.dir.find((d) => d.name === "corb");
+      if (corbPrev === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      corbPrev.rules = [{ glob: "**/.env", mode: "hidden" }];
+      const current = clone(previous);
+      const corbCurr = current.dir.find((d) => d.name === "corb");
+      if (corbCurr === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      corbCurr.rules = [
+        { glob: "**/.env", mode: "hidden" },
+        { glob: "**/*.log", mode: "deny-write" },
+      ];
+
+      const result = evaluateTrust(previous, current);
+
+      expect(result.verdict).toBe("trusted");
+      expect(result.narrowed).toContainEqual({
+        field: "dir.corb.rules",
+        description: "dir 'corb' gained rule '**/*.log' (deny-write)",
+      });
+      expect(result.widened.some((c) => c.field === "dir.corb.rules")).toBe(false);
+    });
+
+    it("dir: a rule inserted between two existing, unmoved rules requires confirmation", () => {
+      const previous = baseConfig();
+      const corbPrev = previous.dir.find((d) => d.name === "corb");
+      if (corbPrev === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      corbPrev.rules = [
+        { glob: "**/.env", mode: "hidden" },
+        { glob: "**/*.log", mode: "deny-write" },
+      ];
+      const current = clone(previous);
+      const corbCurr = current.dir.find((d) => d.name === "corb");
+      if (corbCurr === undefined) {
+        throw new Error("test fixture missing 'corb' dir");
+      }
+      // Both original rules are still present and in the same relative
+      // order as each other -- only a plain Set-membership diff would call
+      // this pure narrowing. A new rule landing strictly between two
+      // untouched rules still breaks the prefix invariant (index 1 no
+      // longer matches), so this must also require confirmation, exercising
+      // a prefix mismatch past index 0 rather than at the very front.
+      corbCurr.rules = [
+        { glob: "**/.env", mode: "hidden" },
+        { glob: "**", mode: "shadow-write" },
+        { glob: "**/*.log", mode: "deny-write" },
+      ];
+
+      const result = evaluateTrust(previous, current);
+
+      expect(result.verdict).toBe("requires-confirmation");
+      expect(result.widened).toContainEqual({
+        field: "dir.corb.rules",
+        description:
+          "dir 'corb' rules changed in a way that is not a safe append (first-match-wins order may have changed; treated as widening)",
+      });
+      expect(result.widened.some((c) => c.description.includes("lost rule"))).toBe(false);
+      expect(result.narrowed.some((c) => c.field === "dir.corb.rules")).toBe(false);
+    });
+
     it("policy.enabled: true -> false", () => {
       const previous = baseConfig();
       const current = clone(previous);
