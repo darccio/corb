@@ -1191,22 +1191,44 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     });
     await controller.trigger("exit", result.exitCode);
   } catch (err) {
-    // Guarded (unlike `controller.trigger("error", ...)` below, which stays
-    // unconditional — it's already safely idempotent, per
-    // `ShutdownController.trigger()`'s own doc comment) because a pending
-    // `await proc` above rejects, not hangs or resolves, when some *other*
-    // trigger (the watchdog's `close-vm`, a SIGINT during an active exec)
-    // closes the VM out from under it — confirmed against the installed SDK
+    // Both actions below — the audit line and the stderr write — are guarded
+    // by the same `!controller.isTriggered` condition, because both exist to
+    // report a *genuine, first-cause* error, and both would otherwise
+    // misreport the same non-error case: a pending `await proc` above
+    // rejects, not hangs or resolves, when some *other* trigger (the
+    // watchdog's `close-vm`, a SIGINT during an active exec, `corb kill`'s
+    // SIGTERM into this same controller — see `src/commands/kill.ts`) closes
+    // the VM out from under it — confirmed against the installed SDK
     // (`node_modules/@earendil-works/gondolin/dist/src/vm/core.js`:
     // `closeInternal()` → `server.close()` → `handleDisconnect()` →
     // `rejectAll()` → `rejectExecSession()` on every pending exec session —
     // and empirically, see `test/e2e/session-watchdog.e2e.ts`). Without this
-    // guard, that case would produce two audit lines for one session end: a
-    // correct one from the other trigger's own reason, immediately followed
-    // by a misleading `"error"` line here even though nothing actually went
-    // wrong. `controller.isTriggered` is read before this function's own
+    // guard: the audit log would get a correct line from the other trigger's
+    // own reason, immediately followed by a misleading `"error"` line here
+    // even though nothing actually went wrong; and the user's terminal would
+    // get a spurious `err.stack` dumped to it — often after its TTY state has
+    // already been restored — following a completely ordinary Ctrl-C, `corb
+    // kill`, or watchdog expiry that the user did nothing wrong to cause.
+    // `controller.isTriggered` is read before this function's own
     // `trigger("error", ...)` call below, so it only reflects whether some
     // *other* trigger already started shutdown before this catch block ran.
+    //
+    // The stderr write's own reason for existing: `controller.trigger()`
+    // resolves *through* `exitFn`, whose real-process default is
+    // `process.exit()` (`src/vm/shutdown.ts`) — so in production, `await
+    // controller.trigger(...)` below never returns, and `throw err` right
+    // after it is unreachable. Without reporting `err` to `stderr` — the same
+    // injectable stream `runSession()` already uses elsewhere (see above)
+    // rather than a bare `console.error` — somewhere on this path, a genuine
+    // error (a missing secret, a VM boot failure, any of the
+    // `WorkspaceDirectoryError`/`ImageNotFoundError`-shaped failures this
+    // function can throw) would surface as a bare non-zero exit code with no
+    // output at all: `cli.ts`'s top-level `.catch()` never runs, and
+    // `ShutdownController.trigger()`'s own `cause` parameter is threaded into
+    // `ShutdownReport` but nothing ever reads it back out. That "otherwise
+    // silent" concern is specifically about a genuine, first-cause error —
+    // i.e. exactly the `!isTriggered` case this write now shares with the
+    // audit line above, so gating both on one condition weakens neither.
     if (!controller.isTriggered) {
       options.audit.record({
         channel: "session",
@@ -1215,22 +1237,12 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
         reason: "error",
         sessionId,
       });
+      stderr.write(`corb run: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
     }
-    // `controller.trigger()` resolves *through* `exitFn`, whose real-process
-    // default is `process.exit()` (`src/vm/shutdown.ts`) — so in production,
-    // `await controller.trigger(...)` below never returns, and `throw err`
-    // right after it is unreachable. Without reporting `err` here first,
-    // that meant every error on this path — a missing secret, a VM boot
-    // failure, any of the `WorkspaceDirectoryError`/`ImageNotFoundError`-
-    // shaped failures this function can throw — surfaced as a bare
-    // non-zero exit code with no output at all: `cli.ts`'s top-level
-    // `.catch()` never ran, and `ShutdownController.trigger()`'s own `cause`
-    // parameter is threaded into `ShutdownReport` but nothing ever reads it
-    // back out. Writing to `stderr` here — the same injectable stream
-    // `runSession()` already uses elsewhere (see above) rather than a bare
-    // `console.error` — is what makes the error visible in the case that
-    // actually matters, before whatever happens to `exitFn` next.
-    stderr.write(`corb run: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
+    // Unlike the two actions above, this call and the `throw err` after it
+    // stay unconditional: `controller.trigger()` is already safely idempotent
+    // to call more than once, per `ShutdownController.trigger()`'s own doc
+    // comment, so there is no need to gate it on `isTriggered` too.
     await controller.trigger("error", 1, err);
     throw err;
   }
