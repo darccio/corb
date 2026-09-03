@@ -31,7 +31,34 @@ export type DirMode = (typeof DIR_MODES)[number];
 // Duration/size/percentage fields stay opaque, format-validated strings: no
 // downstream consumer parses them into a structured value before M8 (session
 // limits), so there is nothing for this milestone to convert them into.
-const MEMORY_SIZE_RE = /^\d+[KMGT]?$/i;
+//
+// `vm.memory` and `vm.limits.memory-max` look like they'd share one
+// size-format regex, but their consumers have different, incompatible unit
+// semantics, so they get two separate patterns instead of one shared one.
+
+// vm.memory is passed straight through to QEMU's own -m flag, unmodified.
+// Verified against the real qemu-system-x86_64 man page on this machine:
+// a bare number means megabytes, and only "M"/"G" (uppercase) suffixes are
+// documented for this specific flag -- no K or T (QEMU's own -m help text
+// mentions a broader k/M/G/T/P/E scale, but that's the generic size-parser
+// shared across many unrelated QEMU options; -m's own man page entry only
+// promises M/G, so that's what this validates against).
+const QEMU_MEMORY_SIZE_RE = /^\d+[MG]?$/;
+
+// vm.limits.memory-max becomes systemd-run's `-p MemoryMax=<value>`.
+// Verified against `man systemd.resource-control` on this machine: a bare
+// number means BYTES (not megabytes -- this is the actual cross-consumer
+// confusion, not just a casing mismatch), and only uppercase K/M/G/T
+// suffixes are documented; systemd does not accept a lowercase suffix.
+// Deliberately requires a suffix (no bare-number form at all, unlike
+// vm.memory): every real usage of memory-max in this repo's own docs,
+// README, and test fixtures already uses one ("6G"), and a bare number
+// here is exactly the footgun in the failure scenario above -- a user
+// copying a bare MB-shaped value from vm.memory into memory-max, expecting
+// the same unit, would otherwise get a syntactically-valid but wildly
+// wrong byte count instead of a clear config error.
+const SYSTEMD_MEMORY_SIZE_RE = /^\d+[KMGT]$/;
+
 const DURATION_RE = /^\d+[smhd]$/;
 const PERCENT_RE = /^\d+%$/;
 
@@ -272,7 +299,7 @@ function parseVmLimits(value: unknown, location: string, sourceLabel: string): P
   assertKnownKeys(table, VM_LIMITS_KEYS, location, sourceLabel);
   const result: PartialVmLimits = {};
   if (table["memory-max"] !== undefined) {
-    result["memory-max"] = expectFormattedString(table["memory-max"], joinPath(location, "memory-max"), sourceLabel, MEMORY_SIZE_RE, "6G");
+    result["memory-max"] = expectFormattedString(table["memory-max"], joinPath(location, "memory-max"), sourceLabel, SYSTEMD_MEMORY_SIZE_RE, "6G");
   }
   if (table["pids-max"] !== undefined) {
     result["pids-max"] = expectInteger(table["pids-max"], joinPath(location, "pids-max"), sourceLabel, 1);
@@ -293,7 +320,7 @@ function parseVmConfig(value: unknown, sourceLabel: string): PartialVmConfig {
     result.image = expectString(table.image, "vm.image", sourceLabel);
   }
   if (table.memory !== undefined) {
-    result.memory = expectFormattedString(table.memory, "vm.memory", sourceLabel, MEMORY_SIZE_RE, "4G");
+    result.memory = expectFormattedString(table.memory, "vm.memory", sourceLabel, QEMU_MEMORY_SIZE_RE, "4G");
   }
   if (table.cpus !== undefined) {
     result.cpus = expectInteger(table.cpus, "vm.cpus", sourceLabel, 1);

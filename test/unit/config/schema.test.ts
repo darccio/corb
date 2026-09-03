@@ -415,6 +415,52 @@ max-session = "4h"
       const layer = parseConfigLayer(toml, "config.toml");
       expect(layer.vm).toEqual({ memory: "1024", "max-session": "4h" });
     });
+
+    // vm.memory and vm.limits.memory-max used to share one case-insensitive,
+    // optional-suffix regex even though their consumers have incompatible
+    // unit semantics: a bare number is megabytes for QEMU's `-m` (vm.memory)
+    // but bytes for systemd's `MemoryMax=` (vm.limits.memory-max), and only
+    // systemd's grammar is documented as uppercase-only. The tests below
+    // pin the two fields' now-separate, consumer-accurate formats.
+    describe("vm.memory / vm.limits.memory-max no longer share one format", () => {
+      it("vm.memory still accepts a bare number (QEMU's own bare-megabytes convention)", () => {
+        const layer = parseConfigLayer(`[vm]\nmemory = "4096"`, "config.toml");
+        expect(layer.vm?.memory).toBe("4096");
+      });
+
+      it("vm.memory still accepts an uppercase M or G suffix", () => {
+        const layer = parseConfigLayer(`[vm]\nmemory = "4G"`, "config.toml");
+        expect(layer.vm?.memory).toBe("4G");
+      });
+
+      it("vm.memory now rejects a K or T suffix (QEMU's -m man page only documents M/G)", () => {
+        const errK = expectConfigParseError(() => parseConfigLayer(`[vm]\nmemory = "4096K"`, "config.toml"));
+        expect(errK.message).toContain("field 'vm.memory' has invalid format '4096K'");
+        const errT = expectConfigParseError(() => parseConfigLayer(`[vm]\nmemory = "1T"`, "config.toml"));
+        expect(errT.message).toContain("field 'vm.memory' has invalid format '1T'");
+      });
+
+      it("vm.limits.memory-max now rejects a bare number -- regression test for the memory/memory-max unit-confusion footgun", () => {
+        const err = expectConfigParseError(() =>
+          parseConfigLayer(`[vm]\nlimits = { memory-max = "6144" }`, "config.toml"),
+        );
+        expect(err.message).toContain("field 'vm.limits.memory-max' has invalid format '6144'");
+      });
+
+      it("vm.limits.memory-max still rejects a lowercase suffix (systemd's grammar is uppercase-only)", () => {
+        const err = expectConfigParseError(() =>
+          parseConfigLayer(`[vm]\nlimits = { memory-max = "6g" }`, "config.toml"),
+        );
+        expect(err.message).toContain("field 'vm.limits.memory-max' has invalid format '6g'");
+      });
+
+      it("vm.limits.memory-max accepts a valid uppercase-suffixed value for each of K, M, G, T", () => {
+        for (const value of ["6144K", "6M", "6G", "2T"]) {
+          const layer = parseConfigLayer(`[vm]\nlimits = { memory-max = "${value}" }`, "config.toml");
+          expect(layer.vm?.limits?.["memory-max"]).toBe(value);
+        }
+      });
+    });
   });
 
   describe("type errors", () => {
