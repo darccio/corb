@@ -14,6 +14,7 @@
 // that has a `[vm]` section is a `PartialVmConfig`, never `undefined`), which
 // falls out of TOML's own nesting rather than being a schema choice.
 import { parse, TomlError } from "smol-toml";
+import { DurationOverflowError, MAX_SETTIMEOUT_MS, parseDuration } from "../util/duration.ts";
 
 /**
  * Exactly the four `[[dir]].rules[]` modes the implementation plan's
@@ -292,6 +293,46 @@ function expectFormattedString(
   return str;
 }
 
+// `vm.max-session` is the only duration-shaped field in this schema, so
+// unlike `expectFormattedString` above (deliberately generic — reused across
+// three unrelated formats: memory, cpu-quota, and this one) this validator is
+// hard-coded to `DURATION_RE`/`parseDuration`'s own `\d+[smhd]` shape rather
+// than taking `pattern`/`example` params: it delegates its bound check to
+// `parseDuration` (`src/util/duration.ts`), which only ever understands that
+// one format, so a caller-supplied `pattern` could silently drift out of
+// sync with it. Format is checked first via `expectFormattedString` (so a
+// non-duration string still gets that function's "invalid format" message);
+// only a value that already matches `DURATION_RE` is handed to
+// `parseDuration`, whose own `DurationOverflowError` is where the actual
+// `2**31 - 1`-ms `setTimeout` bound (`MAX_SETTIMEOUT_MS`) is enforced — see
+// that error class's doc comment for why the check lives there and not here.
+// This is `corb.toml`'s primary defense against the finding this validator
+// exists for: `vm.max-session = "30d"` must fail config parsing outright,
+// immediately and with a clear `corb`-authored error, rather than silently
+// starting a watchdog that fires after ~1ms three layers downstream in
+// `src/vm/watchdog.ts`.
+function expectDuration(value: unknown, fieldPath: string, sourceLabel: string): string {
+  const str = expectFormattedString(value, fieldPath, sourceLabel, DURATION_RE, "4h");
+  try {
+    parseDuration(str);
+  } catch (err) {
+    if (!(err instanceof DurationOverflowError)) {
+      // DURATION_RE has already validated the format above, so
+      // parseDuration's own DurationParseError path is unreachable here in
+      // practice; re-throwing anything unexpected unchanged keeps that true
+      // by construction instead of silently swallowing it.
+      throw err;
+    }
+    throw new ConfigParseError(
+      sourceLabel,
+      `field '${fieldPath}' has value '${str}' (${err.ms}ms), too long for Node's setTimeout to represent ` +
+        `(max ${MAX_SETTIMEOUT_MS}ms, ≈24.8 days)`,
+      fieldPath,
+    );
+  }
+  return str;
+}
+
 const VM_LIMITS_KEYS = ["memory-max", "pids-max", "cpu-quota"] as const;
 
 function parseVmLimits(value: unknown, location: string, sourceLabel: string): PartialVmLimits {
@@ -326,7 +367,7 @@ function parseVmConfig(value: unknown, sourceLabel: string): PartialVmConfig {
     result.cpus = expectInteger(table.cpus, "vm.cpus", sourceLabel, 1);
   }
   if (table["max-session"] !== undefined) {
-    result["max-session"] = expectFormattedString(table["max-session"], "vm.max-session", sourceLabel, DURATION_RE, "4h");
+    result["max-session"] = expectDuration(table["max-session"], "vm.max-session", sourceLabel);
   }
   if (table.limits !== undefined) {
     result.limits = parseVmLimits(table.limits, "vm.limits", sourceLabel);

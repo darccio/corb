@@ -463,6 +463,46 @@ max-session = "4h"
     });
   });
 
+  // D1: `vm.max-session` fed straight into `setTimeout` (via `src/vm/
+  // watchdog.ts`) with no upper bound. Node's `setTimeout` delay is a signed
+  // 32-bit integer, so a value past `2**31 - 1` ms (~24.855 days) doesn't
+  // error there -- it silently clamps to a ~1ms timer and fires almost
+  // immediately instead of after the configured delay. These tests are the
+  // *primary* defense for that finding: `corb.toml` must fail to parse
+  // outright for an out-of-range `max-session`, so `corb run` errors clearly
+  // and immediately instead of silently mis-timing a session three layers
+  // downstream. (The corresponding unit-level bound check lives in
+  // `test/unit/util/duration.test.ts`, on `parseDuration` itself.)
+  describe("vm.max-session overflow guard (D1)", () => {
+    it("accepts the README's own example value ('4h')", () => {
+      const layer = parseConfigLayer(`[vm]\nmax-session = "4h"`, "config.toml");
+      expect(layer.vm?.["max-session"]).toBe("4h");
+    });
+
+    it("accepts another safely-small value ('24d', just under the ~24.855-day bound)", () => {
+      const layer = parseConfigLayer(`[vm]\nmax-session = "24d"`, "config.toml");
+      expect(layer.vm?.["max-session"]).toBe("24d");
+    });
+
+    it("rejects '25d' with a ConfigParseError naming the field -- regression test for the finding", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[vm]\nmax-session = "25d"`, "config.toml"));
+      expect(err.message).toContain("vm.max-session");
+      expect(err.location).toBe("vm.max-session");
+    });
+
+    it("rejects '600h' the same way -- the bound applies regardless of which unit produced the overflow", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[vm]\nmax-session = "600h"`, "config.toml"));
+      expect(err.message).toContain("vm.max-session");
+    });
+
+    it("overflow error states the actual reason (setTimeout) and the precise bound, distinct from a plain invalid-format error", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[vm]\nmax-session = "25d"`, "config.toml"));
+      expect(err.message).toContain("setTimeout");
+      expect(err.message).toContain("2147483647");
+      expect(err.message).not.toContain("invalid format");
+    });
+  });
+
   describe("type errors", () => {
     it("vm.cpus must be a number", () => {
       const err = expectConfigParseError(() => parseConfigLayer(`[vm]\ncpus = "four"`, "config.toml"));
