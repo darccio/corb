@@ -137,13 +137,36 @@ export function createAuditWriter(options: AuditWriterOptions): AuditWriter {
       // already-existing, more-permissive directory is left as-is here —
       // this only sets `0o700` on a directory this call itself creates.
       fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-      fd = fs.openSync(filePath, "a", 0o600);
-      // `openSync`'s mode argument only applies when it creates the file —
-      // it does not retroactively tighten an existing, more permissive log
-      // (e.g. one written by a Corb build from before this fix, or created
-      // under a looser umask). `chmodSync` makes the 0600 invariant hold
-      // regardless of the file's prior state.
-      fs.chmodSync(filePath, 0o600);
+      // `O_NOFOLLOW` only affects the final path component, and only kicks
+      // in when it already exists *as a symlink* — the common, legitimate
+      // case (nothing at `filePath` yet) is unaffected, `O_CREAT` still
+      // creates a fresh regular file exactly as the old `"a"` string-mode
+      // open did. What it closes: this is the very first `record()` call
+      // ever to open `filePath` — if something raced Corb and planted a
+      // symlink there beforehand, plain `open()` would silently follow it
+      // and append to (and, below, chmod) whatever host file it points at,
+      // as the host user. With `O_NOFOLLOW` the open fails instead (ELOOP on
+      // Linux) and nothing is written.
+      fd = fs.openSync(
+        filePath,
+        fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_WRONLY | fs.constants.O_NOFOLLOW,
+        0o600,
+      );
+      // The mode argument on `openSync` only applies when it creates the
+      // file — it does not retroactively tighten an existing, more
+      // permissive log (e.g. one written by a Corb build from before this
+      // fix, or created under a looser umask). `fchmodSync` makes the 0600
+      // invariant hold regardless of the file's prior state, the same as
+      // the `chmodSync(filePath, ...)` this replaced — but anchored to the
+      // fd `openSync` just returned rather than a second, independent path
+      // lookup. That's not just tidier: `chmodSync(filePath, ...)`
+      // re-resolves `filePath` from scratch, leaving a second, narrower
+      // TOCTOU window where a symlink swapped in between the `openSync` and
+      // `chmodSync` calls could redirect the chmod alone to a different
+      // target than what was actually opened and appended to. `fchmodSync`
+      // operates on the exact inode already open, which no later change to
+      // what `filePath` points at can redirect.
+      fs.fchmodSync(fd, 0o600);
     }
     return fd;
   }

@@ -77,3 +77,13 @@ what the next `corb run` invocation does.
   runs inside `resolveWorkspace`, so it covers `--dir` flags as well as
   `[[dir]]` entries, and `corb explain`/`--dry-run` as well as a real
   `corb run`.
+* Good, because the same enforcement also covers the unified audit log's own
+  path (`docs/design.md` §6), not just `config.toml`/`trusted.json`. The
+  *default* audit path needed no separate protection — it already lives
+  inside `corbStateDir()`, itself always forbidden — but an explicit
+  `[audit] path = "..."` naming a location *inside* a workspace's own mount
+  was never checked, and would hand a hostile guest read-write access to the
+  one record of its own denials. `assertNoMountOverlapsCorbDirs` now takes
+  the resolved `audit.path` (only when a caller has one explicitly set) as a
+  third forbidden location alongside `corbConfigDir()`/`corbStateDir()`,
+  reusing the exact same overlap check rather than a parallel one.
