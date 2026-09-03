@@ -330,5 +330,13 @@ describe("config/resolve: resolveWorkspace", () => {
       acceptWorkspace(resolved.trustKey, resolved.persistentConfig, 999, { configDir: freshConfigDir });
       expect(fs.existsSync(path.join(freshConfigDir, "trusted.json"))).toBe(true);
     });
+
+    it("writes trusted.json with 0600 permissions (src/util/secure-write.ts)", () => {
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      acceptWorkspace(resolved.trustKey, resolved.persistentConfig, 12345, { configDir });
+
+      const mode = fs.statSync(path.join(configDir, "trusted.json")).mode & 0o777;
+      expect(mode).toBe(0o600);
+    });
   });
 });

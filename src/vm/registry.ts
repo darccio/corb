@@ -46,6 +46,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { sessionsStateDir } from "../config/paths.ts";
+import { writeFileSecure } from "../util/secure-write.ts";
 
 /** One workspace directory a session mounted — see `src/vm/session.ts`'s `WorkspaceDirSpec` (`name`/`hostPath`/`mode`), which this mirrors for the sidecar's own persisted record. */
 export interface SessionSidecarDir {
@@ -241,10 +242,17 @@ function isEnoent(err: unknown): boolean {
  * exist yet — the only one of this module's functions that creates the
  * directory; see `listSessionSidecars`'s own doc comment for why it
  * deliberately does not.
+ *
+ * The write itself goes through `src/util/secure-write.ts`'s
+ * `writeFileSecure`: atomic (temp file + rename, so a crash or `SIGKILL`
+ * mid-write can never leave a torn sidecar behind) and permission-hardened
+ * (0600 on the file, 0700 on `sessionsDir` if this call is the one that
+ * creates it) — a sidecar holds `dirs[].hostPath`, the audit log path, the
+ * host pid, and, for a `--expose` session, the live ingress URL into the
+ * guest, none of which should be world-readable.
  */
 export function writeSessionSidecar(sidecar: SessionSidecar, sessionsDir: string = sessionsStateDir()): void {
-  fs.mkdirSync(sessionsDir, { recursive: true });
-  fs.writeFileSync(sessionSidecarPath(sidecar.id, sessionsDir), JSON.stringify(sidecar, null, 2) + "\n");
+  writeFileSecure(sessionSidecarPath(sidecar.id, sessionsDir), JSON.stringify(sidecar, null, 2) + "\n");
 }
 
 /**

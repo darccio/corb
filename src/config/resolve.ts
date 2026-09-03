@@ -65,6 +65,7 @@ import {
   type TrustedWorkspaceRecord,
 } from "./trust.ts";
 import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath } from "./paths.ts";
+import { writeFileSecure } from "../util/secure-write.ts";
 
 /** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
 export class WorkspaceDirectoryError extends Error {
@@ -366,6 +367,13 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
  * the current store first (reusing `readTrustStore`'s existing logic) so a
  * corrupted `trusted.json` fails loudly here too, rather than being silently
  * clobbered.
+ *
+ * The write itself goes through `src/util/secure-write.ts`'s
+ * `writeFileSecure`: atomic (temp file + rename, so a crash or `SIGKILL`
+ * mid-write can never leave a torn `trusted.json` for the next
+ * `readTrustStore` call to trip over) and permission-hardened (0600 on the
+ * file, 0700 on the config directory if this call is the one that creates
+ * it).
  */
 export function acceptWorkspace(
   trustKey: string,
@@ -376,6 +384,5 @@ export function acceptWorkspace(
   const configDir = opts.configDir ?? corbConfigDir();
   const trustStore = readTrustStore(configDir);
   const updated = recordAcceptance(trustStore, trustKey, persistentConfig, acceptedAt);
-  fs.mkdirSync(configDir, { recursive: true });
-  fs.writeFileSync(trustStorePath(configDir), JSON.stringify(updated, null, 2));
+  writeFileSecure(trustStorePath(configDir), JSON.stringify(updated, null, 2));
 }

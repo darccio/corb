@@ -71,6 +71,14 @@ describe("vm/registry session sidecars", () => {
     expect(raw).toBe(JSON.stringify(sidecar, null, 2) + "\n");
   });
 
+  it("writes the sidecar file with 0600 permissions (src/util/secure-write.ts)", () => {
+    const sidecar = makeSidecar();
+    writeSessionSidecar(sidecar, dir);
+
+    const mode = fs.statSync(sessionSidecarPath(sidecar.id, dir)).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
   it("readSessionSidecar returns undefined for a missing file", () => {
     expect(readSessionSidecar("does-not-exist", dir)).toBeUndefined();
   });
