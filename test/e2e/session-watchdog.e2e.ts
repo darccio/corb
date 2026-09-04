@@ -64,12 +64,19 @@
 // `SIGHUP`/`uncaughtException` listener to *this* test process, and a fake
 // `exit` (`vi.fn()`) so nothing calls the real `process.exit` and kills the
 // test worker — the same discipline `shutdown.test.ts` documents for itself.
-// Real `process.stdin`/`stdout`/`stderr` are passed straight through to
-// `runSession()` (proven safe by the same probe script above: `attachTty`
+// Real `process.stdin`/`stdout` are passed straight through to `runSession()`
+// in both proofs (proven safe by the same probe script above: `attachTty`
 // only touches `setRawMode`/`resize` when the stream is actually a TTY,
 // which a vitest worker's stdio is not), matching production usage exactly
 // rather than inventing fake stream objects whose behavior under `attach()`
-// would itself be unproven.
+// would itself be unproven. `stderr` follows the same real-stream default in
+// Proof 2; Proof 3 instead passes `makeCapturingStderr()`'s fake — needed
+// there, unlike everywhere else in this suite, because that test's whole
+// point is asserting on what a normal watchdog-triggered shutdown does *not*
+// write to stderr (D2), which a real `process.stderr` can't be observed
+// doing. That fake is built on a real `stream.Writable`, not a bare object,
+// specifically so it remains a valid `Readable.pipe()` destination under
+// `attachTty()` — see its own doc comment.
 //
 // `CORB_STATE_DIR` is overridden per-proof to an isolated `mkdtemp`
 // directory so `writeSessionSidecar`/`removeSessionSidecar`'s default
@@ -82,6 +89,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHttpHooks, VM } from "@earendil-works/gondolin";
 import { resolveRuntimeImage } from "../../src/vm/image.ts";
@@ -110,6 +118,35 @@ const POLICY: EffectivePolicyConfig = { enabled: false, "secret-scan": true, "fa
 /** A fake `process` that records nothing and does nothing — matches `shutdown.test.ts`'s own `makeFakeProcess()`, just without the bookkeeping this suite doesn't need. */
 function makeFakeProcess(): ProcessLike {
   return { on: () => undefined };
+}
+
+/**
+ * A capturing stand-in for `runSession()`'s `stderr` option
+ * (`RunSessionOptions.stderr`, typed `NodeJS.WriteStream`) — lets a test
+ * assert on what would otherwise go straight to the real process's stderr
+ * (which a test can't observe). Built on a real `stream.Writable`, not a
+ * bare `{ write() {} }` object: `runSession()` passes this stream straight
+ * into the SDK's `ExecProcess.attach()`
+ * (`node_modules/@earendil-works/gondolin/dist/src/exec.js`), which pipes
+ * the guest's own stderr channel into it (`stderrPipe.pipe(stderrOut, {
+ * end: false })` in `attachTty()`) any time `vm.exec()` was called with
+ * `stderr: "pipe"` — which `runSession()` always does — regardless of
+ * whether the guest process ever actually writes anything. `Readable.pipe()`
+ * needs a real `EventEmitter`-shaped destination (`on`/`once`/`emit`, not
+ * just `write`) to attach itself, which a bare object lacks. Cast to
+ * `NodeJS.WriteStream` because a plain `Writable` doesn't structurally match
+ * that type (`isTTY`/`columns`/`rows`, etc.) — `session.ts` itself never
+ * reads any of those on `stderr`, only `.write()`.
+ */
+function makeCapturingStderr(): NodeJS.WriteStream & { chunks: Buffer[] } {
+  const chunks: Buffer[] = [];
+  const writable = new Writable({
+    write(chunk: Buffer | string, _encoding, callback) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      callback();
+    },
+  });
+  return Object.assign(writable, { chunks }) as unknown as NodeJS.WriteStream & { chunks: Buffer[] };
 }
 
 /** Polls `check` every `intervalMs` until it returns a truthy value or `timeoutMs` elapses, returning that value (or throwing on timeout). */
@@ -245,7 +282,7 @@ describe.skipIf(!process.env.CORB_E2E)("session-watchdog e2e (real VM boot)", ()
   );
 
   it(
-    "runSession(): a short maxSession forcibly interrupts a real, in-progress pi exec — one watchdog-expired audit line, no spurious error line, sidecar still cleaned up",
+    "runSession(): a short maxSession forcibly interrupts a real, in-progress pi exec — one watchdog-expired audit line, no spurious error line or stderr output, sidecar still cleaned up",
     async () => {
       const hostDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-e2e-session-watchdog-fire-"));
       cleanupDirs.push(hostDir);
@@ -261,6 +298,13 @@ describe.skipIf(!process.env.CORB_E2E)("session-watchdog e2e (real VM boot)", ()
       const dirName = path.basename(hostDir);
 
       let vmId: string | undefined;
+      // Injectable in place of `process.stderr` specifically so this test can
+      // observe it — a real `process.stderr` write can't be asserted on. This
+      // is the literal gap the spurious-stack-trace bug (D2) lived in: the
+      // sibling audit-log assertion below already covered "no spurious error
+      // *record*", but nothing previously covered "no spurious error *stderr
+      // output*" for this exact watchdog-fired scenario.
+      const fakeStderr = makeCapturingStderr();
 
       const sessionPromise = runSession({
         dirs: [{ name: dirName, hostPath: hostDir, mode: "rw" }],
@@ -278,7 +322,7 @@ describe.skipIf(!process.env.CORB_E2E)("session-watchdog e2e (real VM boot)", ()
         auditPath,
         stdin: process.stdin,
         stdout: process.stdout,
-        stderr: process.stderr,
+        stderr: fakeStderr,
         shutdownProcess: makeFakeProcess(),
         exit: vi.fn(),
       });
@@ -307,6 +351,14 @@ describe.skipIf(!process.env.CORB_E2E)("session-watchdog e2e (real VM boot)", ()
 
       const errorLines = lines.filter((e) => e.channel === "session" && e.reason === "error");
       expect(errorLines, `expected no spurious error line, found: ${JSON.stringify(errorLines)}`).toHaveLength(0);
+
+      // The D2 fix itself: a watchdog-triggered rejection of the pending
+      // `await proc` must not dump `err.stack` to the user's terminal — that
+      // stderr write is only for a *genuine, first-cause* error
+      // (`!controller.isTriggered`), and this rejection is a side effect of
+      // the watchdog's own `close-vm` step, not a first cause.
+      const stderrText = Buffer.concat(fakeStderr.chunks).toString("utf8");
+      expect(stderrText, `expected nothing written to stderr for a watchdog-triggered shutdown, got: ${JSON.stringify(stderrText)}`).toBe("");
 
       expect(vmId, "sidecar never appeared before the watchdog should have fired").toBeDefined();
       expect(readSessionSidecar(vmId!, sessionsDir), "sidecar was not removed after the watchdog-triggered teardown").toBeUndefined();

@@ -79,6 +79,45 @@ describe("policy/audit AuditWriter", () => {
     expect(fs.statSync(logPath).mode & 0o777).toBe(0o600);
   });
 
+  it("refuses to open when the log path is already a symlink, rather than silently following it (O_NOFOLLOW)", () => {
+    const target = path.join(dir, "target.txt");
+    fs.writeFileSync(target, "pre-existing content");
+    fs.symlinkSync(target, logPath);
+
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    let caught: unknown;
+    try {
+      writer.record({ channel: "gate", decision: "allow", subject: "op", sessionId: "s1" });
+    } catch (err) {
+      caught = err;
+    }
+    // Observed directly against this Node/Linux combination (see the audit
+    // module's `ensureOpen` comment): opening a path that already exists as
+    // a symlink with `O_NOFOLLOW` in the flags fails with ELOOP rather than
+    // silently following it.
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as NodeJS.ErrnoException).code).toBe("ELOOP");
+  });
+
+  it("a symlink at the log path leaves its target file untouched by the failed open — not written, and not chmod'd", () => {
+    const target = path.join(dir, "target.txt");
+    fs.writeFileSync(target, "pre-existing content", { mode: 0o644 });
+    fs.symlinkSync(target, logPath);
+    const modeBefore = fs.statSync(target).mode & 0o777;
+    const mtimeBefore = fs.statSync(target).mtimeMs;
+
+    const writer = createAuditWriter({ path: logPath, now: () => 1 });
+    expect(() => writer.record({ channel: "gate", decision: "allow", subject: "op", sessionId: "s1" })).toThrow();
+
+    // This is the actual proof the arbitrary-host-file-write primitive is
+    // closed: not merely that *some* error was thrown, but that the
+    // symlink's target was never opened, appended to, or chmod'd as a side
+    // effect of the attempt.
+    expect(fs.readFileSync(target, "utf8")).toBe("pre-existing content");
+    expect(fs.statSync(target).mode & 0o777).toBe(modeBefore);
+    expect(fs.statSync(target).mtimeMs).toBe(mtimeBefore);
+  });
+
   it("creates a newly-created target directory with 0700 permissions", () => {
     const nestedDir = path.join(dir, "nested-perms");
     const nestedPath = path.join(nestedDir, "audit.jsonl");

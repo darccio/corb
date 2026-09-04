@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -131,11 +132,139 @@ func TestToolFromInvocation(t *testing.T) {
 	}
 }
 
+// gitAllowedGlobalFlags mirrors the exact allowedGlobalFlags list landed for
+// git in src/vm/session.ts's GATE_CONFIG, so these unit tests exercise the
+// same policy shape production actually ships -- matching this file's own
+// existing convention (TestLoadConfig's validJSON, and TestCheckLocal's own
+// policy below, already mirror GATE_CONFIG's blockedSubcommands/
+// blockedFlags values for the same reason).
+var gitAllowedGlobalFlags = []string{
+	"-P", "--no-pager",
+	"--bare",
+	"--no-replace-objects",
+	"--no-lazy-fetch",
+	"--no-optional-locks",
+	"--no-advice",
+	"--literal-pathspecs",
+	"--glob-pathspecs",
+	"--noglob-pathspecs",
+	"--icase-pathspecs",
+}
+
+func TestResolveSubcommand(t *testing.T) {
+	policy := ToolPolicy{
+		Real:               "/usr/local/libexec/git-real",
+		AllowedGlobalFlags: gitAllowedGlobalFlags,
+	}
+
+	tests := []struct {
+		name           string
+		args           []string
+		wantFound      bool
+		wantSubcommand string
+		wantRest       []string
+		wantBlocked    bool
+		wantKind       string
+		wantMatch      string
+	}{
+		{
+			name:           "allowed global flag then subcommand",
+			args:           []string{"--no-pager", "commit", "-m", "x"},
+			wantFound:      true,
+			wantSubcommand: "commit",
+			wantRest:       []string{"-m", "x"},
+		},
+		{
+			name:           "subcommand with no leading flags at all is unchanged",
+			args:           []string{"commit", "-m", "x"},
+			wantFound:      true,
+			wantSubcommand: "commit",
+			wantRest:       []string{"-m", "x"},
+		},
+		{
+			name:      "empty args",
+			args:      nil,
+			wantFound: false,
+		},
+		{
+			name:           "multiple allowed global flags then a subcommand",
+			args:           []string{"--no-pager", "-P", "--bare", "push"},
+			wantFound:      true,
+			wantSubcommand: "push",
+			wantRest:       []string{},
+		},
+		{
+			name:      "all allowed global flags, no subcommand after them at all",
+			args:      []string{"--no-pager", "-P"},
+			wantFound: false,
+		},
+		{
+			name:        "-p is not on the allowlist: forces a pager, which can hang a non-interactive exec",
+			args:        []string{"-p", "commit"},
+			wantBlocked: true,
+			wantKind:    "global-flag",
+			wantMatch:   "-p",
+		},
+		{
+			name:        "--paginate is not on the allowlist",
+			args:        []string{"--paginate", "commit"},
+			wantBlocked: true,
+			wantKind:    "global-flag",
+			wantMatch:   "--paginate",
+		},
+		{
+			name:        "--namespace=x is not on the allowlist and takes a value",
+			args:        []string{"--namespace=x", "commit"},
+			wantBlocked: true,
+			wantKind:    "global-flag",
+			wantMatch:   "--namespace=x",
+		},
+		{
+			name:        "--attr-source=foo is not on the allowlist and takes a value",
+			args:        []string{"--attr-source=foo", "commit"},
+			wantBlocked: true,
+			wantKind:    "global-flag",
+			wantMatch:   "--attr-source=foo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolution, denial, blocked := ResolveSubcommand(policy, tt.args)
+			if blocked != tt.wantBlocked {
+				t.Fatalf("ResolveSubcommand(%v) blocked = %v, want %v", tt.args, blocked, tt.wantBlocked)
+			}
+			if tt.wantBlocked {
+				if denial.Kind != tt.wantKind {
+					t.Errorf("denial.Kind = %q, want %q", denial.Kind, tt.wantKind)
+				}
+				if denial.Match != tt.wantMatch {
+					t.Errorf("denial.Match = %q, want %q", denial.Match, tt.wantMatch)
+				}
+				return
+			}
+			if resolution.Found != tt.wantFound {
+				t.Fatalf("resolution.Found = %v, want %v", resolution.Found, tt.wantFound)
+			}
+			if !tt.wantFound {
+				return
+			}
+			if resolution.Subcommand != tt.wantSubcommand {
+				t.Errorf("resolution.Subcommand = %q, want %q", resolution.Subcommand, tt.wantSubcommand)
+			}
+			if !slices.Equal(resolution.Rest, tt.wantRest) {
+				t.Errorf("resolution.Rest = %#v, want %#v", resolution.Rest, tt.wantRest)
+			}
+		})
+	}
+}
+
 func TestCheckLocal(t *testing.T) {
 	policy := ToolPolicy{
 		Real:               "/usr/local/libexec/git-real",
 		BlockedSubcommands: []string{"config", "credential", "filter-branch", "init"},
 		BlockedFlags:       []string{"-c", "-C", "--config-env", "--exec-path", "--upload-pack", "--receive-pack", "--no-gpg-sign", "--git-dir", "--work-tree"},
+		AllowedGlobalFlags: gitAllowedGlobalFlags,
 	}
 
 	tests := []struct {
@@ -161,6 +290,11 @@ func TestCheckLocal(t *testing.T) {
 		{name: "--git-dir with an equals form is caught", args: []string{"--git-dir=/r/.git", "--work-tree=/r", "commit", "-m", "x"}, wantBlocked: true, wantKind: "flag", wantMatch: "--git-dir"},
 		{name: "--git-dir with a separate value is caught", args: []string{"--git-dir", "/r/.git", "commit"}, wantBlocked: true, wantKind: "flag", wantMatch: "--git-dir"},
 		{name: "a long flag is never falsely matched by a short blocked flag's glued-value rule", args: []string{"diff", "--cached"}, wantBlocked: false},
+		// --- ADR-0005 allowlist regression cases (AllowedGlobalFlags) ---
+		{name: "git --no-pager commit is no longer misdispatched: CheckLocal itself does not block it", args: []string{"--no-pager", "commit", "-m", "x"}, wantBlocked: false},
+		{name: "git -p commit is blocked: -p is deliberately not on the allowlist", args: []string{"-p", "commit"}, wantBlocked: true, wantKind: "global-flag", wantMatch: "-p"},
+		{name: "git --namespace=x commit is blocked: takes a value, never allowlisted", args: []string{"--namespace=x", "commit"}, wantBlocked: true, wantKind: "global-flag", wantMatch: "--namespace=x"},
+		{name: "git --no-pager config user.name x is still blocked as the resolved subcommand config, not missed", args: []string{"--no-pager", "config", "user.name", "x"}, wantBlocked: true, wantKind: "subcommand", wantMatch: "config"},
 	}
 
 	for _, tt := range tests {

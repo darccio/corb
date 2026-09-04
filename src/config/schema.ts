@@ -14,6 +14,7 @@
 // that has a `[vm]` section is a `PartialVmConfig`, never `undefined`), which
 // falls out of TOML's own nesting rather than being a schema choice.
 import { parse, TomlError } from "smol-toml";
+import { DurationOverflowError, MAX_SETTIMEOUT_MS, parseDuration } from "../util/duration.ts";
 
 /**
  * Exactly the four `[[dir]].rules[]` modes the implementation plan's
@@ -31,9 +32,50 @@ export type DirMode = (typeof DIR_MODES)[number];
 // Duration/size/percentage fields stay opaque, format-validated strings: no
 // downstream consumer parses them into a structured value before M8 (session
 // limits), so there is nothing for this milestone to convert them into.
-const MEMORY_SIZE_RE = /^\d+[KMGT]?$/i;
+//
+// `vm.memory` and `vm.limits.memory-max` look like they'd share one
+// size-format regex, but their consumers have different, incompatible unit
+// semantics, so they get two separate patterns instead of one shared one.
+
+// vm.memory is passed straight through to QEMU's own -m flag, unmodified.
+// Verified against the real qemu-system-x86_64 man page on this machine:
+// a bare number means megabytes, and only "M"/"G" (uppercase) suffixes are
+// documented for this specific flag -- no K or T (QEMU's own -m help text
+// mentions a broader k/M/G/T/P/E scale, but that's the generic size-parser
+// shared across many unrelated QEMU options; -m's own man page entry only
+// promises M/G, so that's what this validates against).
+const QEMU_MEMORY_SIZE_RE = /^\d+[MG]?$/;
+
+// vm.limits.memory-max becomes systemd-run's `-p MemoryMax=<value>`.
+// Verified against `man systemd.resource-control` on this machine: a bare
+// number means BYTES (not megabytes -- this is the actual cross-consumer
+// confusion, not just a casing mismatch), and only uppercase K/M/G/T
+// suffixes are documented; systemd does not accept a lowercase suffix.
+// Deliberately requires a suffix (no bare-number form at all, unlike
+// vm.memory): every real usage of memory-max in this repo's own docs,
+// README, and test fixtures already uses one ("6G"), and a bare number
+// here is exactly the footgun in the failure scenario above -- a user
+// copying a bare MB-shaped value from vm.memory into memory-max, expecting
+// the same unit, would otherwise get a syntactically-valid but wildly
+// wrong byte count instead of a clear config error.
+const SYSTEMD_MEMORY_SIZE_RE = /^\d+[KMGT]$/;
+
 const DURATION_RE = /^\d+[smhd]$/;
 const PERCENT_RE = /^\d+%$/;
+
+/**
+ * The `corb.toml` schema generation this build understands. `version` in a
+ * config document is entirely optional (see `ConfigLayer.version` below) —
+ * nothing today requires an author to declare one — but when present, it
+ * must equal this constant. This is a forward-compatibility gate, not a
+ * mechanism that does anything yet: if this schema is ever changed in a
+ * breaking way, bump this constant, and an older config (still declaring the
+ * previous number) or a newer one (declaring a not-yet-released number)
+ * fails to parse loudly instead of being silently misinterpreted under the
+ * wrong schema assumptions. That forward-looking purpose is the reason this
+ * field exists in the schema at all.
+ */
+export const CURRENT_CONFIG_VERSION = 1;
 
 export interface PartialVmLimits {
   "memory-max"?: string;
@@ -265,6 +307,46 @@ function expectFormattedString(
   return str;
 }
 
+// `vm.max-session` is the only duration-shaped field in this schema, so
+// unlike `expectFormattedString` above (deliberately generic — reused across
+// three unrelated formats: memory, cpu-quota, and this one) this validator is
+// hard-coded to `DURATION_RE`/`parseDuration`'s own `\d+[smhd]` shape rather
+// than taking `pattern`/`example` params: it delegates its bound check to
+// `parseDuration` (`src/util/duration.ts`), which only ever understands that
+// one format, so a caller-supplied `pattern` could silently drift out of
+// sync with it. Format is checked first via `expectFormattedString` (so a
+// non-duration string still gets that function's "invalid format" message);
+// only a value that already matches `DURATION_RE` is handed to
+// `parseDuration`, whose own `DurationOverflowError` is where the actual
+// `2**31 - 1`-ms `setTimeout` bound (`MAX_SETTIMEOUT_MS`) is enforced — see
+// that error class's doc comment for why the check lives there and not here.
+// This is `corb.toml`'s primary defense against the finding this validator
+// exists for: `vm.max-session = "30d"` must fail config parsing outright,
+// immediately and with a clear `corb`-authored error, rather than silently
+// starting a watchdog that fires after ~1ms three layers downstream in
+// `src/vm/watchdog.ts`.
+function expectDuration(value: unknown, fieldPath: string, sourceLabel: string): string {
+  const str = expectFormattedString(value, fieldPath, sourceLabel, DURATION_RE, "4h");
+  try {
+    parseDuration(str);
+  } catch (err) {
+    if (!(err instanceof DurationOverflowError)) {
+      // DURATION_RE has already validated the format above, so
+      // parseDuration's own DurationParseError path is unreachable here in
+      // practice; re-throwing anything unexpected unchanged keeps that true
+      // by construction instead of silently swallowing it.
+      throw err;
+    }
+    throw new ConfigParseError(
+      sourceLabel,
+      `field '${fieldPath}' has value '${str}' (${err.ms}ms), too long for Node's setTimeout to represent ` +
+        `(max ${MAX_SETTIMEOUT_MS}ms, ≈24.8 days)`,
+      fieldPath,
+    );
+  }
+  return str;
+}
+
 const VM_LIMITS_KEYS = ["memory-max", "pids-max", "cpu-quota"] as const;
 
 function parseVmLimits(value: unknown, location: string, sourceLabel: string): PartialVmLimits {
@@ -272,7 +354,7 @@ function parseVmLimits(value: unknown, location: string, sourceLabel: string): P
   assertKnownKeys(table, VM_LIMITS_KEYS, location, sourceLabel);
   const result: PartialVmLimits = {};
   if (table["memory-max"] !== undefined) {
-    result["memory-max"] = expectFormattedString(table["memory-max"], joinPath(location, "memory-max"), sourceLabel, MEMORY_SIZE_RE, "6G");
+    result["memory-max"] = expectFormattedString(table["memory-max"], joinPath(location, "memory-max"), sourceLabel, SYSTEMD_MEMORY_SIZE_RE, "6G");
   }
   if (table["pids-max"] !== undefined) {
     result["pids-max"] = expectInteger(table["pids-max"], joinPath(location, "pids-max"), sourceLabel, 1);
@@ -293,13 +375,13 @@ function parseVmConfig(value: unknown, sourceLabel: string): PartialVmConfig {
     result.image = expectString(table.image, "vm.image", sourceLabel);
   }
   if (table.memory !== undefined) {
-    result.memory = expectFormattedString(table.memory, "vm.memory", sourceLabel, MEMORY_SIZE_RE, "4G");
+    result.memory = expectFormattedString(table.memory, "vm.memory", sourceLabel, QEMU_MEMORY_SIZE_RE, "4G");
   }
   if (table.cpus !== undefined) {
     result.cpus = expectInteger(table.cpus, "vm.cpus", sourceLabel, 1);
   }
   if (table["max-session"] !== undefined) {
-    result["max-session"] = expectFormattedString(table["max-session"], "vm.max-session", sourceLabel, DURATION_RE, "4h");
+    result["max-session"] = expectDuration(table["max-session"], "vm.max-session", sourceLabel);
   }
   if (table.limits !== undefined) {
     result.limits = parseVmLimits(table.limits, "vm.limits", sourceLabel);
@@ -319,14 +401,34 @@ function parseAgentConfig(value: unknown, sourceLabel: string): PartialAgentConf
   if (table.model !== undefined) {
     result.model = expectString(table.model, "agent.model", sourceLabel);
   }
+  // Neither `extensions` nor `append-system-prompt-file` is wired to
+  // anything: nothing in this repo forwards them to `pi` (see README.md's
+  // config section). Accepting either as if it did something would be a
+  // fully-corroborating no-op — validated, merged, and shown by `corb
+  // explain` as though it mattered — so both are rejected at parse time
+  // instead of accepted-and-ignored (E2).
   if (table.extensions !== undefined) {
-    result.extensions = expectStringArray(table.extensions, "agent.extensions", sourceLabel);
+    const extensions = expectStringArray(table.extensions, "agent.extensions", sourceLabel);
+    // An *empty* list is not a lie — corb loading zero extensions is
+    // accurate — so only a non-empty list, which would silently do nothing,
+    // is rejected.
+    if (extensions.length > 0) {
+      throw new ConfigParseError(
+        sourceLabel,
+        `field 'agent.extensions' is not implemented yet — corb never loads extensions into 'pi', so a non-empty list would silently have no effect (an empty list, 'extensions = []', is accepted)`,
+        "agent.extensions",
+      );
+    }
+    result.extensions = extensions;
   }
   if (table["append-system-prompt-file"] !== undefined) {
-    result["append-system-prompt-file"] = expectString(
-      table["append-system-prompt-file"],
-      "agent.append-system-prompt-file",
+    // Unlike `extensions`, a path string has no natural "this means
+    // nothing" spelling — any explicit value here is a real, intended
+    // request that would silently go nowhere, so it is always rejected.
+    throw new ConfigParseError(
       sourceLabel,
+      `field 'agent.append-system-prompt-file' is not implemented yet — corb never forwards it to 'pi', so setting it would silently have no effect`,
+      "agent.append-system-prompt-file",
     );
   }
   return result;
@@ -530,7 +632,15 @@ export function parseConfigLayer(toml: string, sourceLabel: string): ConfigLayer
 
   const layer: ConfigLayer = {};
   if (table.version !== undefined) {
-    layer.version = expectNumber(table.version, "version", sourceLabel);
+    const version = expectNumber(table.version, "version", sourceLabel);
+    if (version !== CURRENT_CONFIG_VERSION) {
+      throw new ConfigParseError(
+        sourceLabel,
+        `field 'version' declares ${version}, but this corb only understands version ${CURRENT_CONFIG_VERSION}`,
+        "version",
+      );
+    }
+    layer.version = version;
   }
   if (table.name !== undefined) {
     layer.name = expectString(table.name, "name", sourceLabel);

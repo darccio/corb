@@ -65,6 +65,7 @@ import {
   type TrustedWorkspaceRecord,
 } from "./trust.ts";
 import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath } from "./paths.ts";
+import { writeFileSecure } from "../util/secure-write.ts";
 
 /** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
 export class WorkspaceDirectoryError extends Error {
@@ -76,18 +77,25 @@ export class WorkspaceDirectoryError extends Error {
 
 /**
  * Thrown when a `[[dir]]`/`--dir` host path is, or overlaps, one of Corb's
- * own config/state directories. Enforces `docs/adr/0006`'s stated invariant
- * ("workspace files live... entirely outside any directory a workspace
- * mounts") — nothing checked this before: a mount that contained
- * `~/.config/corb` handed a hostile guest read-write access to
- * `config.toml`/`trusted.json`, letting it rewrite the config and pre-accept
- * a matching trust record (`hashEffectiveConfig` is unkeyed, so the guest
- * can reproduce it) for a future, wider-than-intended run.
+ * own config/state directories, or an explicitly-configured `audit.path`.
+ * Enforces `docs/adr/0006`'s stated invariant ("workspace files live...
+ * entirely outside any directory a workspace mounts") — nothing checked this
+ * before: a mount that contained `~/.config/corb` handed a hostile guest
+ * read-write access to `config.toml`/`trusted.json`, letting it rewrite the
+ * config and pre-accept a matching trust record (`hashEffectiveConfig` is
+ * unkeyed, so the guest can reproduce it) for a future, wider-than-intended
+ * run. The same reasoning applies to an `[audit] path = "..."` that lands
+ * inside a mount: the guest could truncate or rewrite the one record of its
+ * own denials.
  */
 export class ForbiddenMountError extends Error {
-  constructor(hostPath: string, corbDir: string, corbDirKind: "config" | "state") {
+  constructor(hostPath: string, corbDir: string, corbDirKind: "config" | "state" | "audit") {
+    // `audit.path` names a file, not a directory — "overlaps Corb's own
+    // audit directory" would read oddly, so this case gets its own noun
+    // instead of reusing the `${corbDirKind} directory` template.
+    const noun = corbDirKind === "audit" ? "audit log file" : `${corbDirKind} directory`;
     super(
-      `corb config: mount host path '${hostPath}' overlaps Corb's own ${corbDirKind} directory '${corbDir}' — refusing to mount it (see docs/adr/0006-workspace-config-outside-every-mount.md)`,
+      `corb config: mount host path '${hostPath}' overlaps Corb's own ${noun} '${corbDir}' — refusing to mount it (see docs/adr/0006-workspace-config-outside-every-mount.md)`,
     );
     this.name = "ForbiddenMountError";
   }
@@ -189,8 +197,8 @@ function isSameOrDescendant(base: string, target: string): boolean {
 }
 
 /**
- * Refuses any `dir.host` that is, or overlaps, `configDir` or
- * `corbStateDir()` — see `ForbiddenMountError`. Checked against
+ * Refuses any `dir.host` that is, or overlaps, `configDir`, `corbStateDir()`,
+ * or (when given) `auditPath` — see `ForbiddenMountError`. Checked against
  * `fullConfig.dir`, so it covers both `config.toml` `[[dir]]` entries and
  * `--dir` CLI flags (`fullConfig` is `persistentConfig` merged with
  * `cliLayer`, and `mergeDirEntry`/`mergeDirList` fold CLI overrides into the
@@ -200,6 +208,13 @@ function isSameOrDescendant(base: string, target: string): boolean {
  * `src/vm/session.ts`'s `create: true` `mkdir` for a dir that doesn't exist
  * yet.
  *
+ * `auditPath` should be `fullConfig.audit?.path` — pass `undefined` (the
+ * default case) when the caller has no explicit `[audit] path` set. The
+ * default (`defaultAuditPath()`, unset here) already lives inside
+ * `corbStateDir()`, itself always forbidden, so it needs no separate check;
+ * only an *explicit* override needs one, since that's the only way an audit
+ * path could land inside a workspace's own mounted tree instead.
+ *
  * Both overlap directions are checked: a mount that *contains* a corb
  * directory (e.g. `corb run ~`, which contains `~/.config/corb`) hands the
  * guest read-write access to `config.toml`/`trusted.json`/`audit.jsonl`; a
@@ -208,11 +223,14 @@ function isSameOrDescendant(base: string, target: string): boolean {
  * directly. Both paths are resolved through `realpathOrResolve` first, so a
  * symlink pointing at either directory is caught, not just a lexical match.
  */
-function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: string): void {
-  const forbidden: Array<{ resolved: string; label: string; kind: "config" | "state" }> = [
+function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: string, auditPath?: string): void {
+  const forbidden: Array<{ resolved: string; label: string; kind: "config" | "state" | "audit" }> = [
     { resolved: realpathOrResolve(configDir), label: configDir, kind: "config" },
     { resolved: realpathOrResolve(corbStateDir()), label: corbStateDir(), kind: "state" },
   ];
+  if (auditPath !== undefined) {
+    forbidden.push({ resolved: realpathOrResolve(auditPath), label: auditPath, kind: "audit" });
+  }
   for (const entry of dirs) {
     if (entry.host === undefined) {
       continue;
@@ -352,7 +370,7 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
   const trustEvaluation = evaluateTrust(priorRecord?.acceptedConfig, persistentConfig);
 
   const fullConfig = mergeConfigLayers([persistentConfig, cliLayer]);
-  assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir);
+  assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir, fullConfig.audit?.path);
 
   return { dir: resolvedDir, persistentConfig, fullConfig, trustEvaluation, trustKey, priorRecord };
 }
@@ -366,6 +384,13 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
  * the current store first (reusing `readTrustStore`'s existing logic) so a
  * corrupted `trusted.json` fails loudly here too, rather than being silently
  * clobbered.
+ *
+ * The write itself goes through `src/util/secure-write.ts`'s
+ * `writeFileSecure`: atomic (temp file + rename, so a crash or `SIGKILL`
+ * mid-write can never leave a torn `trusted.json` for the next
+ * `readTrustStore` call to trip over) and permission-hardened (0600 on the
+ * file, 0700 on the config directory if this call is the one that creates
+ * it).
  */
 export function acceptWorkspace(
   trustKey: string,
@@ -376,6 +401,5 @@ export function acceptWorkspace(
   const configDir = opts.configDir ?? corbConfigDir();
   const trustStore = readTrustStore(configDir);
   const updated = recordAcceptance(trustStore, trustKey, persistentConfig, acceptedAt);
-  fs.mkdirSync(configDir, { recursive: true });
-  fs.writeFileSync(trustStorePath(configDir), JSON.stringify(updated, null, 2));
+  writeFileSecure(trustStorePath(configDir), JSON.stringify(updated, null, 2));
 }

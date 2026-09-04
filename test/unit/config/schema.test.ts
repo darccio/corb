@@ -22,7 +22,6 @@ limits = { memory-max = "6G", pids-max = 1024, cpu-quota = "400%" }
 provider = "anthropic"
 model    = "claude-opus-4-5"
 extensions = []
-append-system-prompt-file = "~/.config/corb/APPEND_SYSTEM.md"
 
 [secrets.ANTHROPIC_API_KEY]
 hosts = ["api.anthropic.com"]
@@ -110,7 +109,6 @@ describe("config/schema", () => {
         provider: "anthropic",
         model: "claude-opus-4-5",
         extensions: [],
-        "append-system-prompt-file": "~/.config/corb/APPEND_SYSTEM.md",
       },
       secrets: {
         ANTHROPIC_API_KEY: { hosts: ["api.anthropic.com"] },
@@ -415,6 +413,92 @@ max-session = "4h"
       const layer = parseConfigLayer(toml, "config.toml");
       expect(layer.vm).toEqual({ memory: "1024", "max-session": "4h" });
     });
+
+    // vm.memory and vm.limits.memory-max used to share one case-insensitive,
+    // optional-suffix regex even though their consumers have incompatible
+    // unit semantics: a bare number is megabytes for QEMU's `-m` (vm.memory)
+    // but bytes for systemd's `MemoryMax=` (vm.limits.memory-max), and only
+    // systemd's grammar is documented as uppercase-only. The tests below
+    // pin the two fields' now-separate, consumer-accurate formats.
+    describe("vm.memory / vm.limits.memory-max no longer share one format", () => {
+      it("vm.memory still accepts a bare number (QEMU's own bare-megabytes convention)", () => {
+        const layer = parseConfigLayer(`[vm]\nmemory = "4096"`, "config.toml");
+        expect(layer.vm?.memory).toBe("4096");
+      });
+
+      it("vm.memory still accepts an uppercase M or G suffix", () => {
+        const layer = parseConfigLayer(`[vm]\nmemory = "4G"`, "config.toml");
+        expect(layer.vm?.memory).toBe("4G");
+      });
+
+      it("vm.memory now rejects a K or T suffix (QEMU's -m man page only documents M/G)", () => {
+        const errK = expectConfigParseError(() => parseConfigLayer(`[vm]\nmemory = "4096K"`, "config.toml"));
+        expect(errK.message).toContain("field 'vm.memory' has invalid format '4096K'");
+        const errT = expectConfigParseError(() => parseConfigLayer(`[vm]\nmemory = "1T"`, "config.toml"));
+        expect(errT.message).toContain("field 'vm.memory' has invalid format '1T'");
+      });
+
+      it("vm.limits.memory-max now rejects a bare number -- regression test for the memory/memory-max unit-confusion footgun", () => {
+        const err = expectConfigParseError(() =>
+          parseConfigLayer(`[vm]\nlimits = { memory-max = "6144" }`, "config.toml"),
+        );
+        expect(err.message).toContain("field 'vm.limits.memory-max' has invalid format '6144'");
+      });
+
+      it("vm.limits.memory-max still rejects a lowercase suffix (systemd's grammar is uppercase-only)", () => {
+        const err = expectConfigParseError(() =>
+          parseConfigLayer(`[vm]\nlimits = { memory-max = "6g" }`, "config.toml"),
+        );
+        expect(err.message).toContain("field 'vm.limits.memory-max' has invalid format '6g'");
+      });
+
+      it("vm.limits.memory-max accepts a valid uppercase-suffixed value for each of K, M, G, T", () => {
+        for (const value of ["6144K", "6M", "6G", "2T"]) {
+          const layer = parseConfigLayer(`[vm]\nlimits = { memory-max = "${value}" }`, "config.toml");
+          expect(layer.vm?.limits?.["memory-max"]).toBe(value);
+        }
+      });
+    });
+  });
+
+  // D1: `vm.max-session` fed straight into `setTimeout` (via `src/vm/
+  // watchdog.ts`) with no upper bound. Node's `setTimeout` delay is a signed
+  // 32-bit integer, so a value past `2**31 - 1` ms (~24.855 days) doesn't
+  // error there -- it silently clamps to a ~1ms timer and fires almost
+  // immediately instead of after the configured delay. These tests are the
+  // *primary* defense for that finding: `corb.toml` must fail to parse
+  // outright for an out-of-range `max-session`, so `corb run` errors clearly
+  // and immediately instead of silently mis-timing a session three layers
+  // downstream. (The corresponding unit-level bound check lives in
+  // `test/unit/util/duration.test.ts`, on `parseDuration` itself.)
+  describe("vm.max-session overflow guard (D1)", () => {
+    it("accepts the README's own example value ('4h')", () => {
+      const layer = parseConfigLayer(`[vm]\nmax-session = "4h"`, "config.toml");
+      expect(layer.vm?.["max-session"]).toBe("4h");
+    });
+
+    it("accepts another safely-small value ('24d', just under the ~24.855-day bound)", () => {
+      const layer = parseConfigLayer(`[vm]\nmax-session = "24d"`, "config.toml");
+      expect(layer.vm?.["max-session"]).toBe("24d");
+    });
+
+    it("rejects '25d' with a ConfigParseError naming the field -- regression test for the finding", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[vm]\nmax-session = "25d"`, "config.toml"));
+      expect(err.message).toContain("vm.max-session");
+      expect(err.location).toBe("vm.max-session");
+    });
+
+    it("rejects '600h' the same way -- the bound applies regardless of which unit produced the overflow", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[vm]\nmax-session = "600h"`, "config.toml"));
+      expect(err.message).toContain("vm.max-session");
+    });
+
+    it("overflow error states the actual reason (setTimeout) and the precise bound, distinct from a plain invalid-format error", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[vm]\nmax-session = "25d"`, "config.toml"));
+      expect(err.message).toContain("setTimeout");
+      expect(err.message).toContain("2147483647");
+      expect(err.message).not.toContain("invalid format");
+    });
   });
 
   describe("type errors", () => {
@@ -440,6 +524,58 @@ max-session = "4h"
         parseConfigLayer(`[agent]\nextensions = [1, 2]`, "config.toml"),
       );
       expect(err.message).toContain("field 'agent.extensions[0]' must be a string, got number");
+    });
+  });
+
+  // E2: `version` used to accept any number with zero semantic validation —
+  // parsed, merged, and shown by `corb explain` as if it meant something,
+  // but never actually compared against anything corb itself understands.
+  // It now has a real (if trivial) semantics: it must equal the one schema
+  // generation this build understands.
+  describe("version (E2: validated against the schema generation corb understands)", () => {
+    it("version = 1 parses fine (already covered by the full-document test above; confirmed again here in isolation)", () => {
+      const layer = parseConfigLayer(`version = 1`, "config.toml");
+      expect(layer.version).toBe(1);
+    });
+
+    it("an omitted version parses fine (already covered by the partiality test above)", () => {
+      const layer = parseConfigLayer(`name = "corb-dev"`, "config.toml");
+      expect(layer.version).toBeUndefined();
+    });
+
+    it("version = 2 throws ConfigParseError naming both the declared and expected version", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`version = 2`, "config.toml"));
+      expect(err.message).toContain("field 'version'");
+      expect(err.message).toContain("declares 2");
+      expect(err.message).toContain("only understands version 1");
+      expect(err.location).toBe("version");
+    });
+  });
+
+  // E2: `agent.extensions`/`agent.append-system-prompt-file` used to be
+  // parsed, merged across layers, and shown by `corb explain` with zero
+  // downstream effect — a fully-corroborating UI for a no-op, since nothing
+  // forwards either to `pi` (README.md). Rather than wire up a real feature
+  // (out of scope for this fix), both are now rejected outright at parse
+  // time so the no-op can no longer be silently configured.
+  describe("agent.extensions / agent.append-system-prompt-file (E2: rejected, not silently accepted)", () => {
+    it("agent.append-system-prompt-file throws ConfigParseError for any value", () => {
+      const err = expectConfigParseError(() =>
+        parseConfigLayer(`[agent]\nappend-system-prompt-file = "~/.config/corb/APPEND_SYSTEM.md"`, "config.toml"),
+      );
+      expect(err.message).toContain("field 'agent.append-system-prompt-file'");
+      expect(err.location).toBe("agent.append-system-prompt-file");
+    });
+
+    it("agent.extensions = [\"foo\"] (non-empty) throws ConfigParseError", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[agent]\nextensions = ["foo"]`, "config.toml"));
+      expect(err.message).toContain("field 'agent.extensions'");
+      expect(err.location).toBe("agent.extensions");
+    });
+
+    it("agent.extensions = [] (empty) still parses fine -- not a lie, since corb loading zero extensions is accurate", () => {
+      const layer = parseConfigLayer(`[agent]\nextensions = []`, "config.toml");
+      expect(layer.agent?.extensions).toEqual([]);
     });
   });
 

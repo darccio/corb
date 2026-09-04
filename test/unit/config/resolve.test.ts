@@ -292,6 +292,111 @@ describe("config/resolve: resolveWorkspace", () => {
       expect(() => resolveWorkspace(workDir, {}, { configDir })).toThrow(ForbiddenMountError);
     });
 
+    it("an explicit audit.path set to a location inside a --dir mount's host is rejected", () => {
+      const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-mount-"));
+      try {
+        const auditPath = path.join(mountDir, "audit.jsonl");
+        expect(() =>
+          resolveWorkspace(
+            workDir,
+            { dir: [{ name: "mount", host: mountDir, mode: "rw" }], audit: { path: auditPath } },
+            { configDir },
+          ),
+        ).toThrow(ForbiddenMountError);
+      } finally {
+        fs.rmSync(mountDir, { recursive: true, force: true });
+      }
+    });
+
+    it("a config.toml [[dir]] entry plus config.toml [audit] path (not just --dir/cliLayer) inside it is also rejected", () => {
+      const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-mount-"));
+      try {
+        const auditPath = path.join(mountDir, "audit.jsonl");
+        fs.writeFileSync(
+          path.join(configDir, "config.toml"),
+          [
+            "[[dir]]",
+            'name = "mount"',
+            `host = ${JSON.stringify(mountDir)}`,
+            'mode = "rw"',
+            "",
+            "[audit]",
+            `path = ${JSON.stringify(auditPath)}`,
+          ].join("\n"),
+        );
+        expect(() => resolveWorkspace(workDir, {}, { configDir })).toThrow(ForbiddenMountError);
+      } finally {
+        fs.rmSync(mountDir, { recursive: true, force: true });
+      }
+    });
+
+    it("an audit.path that is itself a symlink whose target lands inside a mount is rejected (realpath, not lexical)", () => {
+      const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-mount-"));
+      const linkParent = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-auditlink-"));
+      try {
+        const target = path.join(mountDir, "audit.jsonl");
+        fs.writeFileSync(target, "");
+        const auditLink = path.join(linkParent, "audit-alias.jsonl");
+        fs.symlinkSync(target, auditLink);
+
+        expect(() =>
+          resolveWorkspace(
+            workDir,
+            { dir: [{ name: "mount", host: mountDir, mode: "rw" }], audit: { path: auditLink } },
+            { configDir },
+          ),
+        ).toThrow(ForbiddenMountError);
+      } finally {
+        fs.rmSync(mountDir, { recursive: true, force: true });
+        fs.rmSync(linkParent, { recursive: true, force: true });
+      }
+    });
+
+    it("an audit.path with a symlinked ancestor directory that resolves inside a mount is rejected", () => {
+      const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-mount-"));
+      const linkParent = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-auditlink-"));
+      try {
+        const realSubdir = path.join(mountDir, "logs");
+        fs.mkdirSync(realSubdir);
+        const ancestorAlias = path.join(linkParent, "logs-alias");
+        fs.symlinkSync(realSubdir, ancestorAlias);
+        // The leaf file itself deliberately does not exist yet, matching the
+        // real first-run case: `ensureOpen()` (src/policy/audit.ts) creates
+        // it lazily on the first `record()` call, well after `resolveWorkspace`
+        // has already run this check.
+        const auditPath = path.join(ancestorAlias, "audit.jsonl");
+
+        expect(() =>
+          resolveWorkspace(
+            workDir,
+            { dir: [{ name: "mount", host: mountDir, mode: "rw" }], audit: { path: auditPath } },
+            { configDir },
+          ),
+        ).toThrow(ForbiddenMountError);
+      } finally {
+        fs.rmSync(mountDir, { recursive: true, force: true });
+        fs.rmSync(linkParent, { recursive: true, force: true });
+      }
+    });
+
+    it("an explicit audit.path outside every mount does not throw", () => {
+      const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-mount-"));
+      const auditParent = fs.mkdtempSync(path.join(os.tmpdir(), "corb-resolve-auditdir-"));
+      try {
+        const auditPath = path.join(auditParent, "audit.jsonl");
+        expect(() =>
+          resolveWorkspace(
+            workDir,
+            { dir: [{ name: "mount", host: mountDir, mode: "rw" }], audit: { path: auditPath } },
+            { configDir },
+          ),
+        ).not.toThrow();
+      } finally {
+        fs.rmSync(mountDir, { recursive: true, force: true });
+        fs.rmSync(auditParent, { recursive: true, force: true });
+      }
+    });
+
     it("a sibling path merely sharing a name prefix with the config dir is accepted", () => {
       const sibling = `${configDir}-sibling`;
       fs.mkdirSync(sibling);
@@ -329,6 +434,14 @@ describe("config/resolve: resolveWorkspace", () => {
       expect(fs.existsSync(freshConfigDir)).toBe(false);
       acceptWorkspace(resolved.trustKey, resolved.persistentConfig, 999, { configDir: freshConfigDir });
       expect(fs.existsSync(path.join(freshConfigDir, "trusted.json"))).toBe(true);
+    });
+
+    it("writes trusted.json with 0600 permissions (src/util/secure-write.ts)", () => {
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      acceptWorkspace(resolved.trustKey, resolved.persistentConfig, 12345, { configDir });
+
+      const mode = fs.statSync(path.join(configDir, "trusted.json")).mode & 0o777;
+      expect(mode).toBe(0o600);
     });
   });
 });

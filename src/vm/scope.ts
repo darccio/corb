@@ -17,7 +17,8 @@
 // `vm.limits` config strings unchanged (`man systemd.resource-control`
 // confirms `MemoryMax=` accepts a `K`/`M`/`G`/`T`-suffixed size and
 // `CPUQuota=` a `%`-suffixed percentage — the exact formats
-// `src/config/schema.ts`'s `MEMORY_SIZE_RE`/`PERCENT_RE` already validate).
+// `src/config/schema.ts`'s `SYSTEMD_MEMORY_SIZE_RE`/`PERCENT_RE` already
+// validate).
 //
 // Two independently unit-testable pieces, mirroring `src/vm/shutdown.ts`'s
 // injectable-dependency convention (`ProcessLike`/`ExitFn`):

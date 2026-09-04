@@ -458,6 +458,25 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
 
   /**
+   * The result of a successful `resolveForRecheck`/`resolveForRecheckSync`
+   * call: both the rule-relative path (for the second policy decision
+   * against the resolved target) and the resolved *absolute* VFS path. The
+   * latter exists so `decide`/`decideSync` can hand it back to their caller
+   * for actual use against `backendAny` — see `docs/adr/0011-close-open-race-with-resolved-path.md`
+   * for why routing the already-resolved path into the real backend call
+   * (instead of re-resolving it from scratch after the decision is made)
+   * closes a real TOCTOU window, and exactly which operations are and are
+   * not safe to redirect this way. `absPath` follows the same `createPath`
+   * shape as `rulePath` below: the fully-resolved path for a non-create-path
+   * recheck, or a resolved parent with the literal leaf reattached for a
+   * create-path one.
+   */
+  interface RecheckResult {
+    readonly rulePath: string;
+    readonly absPath: string;
+  }
+
+  /**
    * Resolves the rule-relative path to re-check the same operation against,
    * per `docs/design.md` §3's "Check the resolved path, not just the
    * requested one." `createPath` selects which of the two documented shapes
@@ -476,8 +495,17 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
    * Any *other* `realpath` error fails closed by throwing directly (not
    * returning), per `docs/design.md` §3: "A resolver that cannot answer is
    * not evidence that the path is safe."
+   *
+   * Also returns the resolved *absolute* path alongside the rule-relative
+   * one (see `RecheckResult`) — this used to be computed and discarded here,
+   * which was the root cause of the TOCTOU `docs/adr/0011-close-open-race-with-resolved-path.md`
+   * closes: every call site resolved a path purely to *decide*, then issued
+   * the real backend operation against the original, unresolved path anyway,
+   * leaving a window between this `realpath` call and the backend's own call
+   * during which a concurrent operation could swap a symlink along the
+   * requested (but not the already-resolved) path.
    */
-  async function resolveForRecheck(normalizedAbs: string, createPath: boolean, op: FsOpKind, syscall: string): Promise<string | undefined> {
+  async function resolveForRecheck(normalizedAbs: string, createPath: boolean, op: FsOpKind, syscall: string): Promise<RecheckResult | undefined> {
     const target = createPath ? splitAbs(normalizedAbs).parent : normalizedAbs;
     let resolved: string;
     try {
@@ -492,13 +520,14 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const resolvedNormalized = normalizeGuestPath(resolved);
     if (createPath) {
       const { base } = splitAbs(normalizedAbs);
-      return toRulePath(joinAbs(resolvedNormalized, base));
+      const absPath = joinAbs(resolvedNormalized, base);
+      return { rulePath: toRulePath(absPath), absPath };
     }
-    return toRulePath(resolvedNormalized);
+    return { rulePath: toRulePath(resolvedNormalized), absPath: resolvedNormalized };
   }
 
   /** Synchronous twin of `resolveForRecheck`, using `realpathSync`. */
-  function resolveForRecheckSync(normalizedAbs: string, createPath: boolean, op: FsOpKind, syscall: string): string | undefined {
+  function resolveForRecheckSync(normalizedAbs: string, createPath: boolean, op: FsOpKind, syscall: string): RecheckResult | undefined {
     const target = createPath ? splitAbs(normalizedAbs).parent : normalizedAbs;
     let resolved: string;
     try {
@@ -513,71 +542,102 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const resolvedNormalized = normalizeGuestPath(resolved);
     if (createPath) {
       const { base } = splitAbs(normalizedAbs);
-      return toRulePath(joinAbs(resolvedNormalized, base));
+      const absPath = joinAbs(resolvedNormalized, base);
+      return { rulePath: toRulePath(absPath), absPath };
     }
-    return toRulePath(resolvedNormalized);
+    return { rulePath: toRulePath(resolvedNormalized), absPath: resolvedNormalized };
+  }
+
+  /**
+   * `decide`/`decideSync`'s return value: the plain allow/shadowed mode
+   * every call site already branched on, plus the resolved absolute path
+   * that made the decision (`docs/adr/0011-close-open-race-with-resolved-path.md`).
+   *
+   * `resolvedAbs` is `resolveForRecheck`'s `absPath` when a recheck actually
+   * ran and found something to resolve; it falls back to the original,
+   * unresolved `normalizedAbs` unchanged when `resolveForRecheck` returned
+   * `undefined` (e.g. the target — or its parent, for a create-path
+   * operation — doesn't exist yet, so there is nothing to resolve and the
+   * original path is already the correct one to hand the backend).
+   *
+   * Safe to pass to `backendAny.<method>` only for operations whose own
+   * semantics already follow a trailing symlink — see
+   * `docs/adr/0011-close-open-race-with-resolved-path.md` for the full
+   * classification. Never use this for `lstat`/`unlink`/`rmdir`/`readlink`,
+   * or for rename's/link's *existing*-endpoint argument — each of those must
+   * keep acting on the literally-named entry, not a resolved target.
+   */
+  interface DecideResult {
+    readonly mode: Mode;
+    readonly resolvedAbs: string;
   }
 
   /**
    * The single entry point every gated operation funnels through: decides
    * against the requested path, then (if not already denied) against the
    * resolved path too, auditing and throwing on the first denial found —
-   * requested path first, resolved path second. Returns `"allow"` or
-   * `"shadowed"` — a plain-allow caller proceeds against `backend`, a
-   * `"shadowed"` caller proceeds against the private shadow store instead.
+   * requested path first, resolved path second. Returns a `DecideResult`: a
+   * plain-allow caller proceeds against `backend` (using `resolvedAbs`
+   * instead of the original path where `docs/adr/0011-close-open-race-with-resolved-path.md`'s
+   * classification says that's safe), a `"shadowed"` caller proceeds against
+   * the private shadow store instead (always keyed on the original,
+   * unresolved path — see that ADR for why the shadow store never needs
+   * `resolvedAbs`).
    *
    * `createPath` must reflect whether the *specific* path passed here is
    * expected to already exist (`false`) or may not (`true`) — see
    * `resolveForRecheck`'s own doc comment. Each call site documents its own
    * choice inline.
    */
-  async function decide(op: FsOpKind, syscall: string, normalizedAbs: string, createPath: boolean): Promise<Mode> {
+  async function decide(op: FsOpKind, syscall: string, normalizedAbs: string, createPath: boolean): Promise<DecideResult> {
     const rulePath = toRulePath(normalizedAbs);
     const primary = decideFsAccessForPath(rules, rulePath, op);
     if (primary.outcome.kind === "deny") {
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
-    const resolvedRulePath = await resolveForRecheck(normalizedAbs, createPath, op, syscall);
-    if (resolvedRulePath !== undefined) {
-      const resolved = decideFsAccessForPath(rules, resolvedRulePath, op);
+    const recheck = await resolveForRecheck(normalizedAbs, createPath, op, syscall);
+    const resolvedAbs = recheck?.absPath ?? normalizedAbs;
+    if (recheck !== undefined) {
+      const resolved = decideFsAccessForPath(rules, recheck.rulePath, op);
       if (resolved.outcome.kind === "deny") {
-        auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, `${resolved.rule?.reason ?? "denied by policy"} (via resolved path '${resolvedRulePath}')`);
+        auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, `${resolved.rule?.reason ?? "denied by policy"} (via resolved path '${recheck.rulePath}')`);
       }
       if (resolved.outcome.kind === "shadowed") {
         onDeny({ path: rulePath, op, outcome: resolved.outcome, rule: resolved.rule, reason: resolved.rule?.reason ?? "shadowed" });
-        return "shadowed";
+        return { mode: "shadowed", resolvedAbs };
       }
     }
     if (primary.outcome.kind === "shadowed") {
       onDeny({ path: rulePath, op, outcome: primary.outcome, rule: primary.rule, reason: primary.rule?.reason ?? "shadowed" });
-      return "shadowed";
+      return { mode: "shadowed", resolvedAbs };
     }
-    return "allow";
+    return { mode: "allow", resolvedAbs };
   }
 
   /** Synchronous twin of `decide`. */
-  function decideSync(op: FsOpKind, syscall: string, normalizedAbs: string, createPath: boolean): Mode {
+  function decideSync(op: FsOpKind, syscall: string, normalizedAbs: string, createPath: boolean): DecideResult {
     const rulePath = toRulePath(normalizedAbs);
     const primary = decideFsAccessForPath(rules, rulePath, op);
     if (primary.outcome.kind === "deny") {
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
-    const resolvedRulePath = resolveForRecheckSync(normalizedAbs, createPath, op, syscall);
-    if (resolvedRulePath !== undefined) {
-      const resolved = decideFsAccessForPath(rules, resolvedRulePath, op);
+    const recheck = resolveForRecheckSync(normalizedAbs, createPath, op, syscall);
+    const resolvedAbs = recheck?.absPath ?? normalizedAbs;
+    if (recheck !== undefined) {
+      const resolved = decideFsAccessForPath(rules, recheck.rulePath, op);
       if (resolved.outcome.kind === "deny") {
-        auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, `${resolved.rule?.reason ?? "denied by policy"} (via resolved path '${resolvedRulePath}')`);
+        auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, `${resolved.rule?.reason ?? "denied by policy"} (via resolved path '${recheck.rulePath}')`);
       }
       if (resolved.outcome.kind === "shadowed") {
         onDeny({ path: rulePath, op, outcome: resolved.outcome, rule: resolved.rule, reason: resolved.rule?.reason ?? "shadowed" });
-        return "shadowed";
+        return { mode: "shadowed", resolvedAbs };
       }
     }
     if (primary.outcome.kind === "shadowed") {
       onDeny({ path: rulePath, op, outcome: primary.outcome, rule: primary.rule, reason: primary.rule?.reason ?? "shadowed" });
-      return "shadowed";
+      return { mode: "shadowed", resolvedAbs };
     }
-    return "allow";
+    return { mode: "allow", resolvedAbs };
   }
 
   function denyUnknownOperation(propertyName: string): never {
@@ -760,10 +820,14 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     // — see the module comment on `isWriteFlag` vs. this create-path check.
     const createPath = /[wa]/.test(flags);
     const decision = await decide(op, "open", normalized, createPath);
-    if (decision === "shadowed") {
+    if (decision.mode === "shadowed") {
       return (shadowAny.open as AnyFn)(normalized, flags, mode);
     }
-    return (backendAny.open as AnyFn)(normalized, flags, mode);
+    // `open` (read- or write/create-shaped) already follows a trailing
+    // symlink by its own real-fs semantics, so routing the already-resolved
+    // path here only narrows the TOCTOU window — see
+    // docs/adr/0011-close-open-race-with-resolved-path.md.
+    return (backendAny.open as AnyFn)(decision.resolvedAbs, flags, mode);
   }
 
   function openSync(rawPath: string, flags: string, mode?: number): unknown {
@@ -771,35 +835,60 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const op: FsOpKind = isWriteFlag(flags) ? "write" : "read";
     const createPath = /[wa]/.test(flags);
     const decision = decideSync(op, "open", normalized, createPath);
-    if (decision === "shadowed") {
+    if (decision.mode === "shadowed") {
       return (shadowAny.openSync as AnyFn)(normalized, flags, mode);
     }
-    return (backendAny.openSync as AnyFn)(normalized, flags, mode);
+    return (backendAny.openSync as AnyFn)(decision.resolvedAbs, flags, mode);
   }
 
-  /** `stat`/`lstat` never shadow (`TABLE.stat` is `ALLOW` in every mode including `shadow-write`) — always routes to `backend` once `decide` doesn't throw. Kept generic (branches on `decision` anyway) so a future table change can't silently start leaking to the wrong backend. */
+  /**
+   * `stat`/`lstat` never shadow (`TABLE.stat` is `ALLOW` in every mode
+   * including `shadow-write`) — always routes to `backend` once `decide`
+   * doesn't throw. Kept generic (branches on `decision` anyway) so a future
+   * table change can't silently start leaking to the wrong backend.
+   *
+   * `stat` and `lstat` diverge on which path reaches the backend, though:
+   * `stat` already follows a trailing symlink by its own semantics, so it is
+   * safe (and TOCTOU-narrowing) to redirect to the resolved path; `lstat`
+   * exists specifically to report on the *named* entry without following it,
+   * so it must never receive a resolved path — see
+   * docs/adr/0011-close-open-race-with-resolved-path.md.
+   */
   function makeStatLike(methodName: "stat" | "lstat") {
     return async function statLike(rawPath: string, options?: object): Promise<unknown> {
       const normalized = normalizeGuestPath(rawPath);
       const decision = await decide("stat", methodName, normalized, false);
-      const target = decision === "shadowed" ? shadowAny : backendAny;
-      return (target[methodName] as AnyFn)(normalized, options);
+      if (decision.mode === "shadowed") {
+        return (shadowAny[methodName] as AnyFn)(normalized, options);
+      }
+      const pathArg = methodName === "stat" ? decision.resolvedAbs : normalized;
+      return (backendAny[methodName] as AnyFn)(pathArg, options);
     };
   }
   function makeStatLikeSync(methodName: "statSync" | "lstatSync") {
     return function statLikeSync(rawPath: string, options?: object): unknown {
       const normalized = normalizeGuestPath(rawPath);
       const decision = decideSync("stat", methodName, normalized, false);
-      const target = decision === "shadowed" ? shadowAny : backendAny;
-      return (target[methodName] as AnyFn)(normalized, options);
+      if (decision.mode === "shadowed") {
+        return (shadowAny[methodName] as AnyFn)(normalized, options);
+      }
+      const pathArg = methodName === "statSync" ? decision.resolvedAbs : normalized;
+      return (backendAny[methodName] as AnyFn)(pathArg, options);
     };
   }
 
   async function readdir(rawPath: string, options?: object): Promise<unknown> {
     const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("read", "readdir", normalized, false);
-    const target = decision === "shadowed" ? shadowAny : backendAny;
-    const entries = (await (target.readdir as AnyFn)(normalized, options)) as Array<string | { name: string }>;
+    // Only the directory argument passed to the backend's own `readdir` is
+    // redirected to the resolved path (narrows the TOCTOU on which real
+    // directory gets listed) — `dirRulePath` below stays keyed on the
+    // *requested* directory, per docs/adr/0011-close-open-race-with-resolved-path.md:
+    // which rule-path basis governs child-entry visibility is a separate,
+    // unrelated design question this fix does not touch.
+    const entries = (
+      decision.mode === "shadowed" ? await (shadowAny.readdir as AnyFn)(normalized, options) : await (backendAny.readdir as AnyFn)(decision.resolvedAbs, options)
+    ) as Array<string | { name: string }>;
     const dirRulePath = toRulePath(normalized);
     return entries.filter((entry) => {
       const name = typeof entry === "string" ? entry : entry.name;
@@ -810,8 +899,9 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   function readdirSync(rawPath: string, options?: object): unknown {
     const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("read", "readdirSync", normalized, false);
-    const target = decision === "shadowed" ? shadowAny : backendAny;
-    const entries = (target.readdirSync as AnyFn)(normalized, options) as Array<string | { name: string }>;
+    const entries = (decision.mode === "shadowed" ? (shadowAny.readdirSync as AnyFn)(normalized, options) : (backendAny.readdirSync as AnyFn)(decision.resolvedAbs, options)) as Array<
+      string | { name: string }
+    >;
     const dirRulePath = toRulePath(normalized);
     return entries.filter((entry) => {
       const name = typeof entry === "string" ? entry : entry.name;
@@ -823,7 +913,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     return async function mutateLike(rawPath: string, options?: object): Promise<unknown> {
       const normalized = normalizeGuestPath(rawPath);
       const decision = await decide("mutate", methodName, normalized, createPath);
-      if (decision === "shadowed") {
+      if (decision.mode === "shadowed") {
         if (methodName === "mkdir") {
           return (shadowAny.mkdir as AnyFn)(normalized, options);
         }
@@ -833,14 +923,21 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
         });
         return result;
       }
-      return (backendAny[methodName] as AnyFn)(normalized, options);
+      // `mkdir`'s parent directory was already resolved for the create-path
+      // bypass recheck; reusing it here closes the parent-swap TOCTOU window
+      // for the real directory creation. `rmdir`/`unlink` must act on the
+      // literally-named entry — POSIX never follows a trailing symlink for
+      // either — so they keep using the original, unresolved path. See
+      // docs/adr/0011-close-open-race-with-resolved-path.md.
+      const pathArg = methodName === "mkdir" ? decision.resolvedAbs : normalized;
+      return (backendAny[methodName] as AnyFn)(pathArg, options);
     };
   }
   function makeMutateLikeSync(methodName: "mkdirSync" | "rmdirSync" | "unlinkSync", createPath: boolean) {
     return function mutateLikeSync(rawPath: string, options?: object): unknown {
       const normalized = normalizeGuestPath(rawPath);
       const decision = decideSync("mutate", methodName, normalized, createPath);
-      if (decision === "shadowed") {
+      if (decision.mode === "shadowed") {
         if (methodName === "mkdirSync") {
           return (shadowAny.mkdirSync as AnyFn)(normalized, options);
         }
@@ -850,7 +947,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
         });
         return result;
       }
-      return (backendAny[methodName] as AnyFn)(normalized, options);
+      const pathArg = methodName === "mkdirSync" ? decision.resolvedAbs : normalized;
+      return (backendAny[methodName] as AnyFn)(pathArg, options);
     };
   }
 
@@ -862,30 +960,38 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     // create-path for the bypass recheck — the more conservative of the two
     // readings, since a symlinked ancestor redirecting the destination is
     // the concerning case regardless of whether the leaf itself pre-exists.
-    const oldMode = await decide("rename", "rename", oldNorm, false);
-    const newMode = await decide("rename", "rename", newNorm, true);
+    const oldDecision = await decide("rename", "rename", oldNorm, false);
+    const newDecision = await decide("rename", "rename", newNorm, true);
     if (await isDeniedDirectoryRename(oldNorm, "rename")) {
       denyDirectoryRenameSubtree(oldNorm, "rename");
     }
-    if (oldMode === "shadowed" || newMode === "shadowed") {
+    if (oldDecision.mode === "shadowed" || newDecision.mode === "shadowed") {
       return tolerateMissingShadowEntry(() => (shadowAny.rename as AnyFn)(oldNorm, newNorm));
     }
-    return (backendAny.rename as AnyFn)(oldNorm, newNorm);
+    // The source (old) endpoint stays the literally-named entry — POSIX
+    // rename() never follows a trailing symlink at either endpoint, and
+    // renaming a symlink must rename the symlink itself, not relocate its
+    // target. The *destination*'s parent was already resolved for its
+    // create-path bypass recheck (the leaf is reattached literally, same as
+    // every other create-path operation), so reusing it here closes the
+    // parent-swap TOCTOU window for the real rename call. See
+    // docs/adr/0011-close-open-race-with-resolved-path.md.
+    return (backendAny.rename as AnyFn)(oldNorm, newDecision.resolvedAbs);
   }
 
   function renameSync(rawOld: string, rawNew: string): void {
     const oldNorm = normalizeGuestPath(rawOld);
     const newNorm = normalizeGuestPath(rawNew);
-    const oldMode = decideSync("rename", "renameSync", oldNorm, false);
-    const newMode = decideSync("rename", "renameSync", newNorm, true);
+    const oldDecision = decideSync("rename", "renameSync", oldNorm, false);
+    const newDecision = decideSync("rename", "renameSync", newNorm, true);
     if (isDeniedDirectoryRenameSync(oldNorm, "renameSync")) {
       denyDirectoryRenameSubtree(oldNorm, "renameSync");
     }
-    if (oldMode === "shadowed" || newMode === "shadowed") {
+    if (oldDecision.mode === "shadowed" || newDecision.mode === "shadowed") {
       tolerateMissingShadowEntrySync(() => (shadowAny.renameSync as AnyFn)(oldNorm, newNorm));
       return;
     }
-    (backendAny.renameSync as AnyFn)(oldNorm, newNorm);
+    (backendAny.renameSync as AnyFn)(oldNorm, newDecision.resolvedAbs);
   }
 
   async function link(rawExisting: string, rawNew: string): Promise<void> {
@@ -895,36 +1001,46 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     // `docs/design.md` §3: "creating a new, unrestricted name for a
     // restricted inode is exactly the bypass to prevent" — the existing
     // path's own rule matters as much as the new path's.
-    const existingMode = await decide("link", "link", existingNorm, false);
-    const newMode = await decide("link", "link", newNorm, true);
-    if (existingMode === "shadowed" || newMode === "shadowed") {
+    const existingDecision = await decide("link", "link", existingNorm, false);
+    const newDecision = await decide("link", "link", newNorm, true);
+    if (existingDecision.mode === "shadowed" || newDecision.mode === "shadowed") {
       return linkShadowed(existingNorm, newNorm);
     }
-    return (backendAny.link as AnyFn)(existingNorm, newNorm);
+    // The existing (source) endpoint stays the literally-named entry — a
+    // hard link must alias the named entry itself, not a resolved target
+    // (linking a symlink must link the symlink, not its target). The *new*
+    // path's parent was already resolved for its create-path bypass
+    // recheck; reusing it here closes the parent-swap TOCTOU window for the
+    // real link call. See docs/adr/0011-close-open-race-with-resolved-path.md.
+    return (backendAny.link as AnyFn)(existingNorm, newDecision.resolvedAbs);
   }
 
   function linkSync(rawExisting: string, rawNew: string): void {
     const existingNorm = normalizeGuestPath(rawExisting);
     const newNorm = normalizeGuestPath(rawNew);
-    const existingMode = decideSync("link", "linkSync", existingNorm, false);
-    const newMode = decideSync("link", "linkSync", newNorm, true);
-    if (existingMode === "shadowed" || newMode === "shadowed") {
+    const existingDecision = decideSync("link", "linkSync", existingNorm, false);
+    const newDecision = decideSync("link", "linkSync", newNorm, true);
+    if (existingDecision.mode === "shadowed" || newDecision.mode === "shadowed") {
       linkShadowedSync(existingNorm, newNorm);
       return;
     }
-    (backendAny.linkSync as AnyFn)(existingNorm, newNorm);
+    (backendAny.linkSync as AnyFn)(existingNorm, newDecision.resolvedAbs);
   }
 
+  // `readlink` must read the named symlink's own target text — there is
+  // nothing to "readlink" once resolved — so it never uses `resolvedAbs`,
+  // unlike most other read-shaped operations. See
+  // docs/adr/0011-close-open-race-with-resolved-path.md.
   async function readlink(rawPath: string, options?: object): Promise<unknown> {
     const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("readlink", "readlink", normalized, false);
-    const target = decision === "shadowed" ? shadowAny : backendAny;
+    const target = decision.mode === "shadowed" ? shadowAny : backendAny;
     return (target.readlink as AnyFn)(normalized, options);
   }
   function readlinkSync(rawPath: string, options?: object): unknown {
     const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("readlink", "readlinkSync", normalized, false);
-    const target = decision === "shadowed" ? shadowAny : backendAny;
+    const target = decision.mode === "shadowed" ? shadowAny : backendAny;
     return (target.readlinkSync as AnyFn)(normalized, options);
   }
 
@@ -987,16 +1103,21 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
    */
   async function checkSymlinkTargetPolicy(normalizedSymlinkPath: string, target: string, syscall: string): Promise<void> {
     const targetAbs = resolveSymlinkTargetAbs(normalizedSymlinkPath, target);
-    const targetRulePath = await resolveForRecheck(targetAbs, false, "stat", syscall);
-    if (targetRulePath === undefined) {
+    // Only `rulePath` is consulted here — this check never calls a backend
+    // method itself, so `resolveForRecheck`'s `absPath` (used elsewhere for
+    // the TOCTOU-closing redirect, `docs/adr/0011-close-open-race-with-resolved-path.md`)
+    // is not relevant to this separate, unrelated mechanism. See this
+    // function's own doc comment above for why it exists at all.
+    const recheck = await resolveForRecheck(targetAbs, false, "stat", syscall);
+    if (recheck === undefined) {
       return;
     }
-    const targetDecision = decideFsAccessForPath(rules, targetRulePath, "stat");
+    const targetDecision = decideFsAccessForPath(rules, recheck.rulePath, "stat");
     if (targetDecision.outcome.kind === "deny") {
       auditAndThrow(
         "stat",
         syscall,
-        targetRulePath,
+        recheck.rulePath,
         targetDecision.outcome,
         targetDecision.rule,
         `${targetDecision.rule?.reason ?? "denied by policy"} (symlink target resolves into a policy-denied path)`,
@@ -1005,16 +1126,16 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   }
   function checkSymlinkTargetPolicySync(normalizedSymlinkPath: string, target: string, syscall: string): void {
     const targetAbs = resolveSymlinkTargetAbs(normalizedSymlinkPath, target);
-    const targetRulePath = resolveForRecheckSync(targetAbs, false, "stat", syscall);
-    if (targetRulePath === undefined) {
+    const recheck = resolveForRecheckSync(targetAbs, false, "stat", syscall);
+    if (recheck === undefined) {
       return;
     }
-    const targetDecision = decideFsAccessForPath(rules, targetRulePath, "stat");
+    const targetDecision = decideFsAccessForPath(rules, recheck.rulePath, "stat");
     if (targetDecision.outcome.kind === "deny") {
       auditAndThrow(
         "stat",
         syscall,
-        targetRulePath,
+        recheck.rulePath,
         targetDecision.outcome,
         targetDecision.rule,
         `${targetDecision.rule?.reason ?? "denied by policy"} (symlink target resolves into a policy-denied path)`,
@@ -1032,32 +1153,48 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("link", "symlink", normalized, true);
     await checkSymlinkTargetPolicy(normalized, target, "symlink");
-    if (decision === "shadowed") {
+    if (decision.mode === "shadowed") {
       return (shadowAny.symlink as AnyFn)(target, normalized, type);
     }
-    return (backendAny.symlink as AnyFn)(target, normalized, type);
+    // The new symlink's own parent directory was already resolved for the
+    // create-path bypass recheck (the leaf — the symlink's own literal
+    // name — is reattached unchanged); reusing it here closes the
+    // parent-swap TOCTOU window for the real symlink() creation call. See
+    // docs/adr/0011-close-open-race-with-resolved-path.md.
+    return (backendAny.symlink as AnyFn)(target, decision.resolvedAbs, type);
   }
   function symlinkSync(target: string, rawPath: string, type?: string): unknown {
     const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("link", "symlinkSync", normalized, true);
     checkSymlinkTargetPolicySync(normalized, target, "symlinkSync");
-    if (decision === "shadowed") {
+    if (decision.mode === "shadowed") {
       return (shadowAny.symlinkSync as AnyFn)(target, normalized, type);
     }
-    return (backendAny.symlinkSync as AnyFn)(target, normalized, type);
+    return (backendAny.symlinkSync as AnyFn)(target, decision.resolvedAbs, type);
   }
 
-  /** Guest-facing `realpath`/`realpathSync` — distinct from this closure's own *internal* `resolveForRecheck`/`resolveForRecheckSync` defensive helpers above, which call `backendRealpath`/`backendRealpathSync` directly (unwrapped, no policy decision) purely to detect symlink indirection for every *other* operation. This pair is the actual guest-visible operation, gated like any other: `TABLE.realpath` never shadows (canonicalizing a path's spelling discloses existence and shape, not content — see `src/vfs/policy.ts`'s own reasoning), so it always ends up delegating to `backend` once `decide` doesn't throw. */
+  /**
+   * Guest-facing `realpath`/`realpathSync` — distinct from this closure's own *internal* `resolveForRecheck`/`resolveForRecheckSync` defensive helpers above, which call `backendRealpath`/`backendRealpathSync` directly (unwrapped, no policy decision) purely to detect symlink indirection for every *other* operation. This pair is the actual guest-visible operation, gated like any other: `TABLE.realpath` never shadows (canonicalizing a path's spelling discloses existence and shape, not content — see `src/vfs/policy.ts`'s own reasoning), so it always ends up delegating to `backend` once `decide` doesn't throw.
+   *
+   * Deliberately *not* in `docs/adr/0011-close-open-race-with-resolved-path.md`'s
+   * redirect list, and left using the original, unresolved path here: this
+   * operation's entire job is asking the backend to resolve `normalized`
+   * from scratch, so handing it an already-resolved path would not close any
+   * window that matters — there is no content disclosure or mutation
+   * downstream of *which* real entry `realpath` reports on, only a
+   * canonical-spelling answer (the same low-stakes shape as `exists`, also
+   * left unredirected).
+   */
   async function realpath(rawPath: string, options?: object): Promise<unknown> {
     const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("realpath", "realpath", normalized, false);
-    const target = decision === "shadowed" ? shadowAny : backendAny;
+    const target = decision.mode === "shadowed" ? shadowAny : backendAny;
     return (target.realpath as AnyFn)(normalized, options);
   }
   function realpathSync(rawPath: string, options?: object): unknown {
     const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("realpath", "realpathSync", normalized, false);
-    const target = decision === "shadowed" ? shadowAny : backendAny;
+    const target = decision.mode === "shadowed" ? shadowAny : backendAny;
     return (target.realpathSync as AnyFn)(normalized, options);
   }
 
@@ -1068,42 +1205,54 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     // reasoning: "access is a pure permission query... the truthful answer
     // under shadow-write is allow"), so every category here only ever
     // contributes a possible deny (via `decide`'s own throw) or nothing.
+    // Every category resolves the same `normalized`/`createPath: false`
+    // input, so `resolvedAbs` is identical across iterations — the loop just
+    // needs the last one computed.
+    let resolvedAbs = normalized;
     for (const category of accessCategories(mode)) {
-      await decide(category, "access", normalized, false);
+      resolvedAbs = (await decide(category, "access", normalized, false)).resolvedAbs;
     }
-    return (backendAny.access as AnyFn)(normalized, mode);
+    // `access` already follows a trailing symlink by its own real-fs
+    // semantics, so redirecting to the resolved path only narrows the
+    // TOCTOU window. See docs/adr/0011-close-open-race-with-resolved-path.md.
+    return (backendAny.access as AnyFn)(resolvedAbs, mode);
   }
   function accessSync(rawPath: string, mode?: number): void {
     const normalized = normalizeGuestPath(rawPath);
+    let resolvedAbs = normalized;
     for (const category of accessCategories(mode)) {
-      decideSync(category, "accessSync", normalized, false);
+      resolvedAbs = decideSync(category, "accessSync", normalized, false).resolvedAbs;
     }
-    (backendAny.accessSync as AnyFn)(normalized, mode);
+    (backendAny.accessSync as AnyFn)(resolvedAbs, mode);
   }
 
   async function copyFile(rawSrc: string, rawDest: string, mode?: number): Promise<void> {
     const srcNorm = normalizeGuestPath(rawSrc);
     const destNorm = normalizeGuestPath(rawDest);
-    await decide("copy-source", "copyFile", srcNorm, false);
-    const destMode = await decide("copy-dest", "copyFile", destNorm, true);
-    if (destMode === "shadowed") {
-      const content = await (backendAny.readFile as AnyFn)(srcNorm);
+    const srcDecision = await decide("copy-source", "copyFile", srcNorm, false);
+    const destDecision = await decide("copy-dest", "copyFile", destNorm, true);
+    // The source argument is redirected unconditionally (it is a plain read
+    // either way); the destination's parent was already resolved for its
+    // create-path bypass recheck. Both close a TOCTOU window for the real
+    // copyFile call — see docs/adr/0011-close-open-race-with-resolved-path.md.
+    if (destDecision.mode === "shadowed") {
+      const content = await (backendAny.readFile as AnyFn)(srcDecision.resolvedAbs);
       await (shadowAny.writeFile as AnyFn)(destNorm, content);
       return;
     }
-    return (backendAny.copyFile as AnyFn)(srcNorm, destNorm, mode);
+    return (backendAny.copyFile as AnyFn)(srcDecision.resolvedAbs, destDecision.resolvedAbs, mode);
   }
   function copyFileSync(rawSrc: string, rawDest: string, mode?: number): void {
     const srcNorm = normalizeGuestPath(rawSrc);
     const destNorm = normalizeGuestPath(rawDest);
-    decideSync("copy-source", "copyFileSync", srcNorm, false);
-    const destMode = decideSync("copy-dest", "copyFileSync", destNorm, true);
-    if (destMode === "shadowed") {
-      const content = (backendAny.readFileSync as AnyFn)(srcNorm);
+    const srcDecision = decideSync("copy-source", "copyFileSync", srcNorm, false);
+    const destDecision = decideSync("copy-dest", "copyFileSync", destNorm, true);
+    if (destDecision.mode === "shadowed") {
+      const content = (backendAny.readFileSync as AnyFn)(srcDecision.resolvedAbs);
       (shadowAny.writeFileSync as AnyFn)(destNorm, content);
       return;
     }
-    (backendAny.copyFileSync as AnyFn)(srcNorm, destNorm, mode);
+    (backendAny.copyFileSync as AnyFn)(srcDecision.resolvedAbs, destDecision.resolvedAbs, mode);
   }
 
   function makeReadFileLike(methodName: "readFile" | "readFileSync") {
@@ -1112,14 +1261,18 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       ? async function readFileLike(rawPath: string, options?: unknown): Promise<unknown> {
           const normalized = normalizeGuestPath(rawPath);
           const decision = await decide("read", methodName, normalized, false);
-          const target = decision === "shadowed" ? shadowAny : backendAny;
-          return (target[methodName] as AnyFn)(normalized, options);
+          if (decision.mode === "shadowed") {
+            return (shadowAny[methodName] as AnyFn)(normalized, options);
+          }
+          return (backendAny[methodName] as AnyFn)(decision.resolvedAbs, options);
         }
       : function readFileLikeSync(rawPath: string, options?: unknown): unknown {
           const normalized = normalizeGuestPath(rawPath);
           const decision = decideSync("read", methodName, normalized, false);
-          const target = decision === "shadowed" ? shadowAny : backendAny;
-          return (target[methodName] as AnyFn)(normalized, options);
+          if (decision.mode === "shadowed") {
+            return (shadowAny[methodName] as AnyFn)(normalized, options);
+          }
+          return (backendAny[methodName] as AnyFn)(decision.resolvedAbs, options);
         };
   }
 
@@ -1133,22 +1286,29 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
           // override for either — see finding #2 above), so both are
           // create-path operations for the bypass recheck.
           const decision = await decide("write", methodName, normalized, true);
-          const target = decision === "shadowed" ? shadowAny : backendAny;
-          return (target[methodName] as AnyFn)(normalized, data, options);
+          if (decision.mode === "shadowed") {
+            return (shadowAny[methodName] as AnyFn)(normalized, data, options);
+          }
+          return (backendAny[methodName] as AnyFn)(decision.resolvedAbs, data, options);
         }
       : function writeFileLikeSync(rawPath: string, data: unknown, options?: unknown): unknown {
           const normalized = normalizeGuestPath(rawPath);
           const decision = decideSync("write", methodName, normalized, true);
-          const target = decision === "shadowed" ? shadowAny : backendAny;
-          return (target[methodName] as AnyFn)(normalized, data, options);
+          if (decision.mode === "shadowed") {
+            return (shadowAny[methodName] as AnyFn)(normalized, data, options);
+          }
+          return (backendAny[methodName] as AnyFn)(decision.resolvedAbs, data, options);
         };
   }
 
+  // `exists`/`existsSync` are deliberately left unresolved — low-stakes
+  // (boolean only, no data exposure or mutation either way) and not part of
+  // `docs/adr/0011-close-open-race-with-resolved-path.md`'s finding.
   async function existsOp(rawPath: string): Promise<boolean> {
     const normalized = normalizeGuestPath(rawPath);
     try {
       const decision = await decide("exists", "exists", normalized, false);
-      const target = decision === "shadowed" ? shadowAny : backendAny;
+      const target = decision.mode === "shadowed" ? shadowAny : backendAny;
       return (await (target.exists as AnyFn)(normalized)) as boolean;
     } catch {
       // `exists()`'s guest-facing contract never throws (`src/vfs/policy.ts`'s
@@ -1161,7 +1321,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const normalized = normalizeGuestPath(rawPath);
     try {
       const decision = decideSync("exists", "existsSync", normalized, false);
-      const target = decision === "shadowed" ? shadowAny : backendAny;
+      const target = decision.mode === "shadowed" ? shadowAny : backendAny;
       return (target.existsSync as AnyFn)(normalized) as boolean;
     } catch {
       return false;
@@ -1171,7 +1331,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   async function truncateOp(rawPath: string, length: number): Promise<void> {
     const normalized = normalizeGuestPath(rawPath);
     const decision = await decide("write", "truncate", normalized, false);
-    if (decision === "shadowed") {
+    if (decision.mode === "shadowed") {
       let handle: FileHandleLike;
       try {
         handle = (await (shadowAny.open as AnyFn)(normalized, "r+")) as FileHandleLike;
@@ -1189,12 +1349,16 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
       return;
     }
-    return (backendAny.truncate as AnyFn)(normalized, length);
+    // The top-level, path-based `truncate` follows a trailing symlink by its
+    // own POSIX semantics (unlike `ftruncate`), so redirecting to the
+    // resolved path only narrows the TOCTOU window. See
+    // docs/adr/0011-close-open-race-with-resolved-path.md.
+    return (backendAny.truncate as AnyFn)(decision.resolvedAbs, length);
   }
   function truncateSyncOp(rawPath: string, length: number): void {
     const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("write", "truncateSync", normalized, false);
-    if (decision === "shadowed") {
+    if (decision.mode === "shadowed") {
       let handle: FileHandleLike;
       try {
         handle = (shadowAny.openSync as AnyFn)(normalized, "r+") as FileHandleLike;
@@ -1209,7 +1373,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
       return;
     }
-    (backendAny.truncateSync as AnyFn)(normalized, length);
+    (backendAny.truncateSync as AnyFn)(decision.resolvedAbs, length);
   }
 
   function makeWatchLike(methodName: "watch" | "watchAsync" | "watchFile") {
@@ -1222,14 +1386,14 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       // synchronous-returning per the `VirtualProvider` type (no `Promise`),
       // so this uses `decideSync`, not `decide`.
       const decision = decideSync("read", methodName, normalized, false);
-      const target = decision === "shadowed" ? shadowAny : backendAny;
+      const target = decision.mode === "shadowed" ? shadowAny : backendAny;
       return (target[methodName] as AnyFn)(normalized, options, listener);
     };
   }
   function unwatchFile(rawPath: string, listener?: (...args: unknown[]) => void): void {
     const normalized = normalizeGuestPath(rawPath);
     const decision = decideSync("read", "unwatchFile", normalized, false);
-    const target = decision === "shadowed" ? shadowAny : backendAny;
+    const target = decision.mode === "shadowed" ? shadowAny : backendAny;
     (target.unwatchFile as AnyFn)(normalized, listener);
   }
 
@@ -1240,6 +1404,38 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   // Capability getters: passed straight through, untouched — these describe
   // the backend's own capabilities, not an operation to gate.
   const passthroughCapabilities = new Set(["readonly", "supportsSymlinks", "supportsWatch"]);
+
+  // Generic JS/Node object-protocol members: not part of the VirtualProvider
+  // operation vocabulary (same reasoning as the symbol passthrough in the
+  // `get` trap below), so passed straight through rather than gated or,
+  // worse, made to look like a recognized-but-absent VirtualProvider method.
+  // Fixes a real bug: these are all inherited from `Object.prototype`, so
+  // `prop in optionalFactories` used to wrongly match them (`in` walks the
+  // prototype chain); the correct `Object.hasOwn` check below no longer
+  // does, which is right, but without this explicit passthrough they'd fall
+  // to the final catch-all instead and become throwing functions — still
+  // broken, just differently (e.g. `String(provider)` would go from
+  // throwing "cannot convert to primitive" to throwing `EPERM: toString`).
+  //
+  // `"__proto__"` is inherited the same way and thus affected by the same
+  // `in`-based bug, but is deliberately left out: unlike the members below,
+  // it is never invoked implicitly by a JS coercion/serialization protocol
+  // (nothing calls `.__proto__` as a function), and standards-compliant
+  // prototype reflection (`Object.getPrototypeOf`) bypasses this `get` trap
+  // entirely and already returns the right answer regardless of this set.
+  // Leaving it to fall through to the fail-closed catch-all below is inert
+  // in practice and consistent with that catch-all's own stated philosophy.
+  const passthroughJsProtocolMembers = new Set([
+    "constructor",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toLocaleString",
+    "toString",
+    "valueOf",
+    "toJSON", // JSON.stringify's own protocol hook — not on Object.prototype, but same "not a VFS operation" reasoning
+    "then", // thenable-detection (`await`/`Promise.resolve`) — ditto
+  ]);
 
   // Required VirtualProvider members: always present on any conforming
   // backend, always wrapped.
@@ -1331,6 +1527,12 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       if (typeof prop === "symbol") {
         return Reflect.get(target, prop, receiver);
       }
+      // See the comment on `passthroughJsProtocolMembers` above: same
+      // passthrough reasoning as the symbol case just above, for the
+      // string-keyed equivalents.
+      if (passthroughJsProtocolMembers.has(prop)) {
+        return Reflect.get(target, prop, receiver);
+      }
       if (passthroughCapabilities.has(prop)) {
         return Reflect.get(target, prop, target);
       }
@@ -1342,7 +1544,15 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       // `undefined`, matching real absence — see the comment on
       // `optionalFactories` above for why this matters for feature
       // detection elsewhere in the SDK.
-      if (prop in optionalFactories) {
+      //
+      // `Object.hasOwn` (not the `in` operator) is deliberate: `in` walks
+      // the prototype chain, and `optionalFactories` is a plain object
+      // literal, so it inherits `Object.prototype` members like `toString`
+      // and `constructor` — `"toString" in optionalFactories` is `true`
+      // even though `optionalFactories` declares no such key. Those members
+      // are handled by `passthroughJsProtocolMembers` above instead; this
+      // check must only match `optionalFactories`'s own declared keys.
+      if (Object.hasOwn(optionalFactories, prop)) {
         return undefined;
       }
       // Anything else is a property this module has never heard of — most

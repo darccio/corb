@@ -114,13 +114,17 @@ larger target surface than what exists today:
   limits, egress allowlist, git policy, per-path rules, agent provider/model)
   are all read from `config.toml` (see below) — they are just not yet
   exposed as `corb run` flags.
-- **`[agent].extensions` and `[agent].append-system-prompt-file` are parsed
-  but not yet wired anywhere.** They're validated, merged across layers,
-  shown by `corb explain`, and participate in the trust ratchet like every
-  other field — but nothing forwards them to `pi`; only `[agent].provider`
-  and `[agent].model` actually reach it (`withProviderModelArgs`,
-  `src/commands/run.ts`). Setting either field today has no effect on a real
-  `corb run`.
+- **`[agent].extensions` and `[agent].append-system-prompt-file` are rejected
+  at config-parse time, not silently accepted.** Neither is wired to
+  anything: only `[agent].provider` and `[agent].model` actually reach `pi`
+  (`withProviderModelArgs`, `src/commands/run.ts`), and there is no
+  extension-loading or system-prompt-appending implementation anywhere in
+  this repo to wire the other two to yet. Rather than accept-and-silently-
+  ignore them, `corb.toml` fails to parse (`ConfigParseError`) if
+  `[agent].append-system-prompt-file` is set to any value, or
+  `[agent].extensions` is set to a non-empty list. An empty `extensions = []`
+  is still accepted — it asks for zero extensions, and corb loading zero
+  extensions is accurate, not a lie.
 
 ## Configuration
 

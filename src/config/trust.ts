@@ -175,9 +175,11 @@ function ruleKey(rule: DirRuleConfig): string {
 
 /**
  * Whether `a` and `b` contain the same ruleKeys the same number of times
- * each, ignoring order. Used to detect a *pure reorder* of `rules` — same
- * membership, different sequence — as distinct from an add/remove, which is
- * already handled by the Set-membership diff in `dirRule` below.
+ * each, ignoring order. `dirRule` below uses this to choose message wording
+ * for a rule-list change that already failed its prefix-safety check: a
+ * *pure reorder* (same membership, different sequence) gets its own specific
+ * wording, distinct from any other prefix-breaking change (an insertion, or
+ * a reorder combined with an add/remove).
  */
 function sameRuleKeyMultiset(a: string[], b: string[]): boolean {
   if (a.length !== b.length) {
@@ -236,34 +238,51 @@ const dirRule: Rule = {
           });
         }
       }
-      const prevRuleKeys = new Set(prevRuleKeyList);
-      for (const rule of currDir.rules) {
-        if (!prevRuleKeys.has(ruleKey(rule))) {
+
+      // Enforcement (`src/vfs/policy.ts` / `src/vfs/glob-policy.ts`) walks
+      // `rules` first-match-wins, so a rule's *position* is just as
+      // security-relevant as its presence. Diffing `rules` as a plain Set for
+      // gained entries (as this used to do) misses that inserting a new,
+      // broader rule *ahead of* an existing narrower one can shadow the
+      // narrower rule at enforcement time while looking like pure narrowing
+      // (only an addition, nothing lost) to a membership diff. The one
+      // invariant that is actually safe: the previous rule list, in its
+      // original order, must remain an untouched *prefix* of the current
+      // list.
+      //
+      //  - A pure append (new rules added only at the very end, everything
+      //    before them unchanged) keeps the old list as a prefix of the new
+      //    one -> safe; only the genuinely-new tail past the preserved
+      //    prefix is reported as narrowing, same wording as a plain gained-
+      //    rule diff would use.
+      //  - Anything else — a pure reorder (same ruleKeys, same counts,
+      //    different sequence), an insertion ahead of/between existing
+      //    rules, or a reorder combined with an add/remove — breaks the
+      //    prefix at some index before the end, so it is treated as
+      //    widening, matching this module's existing bias of failing toward
+      //    requiring confirmation whenever it cannot positively rule out a
+      //    widening. The pure-reorder sub-case keeps its own, more specific
+      //    wording; every other non-safe-prefix change shares a generic one.
+      const isSafePrefix =
+        currRuleKeyList.length >= prevRuleKeyList.length &&
+        prevRuleKeyList.every((key, i) => key === currRuleKeyList[i]);
+
+      if (isSafePrefix) {
+        for (const rule of currDir.rules.slice(prevRuleKeyList.length)) {
           narrowed.push({
             field: `dir.${name}.rules`,
             description: `dir '${name}' gained rule '${rule.glob ?? "?"}' (${rule.mode ?? "?"})`,
           });
         }
-      }
-
-      // Enforcement (`src/vfs/policy.ts` / `src/vfs/glob-policy.ts`) walks
-      // `rules` first-match-wins, so a rule's *position* is just as
-      // security-relevant as its presence: reordering the exact same set of
-      // rules can change which one governs a given path (e.g. moving a
-      // catch-all `deny-write` ahead of a more specific `hidden` rule makes
-      // the specific rule unreachable) without the plain Set-membership diff
-      // above seeing any add/remove at all. A pure reorder — same ruleKeys,
-      // same counts, different sequence — is therefore always treated as
-      // widening, matching this module's existing bias of failing toward
-      // requiring confirmation whenever it cannot positively rule out a
-      // widening.
-      if (
-        sameRuleKeyMultiset(prevRuleKeyList, currRuleKeyList) &&
-        !prevRuleKeyList.every((key, i) => key === currRuleKeyList[i])
-      ) {
+      } else if (sameRuleKeyMultiset(prevRuleKeyList, currRuleKeyList)) {
         widened.push({
           field: `dir.${name}.rules`,
           description: `dir '${name}' rules reordered (first-match-wins order changed; treated as widening)`,
+        });
+      } else {
+        widened.push({
+          field: `dir.${name}.rules`,
+          description: `dir '${name}' rules changed in a way that is not a safe append (first-match-wins order may have changed; treated as widening)`,
         });
       }
     }

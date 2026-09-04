@@ -223,11 +223,67 @@ export const GATE_CONFIG = {
         "--git-dir",
         "--work-tree",
       ],
+      // Allowlist (ADR 0005) of value-less flags permitted to precede the
+      // subcommand -- git/gh's own global-flag-before-subcommand form, e.g.
+      // "git --no-pager commit". See ResolveSubcommand's doc comment
+      // (guest/internal/gate/policy.go) for why this is restricted to
+      // value-less flags only: a value-taking flag would force this gate to
+      // model git's own global-flag arity table, which is exactly the
+      // incompletable blocklist ADR 0005 rejects.
+      //
+      // This is a deliberately curated set, not "every value-less git
+      // global flag":
+      //   - "-P"/"--no-pager" is the actual reported bypass, and the most
+      //     likely one an agent legitimately needs (forcing non-interactive
+      //     output).
+      //   - "--bare", "--literal-pathspecs", "--no-optional-locks", and
+      //     "--no-replace-objects" were named in the original bug report as
+      //     bypass examples. None of them retarget which repository or
+      //     config file git operates on (unlike "-C"/"--git-dir"/
+      //     "--work-tree" above, which stay blocked), and none take a
+      //     value, so allowing them costs nothing security-relevant.
+      //   - "--no-lazy-fetch", "--no-advice", "--glob-pathspecs",
+      //     "--noglob-pathspecs", and "--icase-pathspecs" are the same
+      //     shape (value-less, no retargeting) and included for
+      //     completeness. Confirmed against a real git binary (2.55.0, via
+      //     `git --help`'s own usage synopsis and successful non-error
+      //     invocation) that every flag below is a real, recognized global
+      //     option before landing this list.
+      //
+      // Deliberately EXCLUDED:
+      //   - "-p"/"--paginate": forcing a pager ON in a non-interactive/piped
+      //     guest exec can hang waiting for pager input that will never
+      //     arrive -- a functionality footgun with no corresponding
+      //     security benefit, so this stays off rather than allow-and-hope.
+      //   - "--namespace=", "--attr-source=", "--list-cmds=",
+      //     "--super-prefix=": all take a value, and none have a legitimate
+      //     use in this codebase's git usage.
+      allowedGlobalFlags: [
+        "-P",
+        "--no-pager",
+        "--bare",
+        "--no-replace-objects",
+        "--no-lazy-fetch",
+        "--no-optional-locks",
+        "--no-advice",
+        "--literal-pathspecs",
+        "--glob-pathspecs",
+        "--noglob-pathspecs",
+        "--icase-pathspecs",
+      ],
     },
     gh: {
       real: "/usr/local/libexec/real-gh",
       blockedSubcommands: ["auth", "secret", "ssh-key", "gpg-key", "config"],
       blockedFlags: ["--with-token"],
+      // Empty, deliberately: nothing in this codebase's guest-side gh usage
+      // (grepped across docs/, image/, src/, test/) invokes gh with a
+      // global flag preceding the subcommand. gh's own gatedHooks map
+      // (guest/internal/gate/policy.go) is also empty -- there is no
+      // content check for gh a bypass could skip -- so unlike git's list
+      // above, this is pure defense-in-depth on the local
+      // BlockedSubcommands table, not a fix for a live vulnerability.
+      allowedGlobalFlags: [],
     },
   },
 };
@@ -324,6 +380,51 @@ export class InvalidDirRuleError extends Error {
 }
 
 /**
+ * Thrown before any VM is created when a workspace directory's `rules[]`
+ * entry has a `glob` that can never match any real path: one that starts
+ * with `/`, ends with `/`, or contains an empty `//` segment. `src/vfs/
+ * policy.ts`'s `matchRule` doc comment states the contract every real
+ * example glob in `docs/design.md` §3 and `test/unit/vfs/glob.test.ts`
+ * already follows: `path` (what a compiled glob is tested against) is
+ * "relative to the *directory's own root* (no leading `/`, no mount-point
+ * prefix)" — and `src/vfs/glob.ts`'s `normalizeGuestPath` always strips a
+ * trailing `/` from a real candidate path too. A glob spelled with a
+ * leading or trailing `/` (an operator writing `glob = "/secrets/**"`,
+ * reading naturally as "from the root of the mount") compiles
+ * (`globToRegExp`) to a regex that requires exactly the leading/trailing
+ * `/` no real candidate path ever has, so it matches nothing, ever —
+ * silently. Before this check existed, `toGlobRules` accepted such a rule
+ * outright: the mount booted, `corb explain` showed the rule as active, and
+ * everything the rule was supposed to cover was fully readable and
+ * writable, with no error and no warning. That is a fail-open bug wearing a
+ * rule's clothing, and it is worse than no rule at all — a rule that is
+ * visibly absent does not create false confidence the way one that silently
+ * never fires does.
+ *
+ * Deliberately a hard rejection, not an auto-strip-and-proceed: a glob like
+ * `"secrets/"` is genuinely ambiguous (did the operator mean "the directory
+ * itself", matching `matchRule`'s exact-string semantics for a `**`-free
+ * pattern, or typo `"secrets/**"`?), and guessing the intent would silently
+ * paper over the exact "looks like it's protecting something but isn't"
+ * problem this error exists to surface loudly instead of quietly working
+ * around.
+ *
+ * A bare empty-string glob (`glob = ""`) is deliberately not rejected by
+ * this check — none of "starts with `/`", "ends with `/`", or "contains
+ * `//`" is true of `""` — that is a separate, weirder edge case this item
+ * does not address.
+ */
+export class UnmatchableDirRuleGlobError extends Error {
+  constructor(dirName: string, index: number, glob: string, reason: string) {
+    super(
+      `corb run: workspace directory '${dirName}' rules[${index}]'s glob '${glob}' ${reason} ` +
+        "and can never match a real path (rules match a mount-relative path with no leading or trailing '/')",
+    );
+    this.name = "UnmatchableDirRuleGlobError";
+  }
+}
+
+/**
  * The subset of `/etc/corb/image.json` (image/overlay/etc/corb/image.json)
  * this session needs.
  *
@@ -408,7 +509,15 @@ async function readGuestIdentity(vm: VM): Promise<CorbImageJson> {
   return parseCorbImageJson(result.stdout);
 }
 
-function resolveHostDir(dir: string): string {
+// Exported, like the other private-validation helpers below it in this file
+// (`assertValidWorkspaceName`, `assertNoDuplicateNames`,
+// `resolveWorkspaceDirs`, `findPrimaryEntry`) — purely so
+// `test/unit/vm/session.test.ts` can call each directly as the pure/
+// near-pure piece it is, without going through the ~350-line `runSession`
+// orchestrator (which would additionally require a VM). No caller outside
+// this file uses any of them; this is a visibility change only, not a new
+// public API.
+export function resolveHostDir(dir: string): string {
   const resolved = path.resolve(dir);
   let stat: fs.Stats;
   try {
@@ -429,7 +538,10 @@ function resolveHostDir(dir: string): string {
 // otherwise construct an unsafe raw (`WORKSPACE_RAW_ROOT`) or public
 // (`WORKSPACE_PUBLIC_ROOT`) guest path independently of anything
 // `src/config/` validates.
-function assertValidWorkspaceName(name: string): void {
+//
+// Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+// `resolveHostDir`'s own comment above.
+export function assertValidWorkspaceName(name: string): void {
   if (name.length === 0) {
     throw new InvalidWorkspaceNameError(name, "must not be empty");
   }
@@ -459,9 +571,12 @@ const DEFAULT_RULE_REASON = "no reason configured for this rule";
  * empty, never `undefined`, per that module's own comment — of still-partial
  * `DirRuleConfig` entries) into `src/vfs/policy.ts`'s fully-required
  * `GlobRule[]`, throwing `InvalidDirRuleError` for any entry missing `glob`
- * or `mode`. See `InvalidDirRuleError`'s own doc comment for why those two
- * fields are hard errors and `DEFAULT_RULE_REASON`'s for why a missing
- * `reason` is not.
+ * or `mode`, and `UnmatchableDirRuleGlobError` for a present `glob` that can
+ * never match anything (a leading `/`, a trailing `/`, or an embedded `//`
+ * — see that error's own doc comment for why this is a hard rejection
+ * rather than an auto-corrected warning). See `InvalidDirRuleError`'s own
+ * doc comment for why the missing-field cases are hard errors and
+ * `DEFAULT_RULE_REASON`'s for why a missing `reason` is not.
  *
  * Exported (unlike this module's other internal `resolveWorkspaceDirs`
  * helpers) so `src/commands/run.ts`'s `toWorkspaceDirSpec` can call it
@@ -480,11 +595,32 @@ export function toGlobRules(dirName: string, rules: readonly DirRuleConfig[]): G
     if (rule.mode === undefined) {
       throw new InvalidDirRuleError(dirName, index, "mode");
     }
+    // A glob's shape must match `src/vfs/policy.ts`'s `matchRule` contract
+    // (mount-relative, no leading or trailing `/`) or it can never match a
+    // real candidate path — see `UnmatchableDirRuleGlobError`'s own doc
+    // comment. Checked in this order (leading, then trailing, then
+    // embedded) purely so the reported reason is the first one that
+    // applies; a glob could in principle trip more than one (e.g. a bare
+    // `"/"` both starts and ends with `/`), and there is no meaningful
+    // "worse" ordering among the three, so whichever check runs first wins.
+    // An empty-string glob trips none of these three checks and is
+    // deliberately left alone — see that error's own doc comment.
+    if (rule.glob.startsWith("/")) {
+      throw new UnmatchableDirRuleGlobError(dirName, index, rule.glob, "starts with '/'");
+    }
+    if (rule.glob.endsWith("/")) {
+      throw new UnmatchableDirRuleGlobError(dirName, index, rule.glob, "ends with '/'");
+    }
+    if (rule.glob.includes("//")) {
+      throw new UnmatchableDirRuleGlobError(dirName, index, rule.glob, "contains an empty '//' segment");
+    }
     return { glob: rule.glob, mode: rule.mode, reason: rule.reason ?? DEFAULT_RULE_REASON };
   });
 }
 
-function assertNoDuplicateNames(dirs: readonly WorkspaceDirSpec[]): void {
+// Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+// `resolveHostDir`'s own comment above.
+export function assertNoDuplicateNames(dirs: readonly WorkspaceDirSpec[]): void {
   const seen = new Set<string>();
   for (const dir of dirs) {
     if (seen.has(dir.name)) {
@@ -738,8 +874,11 @@ interface ResolvedWorkspaceDir {
  * check it would otherwise fail, and an invalid `rules[]` entry
  * (`InvalidDirRuleError`, via `toGlobRules`) is still caught before any VM
  * is created even though it has no bearing on the host-path checks above it.
+ *
+ * Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+ * `resolveHostDir`'s own comment above.
  */
-function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] {
+export function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] {
   for (const dir of dirs) {
     assertValidWorkspaceName(dir.name);
   }
@@ -758,7 +897,9 @@ function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] 
   });
 }
 
-function findPrimaryEntry(dirs: ResolvedWorkspaceDir[], primary: string): ResolvedWorkspaceDir {
+// Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+// `resolveHostDir`'s own comment above.
+export function findPrimaryEntry(dirs: ResolvedWorkspaceDir[], primary: string): ResolvedWorkspaceDir {
   const found = dirs.find((d) => d.name === primary);
   if (!found) {
     throw new WorkspaceDirectoryError(primary, "is not one of the configured 'dirs' entries (check 'primary')");
@@ -1068,22 +1209,44 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     });
     await controller.trigger("exit", result.exitCode);
   } catch (err) {
-    // Guarded (unlike `controller.trigger("error", ...)` below, which stays
-    // unconditional — it's already safely idempotent, per
-    // `ShutdownController.trigger()`'s own doc comment) because a pending
-    // `await proc` above rejects, not hangs or resolves, when some *other*
-    // trigger (the watchdog's `close-vm`, a SIGINT during an active exec)
-    // closes the VM out from under it — confirmed against the installed SDK
+    // Both actions below — the audit line and the stderr write — are guarded
+    // by the same `!controller.isTriggered` condition, because both exist to
+    // report a *genuine, first-cause* error, and both would otherwise
+    // misreport the same non-error case: a pending `await proc` above
+    // rejects, not hangs or resolves, when some *other* trigger (the
+    // watchdog's `close-vm`, a SIGINT during an active exec, `corb kill`'s
+    // SIGTERM into this same controller — see `src/commands/kill.ts`) closes
+    // the VM out from under it — confirmed against the installed SDK
     // (`node_modules/@earendil-works/gondolin/dist/src/vm/core.js`:
     // `closeInternal()` → `server.close()` → `handleDisconnect()` →
     // `rejectAll()` → `rejectExecSession()` on every pending exec session —
     // and empirically, see `test/e2e/session-watchdog.e2e.ts`). Without this
-    // guard, that case would produce two audit lines for one session end: a
-    // correct one from the other trigger's own reason, immediately followed
-    // by a misleading `"error"` line here even though nothing actually went
-    // wrong. `controller.isTriggered` is read before this function's own
+    // guard: the audit log would get a correct line from the other trigger's
+    // own reason, immediately followed by a misleading `"error"` line here
+    // even though nothing actually went wrong; and the user's terminal would
+    // get a spurious `err.stack` dumped to it — often after its TTY state has
+    // already been restored — following a completely ordinary Ctrl-C, `corb
+    // kill`, or watchdog expiry that the user did nothing wrong to cause.
+    // `controller.isTriggered` is read before this function's own
     // `trigger("error", ...)` call below, so it only reflects whether some
     // *other* trigger already started shutdown before this catch block ran.
+    //
+    // The stderr write's own reason for existing: `controller.trigger()`
+    // resolves *through* `exitFn`, whose real-process default is
+    // `process.exit()` (`src/vm/shutdown.ts`) — so in production, `await
+    // controller.trigger(...)` below never returns, and `throw err` right
+    // after it is unreachable. Without reporting `err` to `stderr` — the same
+    // injectable stream `runSession()` already uses elsewhere (see above)
+    // rather than a bare `console.error` — somewhere on this path, a genuine
+    // error (a missing secret, a VM boot failure, any of the
+    // `WorkspaceDirectoryError`/`ImageNotFoundError`-shaped failures this
+    // function can throw) would surface as a bare non-zero exit code with no
+    // output at all: `cli.ts`'s top-level `.catch()` never runs, and
+    // `ShutdownController.trigger()`'s own `cause` parameter is threaded into
+    // `ShutdownReport` but nothing ever reads it back out. That "otherwise
+    // silent" concern is specifically about a genuine, first-cause error —
+    // i.e. exactly the `!isTriggered` case this write now shares with the
+    // audit line above, so gating both on one condition weakens neither.
     if (!controller.isTriggered) {
       options.audit.record({
         channel: "session",
@@ -1092,22 +1255,12 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
         reason: "error",
         sessionId,
       });
+      stderr.write(`corb run: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
     }
-    // `controller.trigger()` resolves *through* `exitFn`, whose real-process
-    // default is `process.exit()` (`src/vm/shutdown.ts`) — so in production,
-    // `await controller.trigger(...)` below never returns, and `throw err`
-    // right after it is unreachable. Without reporting `err` here first,
-    // that meant every error on this path — a missing secret, a VM boot
-    // failure, any of the `WorkspaceDirectoryError`/`ImageNotFoundError`-
-    // shaped failures this function can throw — surfaced as a bare
-    // non-zero exit code with no output at all: `cli.ts`'s top-level
-    // `.catch()` never ran, and `ShutdownController.trigger()`'s own `cause`
-    // parameter is threaded into `ShutdownReport` but nothing ever reads it
-    // back out. Writing to `stderr` here — the same injectable stream
-    // `runSession()` already uses elsewhere (see above) rather than a bare
-    // `console.error` — is what makes the error visible in the case that
-    // actually matters, before whatever happens to `exitFn` next.
-    stderr.write(`corb run: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
+    // Unlike the two actions above, this call and the `throw err` after it
+    // stay unconditional: `controller.trigger()` is already safely idempotent
+    // to call more than once, per `ShutdownController.trigger()`'s own doc
+    // comment, so there is no need to gate it on `isTriggered` too.
     await controller.trigger("error", 1, err);
     throw err;
   }

@@ -66,12 +66,26 @@ an allowlist's failure mode is a false denial — visible and safe.
   something on the guest's behalf" (see the no-host-side-execution ADR), so the
   cost of an incomplete enumeration is tolerable only in that one place. This
   bound is narrower than it first looks, though: §4/§5's out-of-guest content
-  check for `commit`/`push` is dispatched off the *same* `args[0]` the local
-  blocklist matches on, so an incomplete `blockedFlags` entry (e.g. missing
-  `-C`, which shifts `args[0]` away from the subcommand entirely) can silently
-  skip the content check too — not just the local table. `blockedFlags` must
-  therefore cover every flag that can relocate or hide the subcommand, not only
-  ones that are separately dangerous in their own right.
+  check for `commit`/`push` is dispatched off the *same* resolved subcommand
+  the local blocklist matches on, so an incomplete `blockedFlags` entry (e.g.
+  missing `-C`, which shifts the subcommand out of `args[0]` entirely) can
+  silently skip the content check too — not just the local table. This hazard
+  was real, not hypothetical: a later review found `blockedFlags` covered only
+  the specific flags its authors had thought to enumerate (`-C`, `--git-dir`,
+  `--work-tree`, and a handful of others), while git's own
+  global-flag-before-subcommand form accepts many more (`--no-pager`,
+  `--bare`, `--literal-pathspecs`, and others), each silently skipping both
+  the subcommand blocklist and the content check the same way `-C` would
+  have. Completing `blockedFlags` for this purpose would just be a second,
+  unwinnable blocklist nested inside the first one — so the actual fix is not
+  a longer `blockedFlags`, it is `AllowedGlobalFlags`/`ResolveSubcommand`
+  (`guest/internal/gate/policy.go`): a real allowlist of exactly which flags
+  may precede the subcommand, consistent with this ADR's own decision rather
+  than an exception to it. `blockedFlags` continues to cover `-C`/
+  `--git-dir`/`--work-tree`/etc. as redundant defense-in-depth — those flags
+  retarget which repository or config git reads, so they stay denied
+  outright, and they would also fail the new allowlist independently — but it
+  is no longer the mechanism this particular hazard depends on.
 * Neutral, because this pushes ongoing maintenance cost onto keeping the
   allowlists current (new egress hosts, new allowed GitHub API paths) rather
   than onto tracking a moving target of things to forbid.

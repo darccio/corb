@@ -203,6 +203,13 @@ function mergeVmConfig(base: PartialVmConfig | undefined, next: PartialVmConfig 
   return result;
 }
 
+// `extensions`/`append-system-prompt-file` need no special handling below
+// (E2): `schema.ts`'s `parseAgentConfig` now rejects a non-empty
+// `extensions` or any `append-system-prompt-file` at parse time, strictly
+// before any layer ever reaches this merge — so the only values this
+// function can ever see for them are already the safe, ordinary ones
+// (`undefined`, or `[]` for `extensions`) that the existing generic merge
+// rules below already handle correctly.
 function mergeAgentConfig(
   base: PartialAgentConfig | undefined,
   next: PartialAgentConfig | undefined,

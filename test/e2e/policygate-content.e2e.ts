@@ -343,6 +343,46 @@ describe.skipIf(!process.env.CORB_E2E)("policygate-content e2e (real VM boot)", 
       expect(result.stderr).toContain("is blocked in this sandbox");
     });
 
+    it("git --no-pager does not bypass the content check: a commit with an AWS-access-key-shaped string via 'git --no-pager' still exits 87", async () => {
+      // Regression for the actual headline finding this suite's sibling
+      // "-C" case above did not cover: "-C" is (still) caught as a
+      // BlockedFlags entry regardless of ResolveSubcommand, so that test
+      // alone would have kept passing even with the ADR-0005 allowlist gap
+      // wide open. "--no-pager" was never in blockedFlags, so
+      // "git --no-pager commit" is what would have sailed through
+      // uninspected on pre-fix HEAD: args[0] == "--no-pager", so neither
+      // CheckLocal's old args[0]-only subcommand check nor policygate's old
+      // GatedHook dispatch (also keyed on args[0]) ever saw "commit" at all.
+      // guest/internal/gate/policy.go's ResolveSubcommand/AllowedGlobalFlags
+      // is what closes this: "--no-pager" is on git's allowedGlobalFlags
+      // (src/vm/session.ts's GATE_CONFIG) precisely so it can be walked past
+      // to find the real subcommand, rather than mistaken for one.
+      const result = await guestShellA(
+        `echo "aws_key = ${AKIA_STRING}" > ${SECRET_FILE_NAME}-via-no-pager && git add ${SECRET_FILE_NAME}-via-no-pager && git --no-pager commit -m "add secret via --no-pager"`,
+      );
+      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(87);
+      expect(result.stderr).toContain("blocked by corb policy");
+      expect(result.stderr).toContain("secret-in-diff");
+    });
+
+    it("git commit -a does not bypass the content check: an already-tracked file edited with a secret and committed via '-a' still exits 87", async () => {
+      // Regression for the collectStagedDiff-always-diffs---cached bug
+      // (guest/internal/gate/collect.go): "git commit -a"/"--all" stages
+      // every already-tracked file's working-tree modifications at commit
+      // time -- after policygate's collector has already run "git diff
+      // --cached" and returned. The file below is committed once (clean)
+      // so it's tracked, then edited with a secret and committed again via
+      // "-a" with no intervening "git add". Pre-fix, "--cached" would see
+      // nothing staged, the content check would inspect an empty diff, and
+      // the secret would be committed uninspected.
+      const result = await guestShellA(
+        `echo "clean" > ${SECRET_FILE_NAME}-via-dash-a && git add ${SECRET_FILE_NAME}-via-dash-a && git commit -m "track file" && echo "aws_key = ${AKIA_STRING}" > ${SECRET_FILE_NAME}-via-dash-a && git commit -a -m "add secret via -a"`,
+      );
+      expect(result.exitCode, `stderr: ${result.stderr}`).toBe(87);
+      expect(result.stderr).toContain("blocked by corb policy");
+      expect(result.stderr).toContain("secret-in-diff");
+    });
+
     it("git -C does not bypass the locally-blocked config subcommand", async () => {
       const result = await guestShellA(`git -C . config user.name nope`);
       expect(result.exitCode, `stderr: ${result.stderr}`).toBe(86);

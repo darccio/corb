@@ -9,7 +9,7 @@
 // covered by `test/unit/vfs/policy.test.ts` (M5.2), so this file does not
 // re-litigate it, only the plumbing on top of it.
 import { constants as fsConstants } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeVirtualProvider } from "../../fakes/provider.ts";
 import { withGlobPolicy, type GlobPolicyDenyEvent } from "../../../src/vfs/glob-policy.ts";
 import type { GlobRule } from "../../../src/vfs/policy.ts";
@@ -89,6 +89,172 @@ describe("withGlobPolicy: symlink-bypass defense", () => {
     // "/decoy-dir" resolves (via realpath of the parent) to "/hidden-dir",
     // whose subtree is hidden.
     await expectErrno(wrapped.open("/decoy-dir/newfile", "w"), "ENOENT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// docs/adr/0011-close-open-race-with-resolved-path.md: `decide()` used to
+// resolve a path purely to *decide*, then every call site issued the real
+// backend operation against the original, unresolved path anyway — leaving a
+// TOCTOU window between the policy check and the backend's own re-resolution.
+// These tests assert *which path argument the backend actually receives*
+// (via `vi.spyOn`), per that ADR's own testing rationale: a timing-dependent
+// simulated race would be flaky and prove less than pinning the argument
+// itself. Every case here uses a symlink `/decoy(-dir)` pointing at a real
+// `/real(-dir)` entry.
+// ---------------------------------------------------------------------------
+
+describe("withGlobPolicy: resolved-path redirect closes the check-then-use race (positive cases)", () => {
+  it("open() for read routes the backend call through the already-resolved path, not the symlink name", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hello");
+    await backend.symlink("/real.txt", "/decoy");
+    const openSpy = vi.spyOn(backend, "open");
+
+    await wrapped.open("/decoy", "r");
+
+    expect(openSpy.mock.calls[0]?.[0]).toBe("/real.txt");
+  });
+
+  it("open() for write/create routes the backend call through the already-resolved parent, with the literal leaf reattached", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.mkdir("/real-dir");
+    await backend.symlink("/real-dir", "/decoy-dir");
+    const openSpy = vi.spyOn(backend, "open");
+
+    await wrapped.open("/decoy-dir/newfile.txt", "w");
+
+    // Only the parent was resolved — the literal leaf name is reattached
+    // unchanged, exactly like every other create-path operation.
+    expect(openSpy.mock.calls[0]?.[0]).toBe("/real-dir/newfile.txt");
+  });
+
+  it("stat() routes the backend call through the already-resolved path", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hi");
+    await backend.symlink("/real.txt", "/decoy");
+    const statSpy = vi.spyOn(backend, "stat");
+
+    await wrapped.stat("/decoy");
+
+    expect(statSpy.mock.calls[0]?.[0]).toBe("/real.txt");
+  });
+
+  it("access() routes the backend call through the already-resolved path", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hi");
+    await backend.symlink("/real.txt", "/decoy");
+    const accessSpy = vi.spyOn(backend, "access");
+
+    await wrapped.access("/decoy");
+
+    expect(accessSpy.mock.calls[0]?.[0]).toBe("/real.txt");
+  });
+
+  it("readFile() routes the backend call through the already-resolved path — the exact `cat decoy` scenario this ADR closes", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "sssh");
+    await backend.symlink("/real.txt", "/decoy");
+    const readFileSpy = vi.spyOn(backend, "readFile");
+
+    await wrapped.readFile("/decoy");
+
+    expect(readFileSpy.mock.calls[0]?.[0]).toBe("/real.txt");
+  });
+
+  it("readdir() routes the backend's own listing call through the resolved directory, while entry-hiding still uses the requested directory's rule path", async () => {
+    // The `hidden` rule is keyed on "decoy-dir/secret.txt" — the *symlink's*
+    // own apparent path — not "real-dir/secret.txt". If entry-hiding were
+    // ever switched to use the resolved directory's rule path instead, this
+    // rule would stop matching and "secret.txt" would leak into the listing.
+    const rules: GlobRule[] = [{ glob: "decoy-dir/secret.txt", mode: "hidden", reason: "hidden via the symlink's own apparent path" }];
+    const { backend, wrapped } = setup(rules);
+    await backend.mkdir("/real-dir");
+    await backend.writeFile("/real-dir/secret.txt", "x");
+    await backend.writeFile("/real-dir/visible.txt", "y");
+    await backend.symlink("/real-dir", "/decoy-dir");
+    const readdirSpy = vi.spyOn(backend, "readdir");
+
+    const entries = await wrapped.readdir("/decoy-dir");
+
+    expect(readdirSpy.mock.calls[0]?.[0]).toBe("/real-dir");
+    expect(entries).toContain("visible.txt");
+    expect(entries).not.toContain("secret.txt");
+  });
+
+  it("mkdir() routes the backend call through the already-resolved parent, with the literal leaf reattached", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.mkdir("/real-dir");
+    await backend.symlink("/real-dir", "/decoy-dir");
+    const mkdirSpy = vi.spyOn(backend, "mkdir");
+
+    await wrapped.mkdir("/decoy-dir/newsub");
+
+    expect(mkdirSpy.mock.calls[0]?.[0]).toBe("/real-dir/newsub");
+  });
+});
+
+describe("withGlobPolicy: resolved-path redirect never touches symlink-preserving operations (negative/regression cases)", () => {
+  it("unlink() acts on the literally-named entry, never a resolved target", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hi");
+    await backend.symlink("/real.txt", "/decoy");
+    const unlinkSpy = vi.spyOn(backend, "unlink");
+
+    await wrapped.unlink("/decoy");
+
+    expect(unlinkSpy.mock.calls[0]?.[0]).toBe("/decoy");
+    // Only the symlink itself was removed — the real file it pointed to must
+    // survive. Redirecting this to the resolved path would have deleted it.
+    expect(backend.existsSync("/real.txt")).toBe(true);
+  });
+
+  it("lstat() acts on the literally-named entry, never a resolved target", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hi");
+    await backend.symlink("/real.txt", "/decoy");
+    const lstatSpy = vi.spyOn(backend, "lstat");
+
+    const st = await wrapped.lstat("/decoy");
+
+    expect(lstatSpy.mock.calls[0]?.[0]).toBe("/decoy");
+    expect((st as { isSymbolicLink(): boolean }).isSymbolicLink()).toBe(true);
+  });
+
+  it("readlink() acts on the literally-named entry, never a resolved target", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hi");
+    await backend.symlink("/real.txt", "/decoy");
+    const readlinkSpy = vi.spyOn(backend, "readlink");
+
+    await wrapped.readlink("/decoy");
+
+    expect(readlinkSpy.mock.calls[0]?.[0]).toBe("/decoy");
+  });
+
+  it("rename()'s source endpoint acts on the literally-named entry, never a resolved target", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hi");
+    await backend.symlink("/real.txt", "/decoy");
+    const renameSpy = vi.spyOn(backend, "rename");
+
+    await wrapped.rename("/decoy", "/decoy-renamed");
+
+    expect(renameSpy.mock.calls[0]?.[0]).toBe("/decoy");
+    // The symlink itself was renamed — the real file it pointed to must
+    // still be reachable at its original name, untouched.
+    expect(backend.existsSync("/real.txt")).toBe(true);
+  });
+
+  it("link()'s existing endpoint acts on the literally-named entry, never a resolved target", async () => {
+    const { backend, wrapped } = setup([]);
+    await backend.writeFile("/real.txt", "hi");
+    await backend.symlink("/real.txt", "/decoy");
+    const linkSpy = vi.spyOn(backend, "link");
+
+    await wrapped.link("/decoy", "/decoy-link");
+
+    expect(linkSpy.mock.calls[0]?.[0]).toBe("/decoy");
   });
 });
 
@@ -276,6 +442,65 @@ describe("withGlobPolicy: unrecognized VirtualProvider members", () => {
     expect(wrapped.readonly).toBe(backend.readonly);
     expect(wrapped.supportsSymlinks).toBe(backend.supportsSymlinks);
     expect(wrapped.supportsWatch).toBe(backend.supportsWatch);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Generic JS/Node object-protocol members (toString, valueOf, then, etc.):
+// `prop in optionalFactories` used to wrongly match these — they are all
+// inherited from `Object.prototype`, and `in` walks the prototype chain —
+// so the `get` trap treated them as recognized-but-absent VirtualProvider
+// members and returned `undefined`, which breaks `String(provider)`
+// (`Cannot convert object to primitive value`) and similar generic-object
+// usage that has nothing to do with VFS policy. See the
+// `passthroughJsProtocolMembers` comment in src/vfs/glob-policy.ts.
+// ---------------------------------------------------------------------------
+
+describe("withGlobPolicy: generic JS/Node object-protocol passthrough", () => {
+  it("exposes a callable toString that does not throw", () => {
+    const { wrapped } = setup([]);
+    expect(typeof wrapped.toString).toBe("function");
+    expect(() => wrapped.toString()).not.toThrow();
+  });
+
+  it("does not throw on String()/template-literal coercion", () => {
+    const { wrapped } = setup([]);
+    expect(() => String(wrapped)).not.toThrow();
+    expect(() => `${wrapped}`).not.toThrow();
+  });
+
+  it("does not throw JSON.stringify-ing a structure containing the wrapped provider (the original repro)", () => {
+    const { wrapped } = setup([]);
+    expect(() => JSON.stringify({ x: wrapped })).not.toThrow();
+  });
+
+  it("exposes `then` as undefined, not a function, so it is never mistaken for a thenable", async () => {
+    const { wrapped } = setup([]);
+    const asAny = wrapped as unknown as Record<string, unknown>;
+    expect(typeof asAny["then"]).toBe("undefined");
+    // `await`/`Promise.resolve` use the same thenable-detection: with `then`
+    // absent, the wrapped provider must resolve as an ordinary value, not
+    // something to chain onto.
+    await expect(Promise.resolve(wrapped)).resolves.toBe(wrapped);
+  });
+
+  it("exposes a callable hasOwnProperty that does not throw when called", () => {
+    const { wrapped } = setup([]);
+    expect(typeof wrapped.hasOwnProperty).toBe("function");
+    expect(() => wrapped.hasOwnProperty("open")).not.toThrow();
+  });
+
+  it("still denies a genuinely unrecognized, VFS-shaped member outside the new passthrough set", () => {
+    const { wrapped } = setup([]);
+    const asAny = wrapped as unknown as Record<string, unknown>;
+    // `utimes` is a real Node `fs` operation but not part of `VirtualProvider`
+    // (see node_modules/@earendil-works/gondolin's own type) and not part of
+    // `passthroughJsProtocolMembers` — locks in that the passthrough widened
+    // to exactly the JS-protocol set and nothing more, not to VFS operation
+    // names in general.
+    const value = asAny["utimes"];
+    expect(typeof value).toBe("function");
+    expect(() => (value as () => unknown)()).toThrow(/EPERM/);
   });
 });
 
