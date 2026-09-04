@@ -509,7 +509,15 @@ async function readGuestIdentity(vm: VM): Promise<CorbImageJson> {
   return parseCorbImageJson(result.stdout);
 }
 
-function resolveHostDir(dir: string): string {
+// Exported, like the other private-validation helpers below it in this file
+// (`assertValidWorkspaceName`, `assertNoDuplicateNames`,
+// `resolveWorkspaceDirs`, `findPrimaryEntry`) — purely so
+// `test/unit/vm/session.test.ts` can call each directly as the pure/
+// near-pure piece it is, without going through the ~350-line `runSession`
+// orchestrator (which would additionally require a VM). No caller outside
+// this file uses any of them; this is a visibility change only, not a new
+// public API.
+export function resolveHostDir(dir: string): string {
   const resolved = path.resolve(dir);
   let stat: fs.Stats;
   try {
@@ -530,7 +538,10 @@ function resolveHostDir(dir: string): string {
 // otherwise construct an unsafe raw (`WORKSPACE_RAW_ROOT`) or public
 // (`WORKSPACE_PUBLIC_ROOT`) guest path independently of anything
 // `src/config/` validates.
-function assertValidWorkspaceName(name: string): void {
+//
+// Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+// `resolveHostDir`'s own comment above.
+export function assertValidWorkspaceName(name: string): void {
   if (name.length === 0) {
     throw new InvalidWorkspaceNameError(name, "must not be empty");
   }
@@ -607,7 +618,9 @@ export function toGlobRules(dirName: string, rules: readonly DirRuleConfig[]): G
   });
 }
 
-function assertNoDuplicateNames(dirs: readonly WorkspaceDirSpec[]): void {
+// Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+// `resolveHostDir`'s own comment above.
+export function assertNoDuplicateNames(dirs: readonly WorkspaceDirSpec[]): void {
   const seen = new Set<string>();
   for (const dir of dirs) {
     if (seen.has(dir.name)) {
@@ -861,8 +874,11 @@ interface ResolvedWorkspaceDir {
  * check it would otherwise fail, and an invalid `rules[]` entry
  * (`InvalidDirRuleError`, via `toGlobRules`) is still caught before any VM
  * is created even though it has no bearing on the host-path checks above it.
+ *
+ * Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+ * `resolveHostDir`'s own comment above.
  */
-function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] {
+export function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] {
   for (const dir of dirs) {
     assertValidWorkspaceName(dir.name);
   }
@@ -881,7 +897,9 @@ function resolveWorkspaceDirs(dirs: WorkspaceDirSpec[]): ResolvedWorkspaceDir[] 
   });
 }
 
-function findPrimaryEntry(dirs: ResolvedWorkspaceDir[], primary: string): ResolvedWorkspaceDir {
+// Exported purely for `test/unit/vm/session.test.ts`'s direct access — see
+// `resolveHostDir`'s own comment above.
+export function findPrimaryEntry(dirs: ResolvedWorkspaceDir[], primary: string): ResolvedWorkspaceDir {
   const found = dirs.find((d) => d.name === primary);
   if (!found) {
     throw new WorkspaceDirectoryError(primary, "is not one of the configured 'dirs' entries (check 'primary')");
