@@ -60,6 +60,20 @@ function renderVm(vm: EffectiveConfig["vm"]): string[] {
   return lines;
 }
 
+// `extensions`/`append-system-prompt-file` (E2): `schema.ts`'s
+// `parseAgentConfig` now rejects a non-empty `extensions` or any
+// `append-system-prompt-file` at parse time, so every real `corb
+// explain`/`corb run` path (which always goes through `resolveWorkspace` ->
+// `parseConfigLayer` first) can only ever hand this function `undefined`/`[]`
+// for them. The two lines below are kept anyway rather than deleted:
+// `EffectiveConfig["agent"]`'s type still allows a non-trivial value (this
+// module doesn't own that type, and narrowing it is out of scope for a
+// parse-time check), render.ts is a pure function tested independently of
+// the parser (see `render.test.ts`, which builds `EffectiveConfig` values by
+// hand), and `renderJson` already serializes whatever `fullConfig` actually
+// contains regardless. Silently dropping these fields from `renderText`
+// would make it lie by omission relative to `renderJson` for the same
+// object, for the sake of deleting two harmless lines.
 function renderAgent(agent: EffectiveConfig["agent"]): string[] {
   if (agent === undefined) {
     return ["agent: (unset)"];

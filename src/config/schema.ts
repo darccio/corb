@@ -63,6 +63,20 @@ const SYSTEMD_MEMORY_SIZE_RE = /^\d+[KMGT]$/;
 const DURATION_RE = /^\d+[smhd]$/;
 const PERCENT_RE = /^\d+%$/;
 
+/**
+ * The `corb.toml` schema generation this build understands. `version` in a
+ * config document is entirely optional (see `ConfigLayer.version` below) —
+ * nothing today requires an author to declare one — but when present, it
+ * must equal this constant. This is a forward-compatibility gate, not a
+ * mechanism that does anything yet: if this schema is ever changed in a
+ * breaking way, bump this constant, and an older config (still declaring the
+ * previous number) or a newer one (declaring a not-yet-released number)
+ * fails to parse loudly instead of being silently misinterpreted under the
+ * wrong schema assumptions. That forward-looking purpose is the reason this
+ * field exists in the schema at all.
+ */
+export const CURRENT_CONFIG_VERSION = 1;
+
 export interface PartialVmLimits {
   "memory-max"?: string;
   "pids-max"?: number;
@@ -387,14 +401,34 @@ function parseAgentConfig(value: unknown, sourceLabel: string): PartialAgentConf
   if (table.model !== undefined) {
     result.model = expectString(table.model, "agent.model", sourceLabel);
   }
+  // Neither `extensions` nor `append-system-prompt-file` is wired to
+  // anything: nothing in this repo forwards them to `pi` (see README.md's
+  // config section). Accepting either as if it did something would be a
+  // fully-corroborating no-op — validated, merged, and shown by `corb
+  // explain` as though it mattered — so both are rejected at parse time
+  // instead of accepted-and-ignored (E2).
   if (table.extensions !== undefined) {
-    result.extensions = expectStringArray(table.extensions, "agent.extensions", sourceLabel);
+    const extensions = expectStringArray(table.extensions, "agent.extensions", sourceLabel);
+    // An *empty* list is not a lie — corb loading zero extensions is
+    // accurate — so only a non-empty list, which would silently do nothing,
+    // is rejected.
+    if (extensions.length > 0) {
+      throw new ConfigParseError(
+        sourceLabel,
+        `field 'agent.extensions' is not implemented yet — corb never loads extensions into 'pi', so a non-empty list would silently have no effect (an empty list, 'extensions = []', is accepted)`,
+        "agent.extensions",
+      );
+    }
+    result.extensions = extensions;
   }
   if (table["append-system-prompt-file"] !== undefined) {
-    result["append-system-prompt-file"] = expectString(
-      table["append-system-prompt-file"],
-      "agent.append-system-prompt-file",
+    // Unlike `extensions`, a path string has no natural "this means
+    // nothing" spelling — any explicit value here is a real, intended
+    // request that would silently go nowhere, so it is always rejected.
+    throw new ConfigParseError(
       sourceLabel,
+      `field 'agent.append-system-prompt-file' is not implemented yet — corb never forwards it to 'pi', so setting it would silently have no effect`,
+      "agent.append-system-prompt-file",
     );
   }
   return result;
@@ -598,7 +632,15 @@ export function parseConfigLayer(toml: string, sourceLabel: string): ConfigLayer
 
   const layer: ConfigLayer = {};
   if (table.version !== undefined) {
-    layer.version = expectNumber(table.version, "version", sourceLabel);
+    const version = expectNumber(table.version, "version", sourceLabel);
+    if (version !== CURRENT_CONFIG_VERSION) {
+      throw new ConfigParseError(
+        sourceLabel,
+        `field 'version' declares ${version}, but this corb only understands version ${CURRENT_CONFIG_VERSION}`,
+        "version",
+      );
+    }
+    layer.version = version;
   }
   if (table.name !== undefined) {
     layer.name = expectString(table.name, "name", sourceLabel);

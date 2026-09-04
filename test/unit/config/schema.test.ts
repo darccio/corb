@@ -22,7 +22,6 @@ limits = { memory-max = "6G", pids-max = 1024, cpu-quota = "400%" }
 provider = "anthropic"
 model    = "claude-opus-4-5"
 extensions = []
-append-system-prompt-file = "~/.config/corb/APPEND_SYSTEM.md"
 
 [secrets.ANTHROPIC_API_KEY]
 hosts = ["api.anthropic.com"]
@@ -110,7 +109,6 @@ describe("config/schema", () => {
         provider: "anthropic",
         model: "claude-opus-4-5",
         extensions: [],
-        "append-system-prompt-file": "~/.config/corb/APPEND_SYSTEM.md",
       },
       secrets: {
         ANTHROPIC_API_KEY: { hosts: ["api.anthropic.com"] },
@@ -526,6 +524,58 @@ max-session = "4h"
         parseConfigLayer(`[agent]\nextensions = [1, 2]`, "config.toml"),
       );
       expect(err.message).toContain("field 'agent.extensions[0]' must be a string, got number");
+    });
+  });
+
+  // E2: `version` used to accept any number with zero semantic validation —
+  // parsed, merged, and shown by `corb explain` as if it meant something,
+  // but never actually compared against anything corb itself understands.
+  // It now has a real (if trivial) semantics: it must equal the one schema
+  // generation this build understands.
+  describe("version (E2: validated against the schema generation corb understands)", () => {
+    it("version = 1 parses fine (already covered by the full-document test above; confirmed again here in isolation)", () => {
+      const layer = parseConfigLayer(`version = 1`, "config.toml");
+      expect(layer.version).toBe(1);
+    });
+
+    it("an omitted version parses fine (already covered by the partiality test above)", () => {
+      const layer = parseConfigLayer(`name = "corb-dev"`, "config.toml");
+      expect(layer.version).toBeUndefined();
+    });
+
+    it("version = 2 throws ConfigParseError naming both the declared and expected version", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`version = 2`, "config.toml"));
+      expect(err.message).toContain("field 'version'");
+      expect(err.message).toContain("declares 2");
+      expect(err.message).toContain("only understands version 1");
+      expect(err.location).toBe("version");
+    });
+  });
+
+  // E2: `agent.extensions`/`agent.append-system-prompt-file` used to be
+  // parsed, merged across layers, and shown by `corb explain` with zero
+  // downstream effect — a fully-corroborating UI for a no-op, since nothing
+  // forwards either to `pi` (README.md). Rather than wire up a real feature
+  // (out of scope for this fix), both are now rejected outright at parse
+  // time so the no-op can no longer be silently configured.
+  describe("agent.extensions / agent.append-system-prompt-file (E2: rejected, not silently accepted)", () => {
+    it("agent.append-system-prompt-file throws ConfigParseError for any value", () => {
+      const err = expectConfigParseError(() =>
+        parseConfigLayer(`[agent]\nappend-system-prompt-file = "~/.config/corb/APPEND_SYSTEM.md"`, "config.toml"),
+      );
+      expect(err.message).toContain("field 'agent.append-system-prompt-file'");
+      expect(err.location).toBe("agent.append-system-prompt-file");
+    });
+
+    it("agent.extensions = [\"foo\"] (non-empty) throws ConfigParseError", () => {
+      const err = expectConfigParseError(() => parseConfigLayer(`[agent]\nextensions = ["foo"]`, "config.toml"));
+      expect(err.message).toContain("field 'agent.extensions'");
+      expect(err.location).toBe("agent.extensions");
+    });
+
+    it("agent.extensions = [] (empty) still parses fine -- not a lie, since corb loading zero extensions is accurate", () => {
+      const layer = parseConfigLayer(`[agent]\nextensions = []`, "config.toml");
+      expect(layer.agent?.extensions).toEqual([]);
     });
   });
 
