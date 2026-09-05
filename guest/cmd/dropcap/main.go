@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -51,6 +52,20 @@ const (
 )
 
 func main() {
+	// PR_SET_NO_NEW_PRIVS (below) is a per-OS-thread kernel attribute, not a
+	// per-process one — unlike syscall.Setgroups/Setresgid/Setresuid, which
+	// the Go runtime applies across every OS thread of the process
+	// (runtime.AllThreadsSyscall, since Go 1.16), a raw unix.Prctl call
+	// affects only whichever thread happens to execute it. Without pinning
+	// this goroutine to one OS thread for the rest of main, the scheduler is
+	// free to move it to a different thread before the final syscall.Exec
+	// below — e.g. across exec.LookPath's blocking syscalls or a GC pause —
+	// and that thread never had NoNewPrivs set, so the exec'd process would
+	// silently come up with NoNewPrivs=0 despite this function "setting it
+	// first". LockOSThread makes the whole sequence run on one thread,
+	// guaranteed, from here through the exec at the bottom of this function.
+	runtime.LockOSThread()
+
 	uid, gid, cmd, cmdArgs, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
