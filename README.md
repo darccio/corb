@@ -13,7 +13,7 @@ the reasoning behind it.
 
 ## Requirements
 
-- **Node.js >= 23.6.0** (`package.json`'s `engines.node`).
+- **Node.js >= 24.0.0** (`package.json`'s `engines.node`).
 - **Go >= 1.26** (`guest/go.mod`) — only needed to build the guest helper
   binaries (`make guest`); not required to run an already-built image.
 - **QEMU** (`qemu-system-x86_64` / `qemu-system-aarch64`) and, on Linux,

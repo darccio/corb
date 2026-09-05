@@ -6,7 +6,7 @@
     "corb": "./dist/cli.js"
   },
   "engines": {
-    "node": ">=23.6.0"
+    "node": ">=24.0.0"
   },
   "files": [
     "dist",
