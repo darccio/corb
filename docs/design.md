@@ -396,7 +396,11 @@ convenience layer, not a security boundary. Being clear about that is what makes
 it safe to have one at all: the worst case of a bypass is the guest doing
 something to itself, as an unprivileged user, with no real credentials present.
 The actual enforcement for anything that leaves the guest is `ssh.execPolicy`
-for git and the HTTP allowlist plus secret binding for `gh`.
+for git over SSH and the HTTP allowlist plus secret binding for `gh` — plus, as
+a third, distinct enforcement point alongside those two (not a replacement for
+either), `gitHttpGate` (`src/vm/githttp.ts`), which applies the same
+`git.allow-repos`/`git.allow-push` rules to git's smart-HTTP protocol over
+HTTPS.
 
 The gate exists for two reasons: to fail fast and legibly on operations that
 never leave the guest (local config edits, history rewriting), and to be the

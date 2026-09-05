@@ -772,10 +772,14 @@ export interface RunSessionOptions {
   secrets?: Record<string, PartialSecretConfig>;
   /**
    * A session's full effective git config (`EffectiveConfig.git`, always
-   * present — see `src/config/load.ts`), passed straight through to
-   * `buildGitSshOptions()`. See the module-level import comment for why this
-   * module imports this config type directly rather than defining its own
-   * decoupled shape, unlike `dirs`/`primary` above.
+   * present — see `src/config/load.ts`), passed straight through to both
+   * `buildGitSshOptions()` (the SSH transport's `execPolicy`) and, since a
+   * later hardening item, `buildEgressConfig()` (the HTTP transport's
+   * `gitHttpGate`, `src/vm/githttp.ts` — the same `git.allow-repos`/
+   * `git.allow-push` rules applied to git's smart-HTTP protocol over HTTPS).
+   * See the module-level import comment for why this module imports this
+   * config type directly rather than defining its own decoupled shape,
+   * unlike `dirs`/`primary` above.
    */
   git: EffectiveGitConfig;
   /**
@@ -1088,6 +1092,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       sessionId,
       options.policy,
       options.dirConfigs,
+      options.git,
     );
     // `ssh` is always passed, never conditionally omitted: `SshOptions.allowedHosts`
     // is a required `string[]`, and `buildGitSshOptions` itself already

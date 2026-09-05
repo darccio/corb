@@ -26,11 +26,12 @@
 // call) is still M3.4's job, not this one's — nothing here is called from
 // `session.ts` or `VM.create()` yet.
 import { createHttpHooks, type HttpHooks } from "@earendil-works/gondolin";
-import type { DirConfig, EffectiveEgressConfig, EffectivePolicyConfig } from "../config/load.ts";
+import type { DirConfig, EffectiveEgressConfig, EffectiveGitConfig, EffectivePolicyConfig } from "../config/load.ts";
 import type { PartialSecretConfig } from "../config/schema.ts";
 import type { AuditWriter } from "../policy/audit.ts";
 import { githubApiGate } from "../policy/github.ts";
 import { POLICY_HOST, sentinel } from "../policy/sentinel.ts";
+import { gitHttpGate } from "./githttp.ts";
 
 /** The real secret value plus the hosts Gondolin is allowed to send it to. Matches `createHttpHooks({ secrets })`'s per-entry shape (docs/gondolin-notes.md §5). */
 export interface SecretBinding {
@@ -206,24 +207,44 @@ export function composeOnRequest(hooks: readonly OnRequestHook[]): OnRequestHook
 const INERT_POLICY: EffectivePolicyConfig = { enabled: false, "secret-scan": false, "fail-open": true };
 
 /**
+ * Structurally equivalent to "this gate has nothing to say" — the default
+ * `git` value `buildEgressConfig` uses when a caller omits it entirely.
+ * `allow-hosts`/`allow-repos` both omitted (`undefined`) is what makes
+ * `gitHttpGate` (`./githttp.ts`) a complete no-op for this default, per that
+ * function's own host-scope-check-first design — matches `INERT_POLICY`'s
+ * own precedent just above. The two boolean fields' literal values don't
+ * functionally matter to this gate at all, but mirror the real
+ * `DEFAULT_SSH_AGENT`/`DEFAULT_ALLOW_PUSH` values (`src/config/load.ts`) for
+ * honesty, matching how `INERT_POLICY`'s own `"fail-open": true` mirrors its
+ * corresponding real default rather than being an arbitrary placeholder.
+ */
+const INERT_GIT: EffectiveGitConfig = { "ssh-agent": true, "allow-push": false };
+
+/**
  * Composes `buildSecretBindings` with the rest of `egress` into one
  * `createHttpHooks()` call, wires its `onResponse` hook to the unified audit
  * log (`src/policy/audit.ts`, M3.1), and wires its `onRequest` hook to
- * `composeOnRequest([sentinel(...), githubApiGate(...)])` — M7.2's
- * out-of-guest content-check sentinel (`src/policy/sentinel.ts`,
+ * `composeOnRequest([sentinel(...), githubApiGate(...), gitHttpGate(...)])` —
+ * M7.2's out-of-guest content-check sentinel (`src/policy/sentinel.ts`,
  * `policy.corb.invalid`, `docs/design.md` §5) ahead of the GitHub API
  * method/path gate (`egress.github-api`, `src/policy/github.ts`, M4.2) — the
- * mechanism that makes `gh api -X DELETE` refusable. Both hooks are
- * themselves complete no-ops whenever their own config is inert
- * (`policy.enabled === false`; `egress["github-api"]` `undefined`), so this
- * wiring costs nothing for a workspace that doesn't use either.
+ * mechanism that makes `gh api -X DELETE` refusable — ahead of the
+ * git-over-HTTPS gate (`git.allow-repos`/`git.allow-push`,
+ * `src/vm/githttp.ts`, a later hardening item): the HTTPS-side counterpart to
+ * `src/vm/gitssh.ts`'s own SSH `execPolicy`, a third, distinct enforcement
+ * point alongside the other two — not a replacement for either. All three
+ * hooks are themselves complete no-ops whenever their own config is inert
+ * (`policy.enabled === false`; `egress["github-api"]` `undefined`;
+ * `git["allow-hosts"]` unset), so this wiring costs nothing for a workspace
+ * that doesn't use any of them.
  *
- * `policy` and `dirs` are optional, each defaulting to inert/disabled
- * behavior when omitted (`INERT_POLICY`; `dirs` to `[]`) — this keeps every
- * existing caller of this function (this module's own unit tests and the
- * `.e2e.ts` suites, none of which care about the content-check sentinel)
- * compiling and behaving exactly as before with no edits to them. Real
- * callers (`src/vm/session.ts`) always pass both explicitly.
+ * `policy`, `dirs`, and `git` are optional, each defaulting to inert/disabled
+ * behavior when omitted (`INERT_POLICY`; `dirs` to `[]`; `git` to
+ * `INERT_GIT`) — this keeps every existing caller of this function (this
+ * module's own unit tests and the `.e2e.ts` suites, none of which care about
+ * the content-check sentinel or the git-over-HTTPS gate) compiling and
+ * behaving exactly as before with no edits to them. Real callers
+ * (`src/vm/session.ts`) always pass all three explicitly.
  *
  * Still deliberately passes neither `isRequestAllowed` nor `isIpAllowed`:
  * nothing in scope for this codebase needs them yet.
@@ -276,6 +297,7 @@ export function buildEgressConfig(
   sessionId: string,
   policy: EffectivePolicyConfig = INERT_POLICY,
   dirs: readonly DirConfig[] = [],
+  git: EffectiveGitConfig = INERT_GIT,
 ): EgressConfig {
   const secretBindings = buildSecretBindings(secrets, env);
   audit.addRedactedSecrets(Object.values(secretBindings).map((binding) => binding.value));
@@ -300,6 +322,7 @@ export function buildEgressConfig(
     onRequest: composeOnRequest([
       sentinel(policy, dirs, audit, sessionId),
       githubApiGate(egress["github-api"], audit, sessionId),
+      gitHttpGate(git, audit, sessionId),
     ]),
     onResponse: (res, req) => {
       audit.record({

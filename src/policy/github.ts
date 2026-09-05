@@ -74,8 +74,20 @@ function pathGlobToRegExp(pattern: string): RegExp {
 // decode.
 const MAX_DECODE_ITERATIONS = 4;
 
-/** Throws (via `decodeURIComponent`) if `pathname` contains a malformed percent-escape (e.g. a lone `%ZZ`) at any point during the fixpoint iteration — see the caller for why that is treated as a deny, matching `docs/adr/0005`'s allowlist-never-blocklist posture: an ambiguous path must not be given the benefit of the doubt. */
-function decodeToFixpoint(pathname: string): string {
+/**
+ * Throws (via `decodeURIComponent`) if `pathname` contains a malformed
+ * percent-escape (e.g. a lone `%ZZ`) at any point during the fixpoint
+ * iteration — see the caller for why that is treated as a deny, matching
+ * `docs/adr/0005`'s allowlist-never-blocklist posture: an ambiguous path must
+ * not be given the benefit of the doubt.
+ *
+ * Exported (a later hardening item, not a milestone this codebase's own tags
+ * track) so `src/vm/githttp.ts`'s `gitHttpGate` can reuse this exact
+ * fixpoint-decoding logic for its own path comparison, rather than
+ * re-implementing a second, differently-shaped copy of the same
+ * decode-to-fixpoint discipline.
+ */
+export function decodeToFixpoint(pathname: string): string {
   let current = pathname;
   for (let i = 0; i < MAX_DECODE_ITERATIONS; i++) {
     const next = decodeURIComponent(current);

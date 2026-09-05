@@ -26,7 +26,7 @@ import {
   safeSubject,
   SecretHostsMissingError,
 } from "../../../src/vm/egress.ts";
-import type { EffectiveEgressConfig } from "../../../src/config/load.ts";
+import type { EffectiveEgressConfig, EffectiveGitConfig } from "../../../src/config/load.ts";
 import { POLICY_HOST } from "../../../src/policy/sentinel.ts";
 
 describe("vm/egress buildSecretBindings", () => {
@@ -366,5 +366,48 @@ describe("vm/egress buildEgressConfig", () => {
 
     const recorded = audit.record.mock.calls[0]?.[0] as Omit<AuditEvent, "ts">;
     expect(recorded.reason).toBe("404");
+  });
+
+  it("wires gitHttpGate into onRequest too: a push-shaped request to an allow-hosted, allow-repos-scoped host is denied when allow-push is false", async () => {
+    const audit = fakeAudit();
+    const git: EffectiveGitConfig = {
+      "ssh-agent": true,
+      "allow-push": false,
+      "allow-hosts": ["github.com"],
+      "allow-repos": ["dario/corb"],
+    };
+    // `policy` (6th) and `dirs` (7th) must be filled in to reach `git` (8th)
+    // positionally; `undefined` for `policy` falls back to this module's own
+    // `INERT_POLICY` default, same as every other trailing-default parameter
+    // in this file.
+    buildEgressConfig(egress(), undefined, {}, audit, "session-git", undefined, [], git);
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
+      onRequest: (req: Request) => Promise<Response | undefined> | Response | undefined;
+    };
+
+    const req = new Request("https://github.com/dario/corb/git-receive-pack", { method: "POST" });
+    const result = await callArgs.onRequest(req);
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(403);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "http",
+        decision: "deny",
+        subject: "POST github.com/dario/corb/git-receive-pack",
+        reason: expect.stringMatching(/push is disabled/),
+        sessionId: "session-git",
+      }),
+    );
+  });
+
+  it("regression guard: omitting the git parameter entirely (INERT_GIT default) leaves a git-push-shaped request passing through untouched, same as every pre-existing call site in this file", async () => {
+    buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
+    const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
+      onRequest: (req: Request) => Promise<Response | undefined> | Response | undefined;
+    };
+
+    const req = new Request("https://github.com/dario/corb/git-receive-pack", { method: "POST" });
+    await expect(callArgs.onRequest(req)).resolves.toBeUndefined();
   });
 });

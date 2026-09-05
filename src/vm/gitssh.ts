@@ -170,9 +170,17 @@ export function matchAnyGlob(patterns: string[] | undefined, repo: string): bool
   return patterns.some((pattern) => globToRegExp(pattern.toLowerCase()).test(repo));
 }
 
-/** The two git-over-SSH services `execPolicy` below actually recognizes. Anything else is denied — see `buildGitSshOptions`'s doc comment. */
-const GIT_UPLOAD_PACK = "git-upload-pack";
-const GIT_RECEIVE_PACK = "git-receive-pack";
+/**
+ * The two git services `execPolicy` below actually recognizes over SSH.
+ * Anything else is denied — see `buildGitSshOptions`'s doc comment. Exported
+ * (a later hardening item, not a milestone this codebase's own tags track —
+ * reference the mechanism directly rather than inventing one) so
+ * `src/vm/githttp.ts`'s `gitHttpGate` can reuse these exact two string values
+ * for its own, HTTP-transport recognition of the identical two services,
+ * rather than re-declaring the same two literals a second time.
+ */
+export const GIT_UPLOAD_PACK = "git-upload-pack";
+export const GIT_RECEIVE_PACK = "git-receive-pack";
 
 /**
  * Audit subject used for the `ssh` channel whenever a safe, parsed
