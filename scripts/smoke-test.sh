@@ -19,12 +19,16 @@ echo "==> smoke-test: building (npm run build)"
 (cd "$ROOT_DIR" && npm run build)
 
 echo "==> smoke-test: packing (npm pack)"
-(cd "$ROOT_DIR" && npm pack --pack-destination "$WORK_DIR")
-
-# Compute the tarball's filename ourselves rather than parsing npm pack's own
-# stdout/notice output (fragile, format has varied across npm versions) --
-# this matches npm's own stable <name>-<version>.tgz convention.
-TARBALL_NAME="corb-$(node -p "require('$ROOT_DIR/package.json').version").tgz"
+# `--json` gives a stable, structured result specifically meant for
+# scripting (unlike the human-readable notice/tarball-listing output on
+# stdout without it, whose exact format has varied across npm versions) --
+# read the real `filename` back out of it rather than assuming a naming
+# convention ourselves. This matters once the package name is scoped
+# (`@darccio/corb`): npm flattens that to `darccio-corb-<version>.tgz`
+# (`@` stripped, `/` -> `-`), a transformation not worth re-deriving here
+# when npm will just tell us the answer directly.
+(cd "$ROOT_DIR" && npm pack --json --pack-destination "$WORK_DIR" > "$WORK_DIR/pack.json")
+TARBALL_NAME="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))[0].filename)" "$WORK_DIR/pack.json")"
 TARBALL_PATH="$WORK_DIR/$TARBALL_NAME"
 
 INSTALL_DIR="$WORK_DIR/install"
