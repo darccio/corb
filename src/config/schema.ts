@@ -120,6 +120,14 @@ export interface PartialAgentConfig {
 export interface PartialSecretVerifyConfig {
   url?: string;
   header?: string;
+  /**
+   * Prepended to the secret's real value before it's placed in `header`
+   * (e.g. `"Bearer "` for a scheme that expects `Authorization: Bearer
+   * <token>` rather than the bare token). Optional, blank by default — many
+   * providers (e.g. `x-api-key`-style auth) want the bare value with no
+   * prefix at all.
+   */
+  "header-prefix"?: string;
   "expect-status"?: number[];
 }
 
@@ -460,7 +468,7 @@ function parseAgentConfig(value: unknown, sourceLabel: string): PartialAgentConf
   return result;
 }
 
-const SECRET_VERIFY_KEYS = ["url", "header", "expect-status"] as const;
+const SECRET_VERIFY_KEYS = ["url", "header", "header-prefix", "expect-status"] as const;
 
 // `url` and `header` are both required once `[secrets.NAME.verify]` is
 // present at all: there is no sensible default for either (corb never
@@ -485,6 +493,9 @@ function parseSecretVerify(value: unknown, location: string, sourceLabel: string
     url: expectFormattedString(table.url, joinPath(location, "url"), sourceLabel, HTTPS_URL_RE, "https://api.example.com/v1/models"),
     header: expectString(table.header, joinPath(location, "header"), sourceLabel),
   };
+  if (table["header-prefix"] !== undefined) {
+    result["header-prefix"] = expectString(table["header-prefix"], joinPath(location, "header-prefix"), sourceLabel);
+  }
   if (table["expect-status"] !== undefined) {
     const statusPath = joinPath(location, "expect-status");
     const statuses = expectArray(table["expect-status"], statusPath, sourceLabel).map((item, i) =>

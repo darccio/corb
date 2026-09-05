@@ -445,6 +445,35 @@ methdo = "GET"
       expect(err.message).toContain("unknown key 'secrets.ANTHROPIC_API_KEY.verify.methdo'");
     });
 
+    it("parses an optional [secrets.NAME.verify] header-prefix", () => {
+      const toml = `
+[secrets.OPENROUTER_API_KEY]
+hosts = ["openrouter.ai"]
+[secrets.OPENROUTER_API_KEY.verify]
+url = "https://openrouter.ai/api/v1/models"
+header = "Authorization"
+header-prefix = "Bearer "
+`;
+      const layer = parseConfigLayer(toml, "config.toml");
+      expect(layer.secrets?.OPENROUTER_API_KEY?.verify).toEqual({
+        url: "https://openrouter.ai/api/v1/models",
+        header: "Authorization",
+        "header-prefix": "Bearer ",
+      });
+    });
+
+    it("[secrets.NAME.verify] omitting header-prefix leaves it undefined (bare value, no prefix)", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "https://api.anthropic.com/v1/models"
+header = "x-api-key"
+`;
+      const layer = parseConfigLayer(toml, "config.toml");
+      expect(layer.secrets?.ANTHROPIC_API_KEY?.verify?.["header-prefix"]).toBeUndefined();
+    });
+
     it("nested under [egress.github-api]", () => {
       const err = expectConfigParseError(() =>
         parseConfigLayer(`[egress.github-api]\nmethdos = ["GET"]`, "config.toml"),

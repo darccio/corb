@@ -461,6 +461,33 @@ describe("commands/doctor: checkVerifySecrets (opt-in, --verify-secrets only)", 
     expect(fetchImpl).toHaveBeenCalledWith("https://example.com/check", { headers: { "x-api-key": "real-value" } });
   });
 
+  it("header-prefix is prepended to the secret's real value, e.g. for a Bearer-scheme header", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: {
+        secrets: {
+          OPENROUTER_API_KEY: {
+            hosts: ["openrouter.ai"],
+            verify: { url: "https://openrouter.ai/api/v1/models", header: "Authorization", "header-prefix": "Bearer " },
+          },
+        },
+      },
+    };
+    const fetchImpl = fakeFetch(200);
+    await checkVerifySecrets(layer, { OPENROUTER_API_KEY: "sk-or-real" }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith("https://openrouter.ai/api/v1/models", { headers: { Authorization: "Bearer sk-or-real" } });
+  });
+
+  it("no header-prefix configured -> the bare secret value is sent, unmodified", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: { secrets: { FOO: { hosts: ["example.com"], verify: { url: "https://example.com/check", header: "x-api-key" } } } },
+    };
+    const fetchImpl = fakeFetch(200);
+    await checkVerifySecrets(layer, { FOO: "real-value" }, fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledWith("https://example.com/check", { headers: { "x-api-key": "real-value" } });
+  });
+
   it("default expect-status is [200] when not configured", async () => {
     const layer: DoctorConfigLoad = {
       kind: "parsed",

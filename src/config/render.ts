@@ -102,7 +102,9 @@ function renderSecrets(secrets: EffectiveConfig["secrets"]): string[] {
     if (entry.verify === undefined) {
       lines.push("    verify: (unset)");
     } else {
-      lines.push(`    verify: url=${entry.verify.url} header=${entry.verify.header} expect-status=${fmtArray(entry.verify["expect-status"]?.map(String))}`);
+      lines.push(
+        `    verify: url=${entry.verify.url} header=${entry.verify.header} header-prefix=${fmtScalar(entry.verify["header-prefix"])} expect-status=${fmtArray(entry.verify["expect-status"]?.map(String))}`,
+      );
     }
   }
   return lines;

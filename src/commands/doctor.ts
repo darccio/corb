@@ -551,9 +551,10 @@ async function verifySecretEntry(name: string, value: string, verify: NonNullabl
   // `parseSecretVerify` (`src/config/schema.ts`) rejects any `verify` table
   // missing either at parse time — a `verify` object can only ever exist
   // here with both already present.
+  const headerValue = (verify["header-prefix"] ?? "") + value;
   let response: Response;
   try {
-    response = await fetchImpl(verify.url!, { headers: { [verify.header!]: value } });
+    response = await fetchImpl(verify.url!, { headers: { [verify.header!]: headerValue } });
   } catch (err) {
     return fail(checkName, `request to ${verify.url} failed: ${errorMessage(err)}`);
   }

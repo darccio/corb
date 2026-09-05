@@ -164,6 +164,12 @@ hosts = ["api.anthropic.com"]
 url            = "https://api.anthropic.com/v1/models"
 header         = "x-api-key"
 expect-status  = [200]  # optional, defaults to [200]
+# `header-prefix` (also optional) is prepended to the value before it's
+# placed in `header` — needed for a Bearer-scheme provider, e.g. OpenRouter:
+#   [secrets.OPENROUTER_API_KEY.verify]
+#   url            = "https://openrouter.ai/api/v1/models"
+#   header         = "Authorization"
+#   header-prefix  = "Bearer "
 [secrets.GITHUB_TOKEN]
 hosts    = ["api.github.com"]
 optional = true

@@ -117,7 +117,27 @@ describe("config/render: renderText", () => {
       trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
     };
     const text = renderText(workspace);
-    expect(text).toContain("verify: url=https://api.anthropic.com/v1/models header=x-api-key expect-status=[200]");
+    expect(text).toContain("verify: url=https://api.anthropic.com/v1/models header=x-api-key header-prefix=(unset) expect-status=[200]");
+  });
+
+  it("shows a configured [secrets.NAME.verify]'s header-prefix", () => {
+    const config = baseConfig();
+    config.secrets = {
+      OPENROUTER_API_KEY: {
+        hosts: ["openrouter.ai"],
+        verify: { url: "https://openrouter.ai/api/v1/models", header: "Authorization", "header-prefix": "Bearer " },
+      },
+    };
+    const workspace: ResolvedWorkspace = {
+      dir: "/home/user/myproj",
+      persistentConfig: config,
+      fullConfig: config,
+      trustKey: "/home/user/myproj",
+      priorRecord: undefined,
+      trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
+    };
+    const text = renderText(workspace);
+    expect(text).toContain("header-prefix=Bearer ");
   });
 
   it("makes a widening diff visible: verdict and itemized widened change both appear", () => {
