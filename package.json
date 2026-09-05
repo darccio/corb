@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src",
     "test": "vitest run test/unit",
-    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:smoke": "bash scripts/smoke-test.sh"
   },
   "dependencies": {
     "@earendil-works/gondolin": "0.12.0",
