@@ -12,6 +12,7 @@
       "git",
       "openssh-client",
       "ripgrep",
+      "fd",
       "jq",
       "less",
       "nodejs",
