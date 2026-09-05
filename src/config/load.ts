@@ -254,6 +254,15 @@ function mergeSecretEntry(base: PartialSecretConfig | undefined, next: PartialSe
   if (optional !== undefined) {
     result.optional = optional;
   }
+  // `verify` is a single whole-object field here, same as `optional` above —
+  // a later layer's `[secrets.NAME.verify]` replaces an earlier layer's
+  // wholesale rather than merging its own `url`/`header`/`expect-status`
+  // sub-fields individually, matching `parseSecretVerify`'s own all-or-
+  // nothing validation (a `verify` table is only ever produced whole).
+  const verify = next.verify ?? base?.verify;
+  if (verify !== undefined) {
+    result.verify = verify;
+  }
   return result;
 }
 

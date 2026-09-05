@@ -18,6 +18,7 @@ import {
   buildDoctorReport,
   checkRequiredSecrets,
   checkSecretsConfigured,
+  checkVerifySecrets,
   classifyCgroupControllers,
   classifyE2fsprogs,
   classifyGoInstall,
@@ -414,6 +415,116 @@ describe("commands/doctor: required-secrets vs secrets-configured (config.toml +
   });
 });
 
+describe("commands/doctor: checkVerifySecrets (opt-in, --verify-secrets only)", () => {
+  const absent: DoctorConfigLoad = { kind: "absent" };
+  const parseError: DoctorConfigLoad = { kind: "parse-error", error: new ConfigParseError("config.toml", "bad TOML") };
+
+  function fakeFetch(status: number, statusText = ""): typeof fetch {
+    return vi.fn().mockResolvedValue(new Response(null, { status, statusText })) as unknown as typeof fetch;
+  }
+
+  it("absent config.toml -> no checks (nothing to verify)", async () => {
+    await expect(checkVerifySecrets(absent, {})).resolves.toEqual([]);
+  });
+
+  it("parse error -> no checks (already reported elsewhere)", async () => {
+    await expect(checkVerifySecrets(parseError, {})).resolves.toEqual([]);
+  });
+
+  it("a [secrets.NAME] entry with no verify table -> skipped entirely", async () => {
+    const layer: DoctorConfigLoad = { kind: "parsed", layer: { secrets: { FOO: { hosts: ["example.com"] } } } };
+    const fetchImpl = fakeFetch(200);
+    await expect(checkVerifySecrets(layer, { FOO: "value" }, fetchImpl)).resolves.toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("a verify-configured entry with no env var set -> skipped (checkRequiredSecrets's job to flag that)", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: { secrets: { FOO: { hosts: ["example.com"], verify: { url: "https://example.com/check", header: "x-api-key" } } } },
+    };
+    const fetchImpl = fakeFetch(200);
+    await expect(checkVerifySecrets(layer, {}, fetchImpl)).resolves.toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("a response status matching expect-status -> ok, and the header carries the real secret value", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: { secrets: { FOO: { hosts: ["example.com"], verify: { url: "https://example.com/check", header: "x-api-key" } } } },
+    };
+    const fetchImpl = fakeFetch(200);
+    const results = await checkVerifySecrets(layer, { FOO: "real-value" }, fetchImpl);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.status).toBe("ok");
+    expect(results[0]?.name).toBe("verify-secret:FOO");
+    expect(fetchImpl).toHaveBeenCalledWith("https://example.com/check", { headers: { "x-api-key": "real-value" } });
+  });
+
+  it("default expect-status is [200] when not configured", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: { secrets: { FOO: { hosts: ["example.com"], verify: { url: "https://example.com/check", header: "x-api-key" } } } },
+    };
+    expect((await checkVerifySecrets(layer, { FOO: "v" }, fakeFetch(401, "Unauthorized")))[0]?.status).toBe("fail");
+    expect((await checkVerifySecrets(layer, { FOO: "v" }, fakeFetch(200)))[0]?.status).toBe("ok");
+  });
+
+  it("a configured expect-status list is honored, including non-2xx 'credential accepted' statuses", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: {
+        secrets: {
+          FOO: { hosts: ["example.com"], verify: { url: "https://example.com/check", header: "x-api-key", "expect-status": [200, 400] } },
+        },
+      },
+    };
+    expect((await checkVerifySecrets(layer, { FOO: "v" }, fakeFetch(400, "Bad Request")))[0]?.status).toBe("ok");
+  });
+
+  it("a status outside expect-status -> fail, naming the actual status and the possibility the credential is bad", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: { secrets: { FOO: { hosts: ["example.com"], verify: { url: "https://example.com/check", header: "x-api-key" } } } },
+    };
+    const results = await checkVerifySecrets(layer, { FOO: "v" }, fakeFetch(401, "Unauthorized"));
+    expect(results[0]?.status).toBe("fail");
+    expect(results[0]?.detail).toContain("401");
+    expect(results[0]?.detail.toLowerCase()).toContain("invalid");
+  });
+
+  it("a network-level failure -> fail, not a thrown exception", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: { secrets: { FOO: { hosts: ["example.com"], verify: { url: "https://example.com/check", header: "x-api-key" } } } },
+    };
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("getaddrinfo ENOTFOUND example.com")) as unknown as typeof fetch;
+    const results = await checkVerifySecrets(layer, { FOO: "v" }, fetchImpl);
+    expect(results[0]?.status).toBe("fail");
+    expect(results[0]?.detail).toContain("ENOTFOUND");
+  });
+
+  it("verifies every secret that has a verify table configured, independently", async () => {
+    const layer: DoctorConfigLoad = {
+      kind: "parsed",
+      layer: {
+        secrets: {
+          FOO: { hosts: ["a.example.com"], verify: { url: "https://a.example.com/check", header: "x-api-key" } },
+          BAR: { hosts: ["b.example.com"], verify: { url: "https://b.example.com/check", header: "authorization" } },
+        },
+      },
+    };
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 })) as unknown as typeof fetch;
+    const results = await checkVerifySecrets(layer, { FOO: "foo-value", BAR: "bar-value" }, fetchImpl);
+    expect(results.map((r) => r.name).sort()).toEqual(["verify-secret:BAR", "verify-secret:FOO"]);
+    expect(results.find((r) => r.name === "verify-secret:FOO")?.status).toBe("ok");
+    expect(results.find((r) => r.name === "verify-secret:BAR")?.status).toBe("fail");
+  });
+});
+
 describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () => {
   // Not mocked: this is the one place the real OS is exercised in this
   // suite, matching the module comment's own honesty about what's
@@ -463,5 +574,24 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
       ]),
     );
     expect(report.ok).toBe(report.checks.every((c) => c.status !== "fail"));
+  });
+
+  it("checkVerifySecrets only runs when verifySecrets: true, even with a [secrets.NAME.verify] configured", async () => {
+    fs.writeFileSync(
+      path.join(configDir, "config.toml"),
+      `[secrets.FOO]\nhosts = ["example.com"]\n[secrets.FOO.verify]\nurl = "https://example.com/check"\nheader = "x-api-key"\n`,
+    );
+    process.env.FOO = "some-value";
+    try {
+      const withoutVerify = await runDoctorChecks();
+      expect(withoutVerify.checks.map((c) => c.name)).not.toContain("verify-secret:FOO");
+
+      const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as unknown as typeof fetch;
+      const withVerify = await runDoctorChecks({ verifySecrets: true, fetchImpl });
+      expect(withVerify.checks.map((c) => c.name)).toContain("verify-secret:FOO");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.FOO;
+    }
   });
 });

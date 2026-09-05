@@ -254,6 +254,48 @@ describe("config/load", () => {
     });
   });
 
+  it("a later layer's [secrets.NAME.verify] replaces an earlier one's wholesale, not field-by-field", () => {
+    const first: ConfigLayer = {
+      secrets: {
+        ANTHROPIC_API_KEY: {
+          hosts: ["api.anthropic.com"],
+          verify: { url: "https://api.anthropic.com/v1/models", header: "x-api-key" },
+        },
+      },
+    };
+    const second: ConfigLayer = {
+      secrets: {
+        ANTHROPIC_API_KEY: {
+          verify: { url: "https://api.anthropic.com/v1/messages", header: "x-api-key", "expect-status": [200, 400] },
+        },
+      },
+    };
+    const effective = mergeConfigLayers([first, second]);
+    expect(effective.secrets).toEqual({
+      ANTHROPIC_API_KEY: {
+        hosts: ["api.anthropic.com"],
+        verify: { url: "https://api.anthropic.com/v1/messages", header: "x-api-key", "expect-status": [200, 400] },
+      },
+    });
+  });
+
+  it("an earlier layer's [secrets.NAME.verify] survives when a later layer doesn't mention it", () => {
+    const first: ConfigLayer = {
+      secrets: {
+        ANTHROPIC_API_KEY: {
+          hosts: ["api.anthropic.com"],
+          verify: { url: "https://api.anthropic.com/v1/models", header: "x-api-key" },
+        },
+      },
+    };
+    const second: ConfigLayer = { secrets: { ANTHROPIC_API_KEY: { optional: true } } };
+    const effective = mergeConfigLayers([first, second]);
+    expect(effective.secrets?.ANTHROPIC_API_KEY?.verify).toEqual({
+      url: "https://api.anthropic.com/v1/models",
+      header: "x-api-key",
+    });
+  });
+
   it("throws ConfigMergeError for a [[dir]] entry with no name", () => {
     expect(() => mergeConfigLayers([{ dir: [{ host: "~/x" }] }])).toThrow(ConfigMergeError);
   });

@@ -333,6 +333,118 @@ requried = true
       expect(err.message).toContain("unknown key 'secrets.GITHUB_TOKEN.requried'");
     });
 
+    it("parses a full [secrets.NAME.verify] table", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "https://api.anthropic.com/v1/models"
+header = "x-api-key"
+expect-status = [200, 400]
+`;
+      const layer = parseConfigLayer(toml, "config.toml");
+      expect(layer.secrets).toEqual({
+        ANTHROPIC_API_KEY: {
+          hosts: ["api.anthropic.com"],
+          verify: {
+            url: "https://api.anthropic.com/v1/models",
+            header: "x-api-key",
+            "expect-status": [200, 400],
+          },
+        },
+      });
+    });
+
+    it("[secrets.NAME.verify] omitting expect-status leaves it undefined (default applied by the consumer, not the parser)", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "https://api.anthropic.com/v1/models"
+header = "x-api-key"
+`;
+      const layer = parseConfigLayer(toml, "config.toml");
+      expect(layer.secrets?.ANTHROPIC_API_KEY?.verify).toEqual({
+        url: "https://api.anthropic.com/v1/models",
+        header: "x-api-key",
+      });
+    });
+
+    it("rejects a [secrets.NAME.verify] table missing 'url'", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+header = "x-api-key"
+`;
+      const err = expectConfigParseError(() => parseConfigLayer(toml, "config.toml"));
+      expect(err.message).toContain("secrets.ANTHROPIC_API_KEY.verify");
+      expect(err.message).toContain("url");
+    });
+
+    it("rejects a [secrets.NAME.verify] table missing 'header'", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "https://api.anthropic.com/v1/models"
+`;
+      const err = expectConfigParseError(() => parseConfigLayer(toml, "config.toml"));
+      expect(err.message).toContain("secrets.ANTHROPIC_API_KEY.verify");
+      expect(err.message).toContain("header");
+    });
+
+    it("rejects a non-https [secrets.NAME.verify] url", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "http://api.anthropic.com/v1/models"
+header = "x-api-key"
+`;
+      const err = expectConfigParseError(() => parseConfigLayer(toml, "config.toml"));
+      expect(err.message).toContain("invalid format");
+    });
+
+    it("rejects an empty expect-status list", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "https://api.anthropic.com/v1/models"
+header = "x-api-key"
+expect-status = []
+`;
+      const err = expectConfigParseError(() => parseConfigLayer(toml, "config.toml"));
+      expect(err.message).toContain("must not be empty");
+    });
+
+    it("rejects an out-of-range expect-status entry", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "https://api.anthropic.com/v1/models"
+header = "x-api-key"
+expect-status = [999]
+`;
+      const err = expectConfigParseError(() => parseConfigLayer(toml, "config.toml"));
+      expect(err.message).toContain("must be a valid HTTP status code");
+    });
+
+    it("rejects an unknown key inside [secrets.NAME.verify]", () => {
+      const toml = `
+[secrets.ANTHROPIC_API_KEY]
+hosts = ["api.anthropic.com"]
+[secrets.ANTHROPIC_API_KEY.verify]
+url = "https://api.anthropic.com/v1/models"
+header = "x-api-key"
+methdo = "GET"
+`;
+      const err = expectConfigParseError(() => parseConfigLayer(toml, "config.toml"));
+      expect(err.message).toContain("unknown key 'secrets.ANTHROPIC_API_KEY.verify.methdo'");
+    });
+
     it("nested under [egress.github-api]", () => {
       const err = expectConfigParseError(() =>
         parseConfigLayer(`[egress.github-api]\nmethdos = ["GET"]`, "config.toml"),

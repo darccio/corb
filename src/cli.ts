@@ -38,7 +38,7 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
   if (argv[0] === "doctor") {
-    await runDoctorCommand();
+    await runDoctorCommand(argv.slice(1));
     return;
   }
   if (argv[0] === "ls") {

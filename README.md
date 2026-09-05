@@ -86,7 +86,7 @@ code.
 | `corb attach <session>` | Opens a new interactive shell inside a running session (a *new* shell — not a way to rejoin Pi's own TUI; see `src/vm/attach.ts`). |
 | `corb kill <session>` | Sends `SIGTERM` to a session's host process so it tears down cleanly (closes the VM, removes its sidecar, flushes its audit log). No `--force`/`SIGKILL` path, by design. |
 | `corb gc [--older-than DURATION] [--dry-run\|-n]` | Prunes Gondolin's own stale registry entries and Corb's orphaned session sidecars. Never prunes a sidecar whose recorded host pid is still alive. |
-| `corb doctor` | Checks the host environment (KVM, QEMU, Docker, Node/Go versions, e2fsprogs, cgroup delegation, required secrets, and a couple of Gondolin-specific sharp edges) and prints a report. |
+| `corb doctor [--verify-secrets]` | Checks the host environment (KVM, QEMU, Docker, Node/Go versions, e2fsprogs, cgroup delegation, required secrets, and a couple of Gondolin-specific sharp edges) and prints a report. `--verify-secrets` additionally makes a real HTTP request per `[secrets.NAME.verify]` entry (see Configuration below) to catch a syntactically-present-but-invalid credential — off by default since it's a real network call using the real secret value. |
 | `corb image build [--config FILE] [--tag REF] [--arch x86_64\|aarch64]` | Builds, verifies, and tags the guest VM image. |
 
 `corb run` and `corb explain` share the same flags:
@@ -154,6 +154,16 @@ model    = "claude-opus-4-5"
 # only (createHttpHooks({ secrets })).
 [secrets.ANTHROPIC_API_KEY]
 hosts = ["api.anthropic.com"]
+# Optional, and independent of `hosts` above: a live check `corb doctor
+# --verify-secrets` can run, making a real request with the real secret
+# value to catch a bad/expired/copy-pasted-wrong credential before a session
+# ever boots — plain `corb doctor` never runs this on its own. Corb doesn't
+# know Anthropic's (or any provider's) verification endpoint or auth header
+# convention, so both are spelled out here, not assumed.
+[secrets.ANTHROPIC_API_KEY.verify]
+url            = "https://api.anthropic.com/v1/models"
+header         = "x-api-key"
+expect-status  = [200]  # optional, defaults to [200]
 [secrets.GITHUB_TOKEN]
 hosts    = ["api.github.com"]
 optional = true
@@ -233,6 +243,31 @@ CI (`.github/workflows/ci.yml`) runs `typecheck`, `lint`, `test`, and the Go
 request. It does **not** run the e2e suite — nested virtualization isn't
 reliable on hosted runners — which is instead wired as a manual-only
 `workflow_dispatch` job (`.github/workflows/e2e.yml`).
+
+## Development notes
+
+Notes for dogfooding Corb from a fresh clone/worktree, before it's built or
+configured on the host:
+
+- `corb doctor` needs a build first — run `npm install && make guest` before
+  it (or any other command) will work. There is no published package to
+  install instead yet (see Quickstart).
+- `corb doctor` checks the host, not just the repo: QEMU
+  (`qemu-system-x86_64`/`qemu-system-aarch64`), `/dev/kvm` read/write access,
+  Docker, `e2fsprogs` (`mkfs.ext4`, `resize2fs`, `e2fsck`), and `cpio`/`lz4`
+  all have to be present on `PATH` independently of `npm install`.
+- `~/.config/corb/config.toml` does not exist by default — it has to be
+  created by hand (or via `CORB_CONFIG_DIR`) before the first `corb run`.
+  `corb run --dry-run` is the safe way to check the merged config and trust
+  verdict before binding a real secret or booting a VM.
+- `node src/cli.ts image build` is the slow step (Docker plus an in-VM
+  verification gate suite) and only needs to be redone when `image/` or the
+  guest binaries change, not on every session.
+- Dogfood Corb against a workspace other than the Corb checkout itself —
+  running `corb run` from inside a Corb worktree mounts the tool's own
+  source into the guest it's testing, which is confusing to reason about and
+  unnecessary risk for a first session. Point `corb run` at some other
+  project directory instead.
 
 ## Documentation map
 

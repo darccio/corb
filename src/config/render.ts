@@ -14,8 +14,10 @@
 // verdict for covering CLI-added directories, which it never does.
 //
 // Never prints a secret *value* — `EffectiveConfig.secrets` never holds one
-// (`PartialSecretConfig` is only `hosts`/`optional` host-binding metadata),
-// so there is nothing secret-valued for this module to accidentally leak.
+// (`PartialSecretConfig` is `hosts`/`optional` host-binding metadata, plus
+// an opt-in `verify` sub-table that is itself only a URL/header-name/status
+// list — never the secret's own value), so there is nothing secret-valued
+// for this module to accidentally leak.
 import type { DirConfig, EffectiveConfig } from "./load.ts";
 import type { ConfigChange, TrustEvaluation } from "./trust.ts";
 import type { ResolvedWorkspace } from "./resolve.ts";
@@ -97,6 +99,11 @@ function renderSecrets(secrets: EffectiveConfig["secrets"]): string[] {
   for (const name of names) {
     const entry = secrets![name]!;
     lines.push(`  ${name}: hosts=${fmtArray(entry.hosts)} optional=${fmtScalar(entry.optional)}`);
+    if (entry.verify === undefined) {
+      lines.push("    verify: (unset)");
+    } else {
+      lines.push(`    verify: url=${entry.verify.url} header=${entry.verify.header} expect-status=${fmtArray(entry.verify["expect-status"]?.map(String))}`);
+    }
   }
   return lines;
 }

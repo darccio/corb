@@ -20,8 +20,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import { corbConfigDir, configTomlPath } from "../config/paths.ts";
-import { ConfigParseError, parseConfigLayer, type ConfigLayer } from "../config/schema.ts";
+import { ConfigParseError, parseConfigLayer, type ConfigLayer, type PartialSecretConfig } from "../config/schema.ts";
 import { ImageNotFoundError, resolveRuntimeImage } from "../vm/image.ts";
 import { readCgroupControllersText } from "../vm/cgroup.ts";
 import {
@@ -516,6 +517,84 @@ export function checkSecretsConfigured(configResult: DoctorConfigLoad): DoctorCh
 }
 
 // ---------------------------------------------------------------------------
+// Live secret verification ([secrets.NAME.verify], opt-in, `--verify-secrets`
+// only). Unlike `checkRequiredSecrets` above (which only asks "is the env
+// var non-empty?"), this makes a real outbound HTTP request with the
+// secret's real value, to catch "set, but rejected by the provider" — a bad,
+// expired, or copy-pasted-with-a-typo key looks identical to a good one to
+// `checkRequiredSecrets`, since both are just non-empty strings.
+//
+// Deliberately opt-in twice over: (1) a `[secrets.NAME]` entry with no
+// `verify` table is skipped entirely — corb still assumes nothing about any
+// provider by default; (2) even when `verify` is configured, this function
+// is only ever called when the caller explicitly asked for it
+// (`--verify-secrets`), never as part of a plain `corb doctor`, because it
+// makes a real network call against the user's real credential on every
+// invocation, which could trip a provider's own rate limit or usage
+// tracking as an unwanted side effect of an environment check.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_EXPECT_STATUS = [200];
+
+/**
+ * One `[secrets.NAME]` entry's live check, if it has a `verify` table and a
+ * usable env var. `fetchImpl` is injectable (defaults to the real global
+ * `fetch`) so this stays unit-testable without a real network call — see
+ * `checkRequiredSecrets`'s own doc comment for why every check in this file
+ * is built to be exercised against a fabricated input.
+ */
+async function verifySecretEntry(name: string, value: string, verify: NonNullable<PartialSecretConfig["verify"]>, fetchImpl: typeof fetch): Promise<DoctorCheckResult> {
+  const checkName = `verify-secret:${name}`;
+  const expectStatus = verify["expect-status"] ?? DEFAULT_EXPECT_STATUS;
+  // `url`/`header` are typed optional on `PartialSecretVerifyConfig` (it
+  // doubles as the partial, not-yet-merged shape elsewhere in config/), but
+  // `parseSecretVerify` (`src/config/schema.ts`) rejects any `verify` table
+  // missing either at parse time — a `verify` object can only ever exist
+  // here with both already present.
+  let response: Response;
+  try {
+    response = await fetchImpl(verify.url!, { headers: { [verify.header!]: value } });
+  } catch (err) {
+    return fail(checkName, `request to ${verify.url} failed: ${errorMessage(err)}`);
+  }
+  if (!expectStatus.includes(response.status)) {
+    return fail(
+      checkName,
+      `${verify.url} responded ${response.status} ${response.statusText}, expected one of [${expectStatus.join(", ")}] — the credential may be invalid, expired, or revoked.`,
+    );
+  }
+  return ok(checkName, `${verify.url} responded ${response.status}, matching expect-status.`);
+}
+
+/**
+ * Pure aside from the `fetchImpl` it drives: given an already-loaded config,
+ * runs `verifySecretEntry` for every `[secrets.NAME]` entry that has both a
+ * `verify` table and a non-empty `process.env[NAME]`. Entries with no
+ * `verify` table, or no usable env var (already reported by
+ * `checkRequiredSecrets`/`checkSecretsConfigured`), are silently skipped —
+ * this function only ever adds checks, never duplicates a failure those two
+ * already report.
+ */
+export async function checkVerifySecrets(configResult: DoctorConfigLoad, env: NodeJS.ProcessEnv, fetchImpl: typeof fetch = fetch): Promise<DoctorCheckResult[]> {
+  if (configResult.kind !== "parsed") {
+    return [];
+  }
+  const secrets = configResult.layer.secrets ?? {};
+  const results: DoctorCheckResult[] = [];
+  for (const [name, entry] of Object.entries(secrets)) {
+    if (entry.verify === undefined) {
+      continue;
+    }
+    const value = env[name];
+    if (value === undefined || value === "") {
+      continue;
+    }
+    results.push(await verifySecretEntry(name, value, entry.verify, fetchImpl));
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Pinned image resolvable
 // ---------------------------------------------------------------------------
 
@@ -722,11 +801,21 @@ function checkSocketPathPermissions(): DoctorCheckResult {
 /**
  * Runs every check against real host state (`process.env`, the real
  * filesystem, real subprocesses) and returns the aggregated report. Takes
- * no arguments, matching `corb doctor`'s own no-argument CLI surface —
- * every check's actual classification logic lives in the small pure
- * functions above, which is where injectable-input testing happens.
+ * an options object rather than positional args, matching `corb doctor
+ * --verify-secrets`'s own CLI surface — every check's actual classification
+ * logic lives in the small pure functions above, which is where
+ * injectable-input testing happens; `options.fetchImpl` exists solely so
+ * this orchestration function itself stays testable without ever making a
+ * real network call.
  */
-export async function runDoctorChecks(): Promise<DoctorReport> {
+export interface RunDoctorChecksOptions {
+  /** Mirrors `--verify-secrets`: run `checkVerifySecrets`'s live, real-network checks. Defaults to `false` — see that function's own doc comment for why this must stay opt-in. */
+  verifySecrets?: boolean;
+  /** Forwarded to `checkVerifySecrets` verbatim; defaults to the real global `fetch`. Exists so this orchestration function can itself be unit-tested without a real network call. */
+  fetchImpl?: typeof fetch;
+}
+
+export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Promise<DoctorReport> {
   const pathDirs = splitPath(process.env.PATH);
   const configPath = configTomlPath(corbConfigDir());
   const configResult = loadDoctorConfigLayer(configPath);
@@ -767,6 +856,9 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
 
   checks.push(checkRequiredSecrets(configResult, process.env));
   checks.push(checkSecretsConfigured(configResult));
+  if (options.verifySecrets === true) {
+    checks.push(...(await checkVerifySecrets(configResult, process.env, options.fetchImpl)));
+  }
   checks.push(checkImageResolvable());
   checks.push(checkCgroupControllers(process.platform));
   checks.push(checkSocketPathBudget());
@@ -786,8 +878,14 @@ function statusLabel(status: DoctorStatus): string {
   }
 }
 
-export async function runDoctorCommand(): Promise<void> {
-  const report = await runDoctorChecks();
+export async function runDoctorCommand(argv: string[] = []): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: { "verify-secrets": { type: "boolean" } },
+    allowPositionals: false,
+    strict: true,
+  });
+  const report = await runDoctorChecks({ verifySecrets: values["verify-secrets"] ?? false });
   for (const check of report.checks) {
     console.log(`[${statusLabel(check.status)}] ${check.name}: ${check.detail}`);
   }

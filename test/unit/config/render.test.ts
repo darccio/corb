@@ -95,6 +95,31 @@ describe("config/render: renderText", () => {
     expect(text).toMatch(/ANTHROPIC_API_KEY: hosts=\[api\.anthropic\.com\] optional=\(unset\)/);
   });
 
+  it("shows '(unset)' for a secret with no [secrets.NAME.verify] configured", () => {
+    const text = renderText(noChangeWorkspace());
+    expect(text).toMatch(/ANTHROPIC_API_KEY:.*\n\s*verify: \(unset\)/);
+  });
+
+  it("shows a configured [secrets.NAME.verify]'s url/header/expect-status, never the secret's own value", () => {
+    const config = baseConfig();
+    config.secrets = {
+      ANTHROPIC_API_KEY: {
+        hosts: ["api.anthropic.com"],
+        verify: { url: "https://api.anthropic.com/v1/models", header: "x-api-key", "expect-status": [200] },
+      },
+    };
+    const workspace: ResolvedWorkspace = {
+      dir: "/home/user/myproj",
+      persistentConfig: config,
+      fullConfig: config,
+      trustKey: "/home/user/myproj",
+      priorRecord: undefined,
+      trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
+    };
+    const text = renderText(workspace);
+    expect(text).toContain("verify: url=https://api.anthropic.com/v1/models header=x-api-key expect-status=[200]");
+  });
+
   it("makes a widening diff visible: verdict and itemized widened change both appear", () => {
     const text = renderText(wideningWorkspace());
     expect(text).toContain("verdict: REQUIRES-CONFIRMATION");

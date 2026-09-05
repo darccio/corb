@@ -63,6 +63,13 @@ const SYSTEMD_MEMORY_SIZE_RE = /^\d+[KMGT]$/;
 const DURATION_RE = /^\d+[smhd]$/;
 const PERCENT_RE = /^\d+%$/;
 
+// `[secrets.NAME.verify].url` is a real HTTP request target, always issued
+// host-side over a real network connection (`checkVerifySecrets`,
+// `src/commands/doctor.ts`) — deliberately HTTPS-only, no `http://` escape
+// hatch, since this URL exists specifically to carry a live credential value
+// in a header.
+const HTTPS_URL_RE = /^https:\/\/.+/;
+
 /**
  * The `corb.toml` schema generation this build understands. `version` in a
  * config document is entirely optional (see `ConfigLayer.version` below) —
@@ -98,10 +105,29 @@ export interface PartialAgentConfig {
   "append-system-prompt-file"?: string;
 }
 
+/**
+ * `[secrets.NAME.verify]`: fully opt-in, provider-agnostic live-check
+ * config. Absent by default — a `[secrets.NAME]` entry with no `verify`
+ * table behaves exactly as before this field existed. When present, `corb
+ * doctor --verify-secrets` (`src/commands/doctor.ts`) issues a real HTTP
+ * request to `url` with the secret's real value in the `header` header, and
+ * treats any response whose status is in `expect-status` as "verified".
+ * Deliberately just a URL/header/status triple, not a built-in per-provider
+ * preset table: corb never hardcodes a provider (`docs/design.md`,
+ * `README.md`), so this stays as provider-blind as `[secrets.NAME]` itself
+ * — the user supplies the shape their own provider expects.
+ */
+export interface PartialSecretVerifyConfig {
+  url?: string;
+  header?: string;
+  "expect-status"?: number[];
+}
+
 /** One `[secrets.NAME]` entry. `NAME` itself is a user-chosen secret name, not part of this shape. */
 export interface PartialSecretConfig {
   hosts?: string[];
   optional?: boolean;
+  verify?: PartialSecretVerifyConfig;
 }
 
 export interface PartialEgressGithubApiConfig {
@@ -434,7 +460,53 @@ function parseAgentConfig(value: unknown, sourceLabel: string): PartialAgentConf
   return result;
 }
 
-const SECRET_KEYS = ["hosts", "optional"] as const;
+const SECRET_VERIFY_KEYS = ["url", "header", "expect-status"] as const;
+
+// `url` and `header` are both required once `[secrets.NAME.verify]` is
+// present at all: there is no sensible default for either (corb never
+// guesses a provider's verification endpoint or auth header), so a table
+// missing one is a user mistake worth failing loudly on at parse time
+// rather than silently producing a `verify` block that can never run.
+// `expect-status` does have a sensible default (`[200]`, the overwhelmingly
+// common "credential accepted" status) and is left `undefined` here when
+// absent — `checkVerifySecrets` (`src/commands/doctor.ts`) applies that
+// default, not this parser, matching how other optional-with-a-default
+// fields in this schema stay `undefined` until a consumer resolves them.
+function parseSecretVerify(value: unknown, location: string, sourceLabel: string): PartialSecretVerifyConfig {
+  const table = expectTable(value, location, sourceLabel);
+  assertKnownKeys(table, SECRET_VERIFY_KEYS, location, sourceLabel);
+  if (table.url === undefined) {
+    throw new ConfigParseError(sourceLabel, `field '${location}' is missing required key 'url'`, joinPath(location, "url"));
+  }
+  if (table.header === undefined) {
+    throw new ConfigParseError(sourceLabel, `field '${location}' is missing required key 'header'`, joinPath(location, "header"));
+  }
+  const result: PartialSecretVerifyConfig = {
+    url: expectFormattedString(table.url, joinPath(location, "url"), sourceLabel, HTTPS_URL_RE, "https://api.example.com/v1/models"),
+    header: expectString(table.header, joinPath(location, "header"), sourceLabel),
+  };
+  if (table["expect-status"] !== undefined) {
+    const statusPath = joinPath(location, "expect-status");
+    const statuses = expectArray(table["expect-status"], statusPath, sourceLabel).map((item, i) =>
+      expectHttpStatus(item, `${statusPath}[${i}]`, sourceLabel),
+    );
+    if (statuses.length === 0) {
+      throw new ConfigParseError(sourceLabel, `field '${statusPath}' must not be empty`, statusPath);
+    }
+    result["expect-status"] = statuses;
+  }
+  return result;
+}
+
+function expectHttpStatus(value: unknown, fieldPath: string, sourceLabel: string): number {
+  const num = expectInteger(value, fieldPath, sourceLabel, 100);
+  if (num > 599) {
+    throw new ConfigParseError(sourceLabel, `field '${fieldPath}' must be a valid HTTP status code (100-599), got ${num}`, fieldPath);
+  }
+  return num;
+}
+
+const SECRET_KEYS = ["hosts", "optional", "verify"] as const;
 
 function parseSecretEntry(value: unknown, location: string, sourceLabel: string): PartialSecretConfig {
   const table = expectTable(value, location, sourceLabel);
@@ -445,6 +517,9 @@ function parseSecretEntry(value: unknown, location: string, sourceLabel: string)
   }
   if (table.optional !== undefined) {
     result.optional = expectBoolean(table.optional, joinPath(location, "optional"), sourceLabel);
+  }
+  if (table.verify !== undefined) {
+    result.verify = parseSecretVerify(table.verify, joinPath(location, "verify"), sourceLabel);
   }
   return result;
 }
