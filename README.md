@@ -41,7 +41,8 @@ git clone <this-repository> corb
 cd corb
 npm install
 
-# Build the Go guest helpers (dropcap, policygate) into guest/build/.
+# Build the Go guest helpers (dropcap, policygate) into
+# guest/build/<arch>/ (your host's own GOARCH, e.g. amd64 or arm64).
 make guest
 
 # Build and tag the guest VM image. Needs Docker, KVM, and e2fsprogs on PATH;

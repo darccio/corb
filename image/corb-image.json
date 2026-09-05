@@ -26,8 +26,8 @@
   "init": { "rootfsInitExtra": "overlay/init-extra.sh" },
   "postBuild": {
     "copy": [
-      { "src": "../guest/build/dropcap", "dest": "/usr/local/bin/dropcap" },
-      { "src": "../guest/build/policygate", "dest": "/usr/local/libexec/policygate" },
+      { "src": "../guest/build/{arch}/dropcap", "dest": "/usr/local/bin/dropcap" },
+      { "src": "../guest/build/{arch}/policygate", "dest": "/usr/local/libexec/policygate" },
       { "src": "overlay/etc/corb/suid-allowlist.txt", "dest": "/etc/corb/suid-allowlist.txt" },
       { "src": "overlay/etc/corb/image.json", "dest": "/etc/corb/image.json" }
     ],

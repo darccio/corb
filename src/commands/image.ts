@@ -163,6 +163,32 @@ function computeContentHash(config: BuildConfig, configDir: string): string {
   return hash.digest("hex").slice(0, 8);
 }
 
+/**
+ * Go's `GOARCH` naming (what the `guest-<GOARCH>` Makefile targets actually
+ * produce, in `guest/build/<GOARCH>/`) differs from Gondolin's own
+ * `Architecture`/`ImageArch` naming (`x86_64`/`aarch64`) used everywhere
+ * else in this file. This is the one place that gap needs bridging.
+ */
+export const GOARCH_BY_IMAGE_ARCH: Record<ImageArch, string> = {
+  x86_64: "amd64",
+  aarch64: "arm64",
+};
+
+/**
+ * Substitutes the `{arch}` placeholder (see corb-image.json's
+ * `postBuild.copy` guest-binary entries) with the GOARCH string for
+ * `arch`, keyed off the same `config.arch` every other arch-aware path in
+ * this file already uses. A no-op for any `src` that doesn't contain the
+ * placeholder (e.g. the overlay config-file copy entries).
+ */
+export function resolveArchPlaceholders(raw: Record<string, unknown>, arch: ImageArch): void {
+  const postBuild = raw.postBuild as { copy?: { src: string }[] } | undefined;
+  const goArch = GOARCH_BY_IMAGE_ARCH[arch];
+  for (const entry of postBuild?.copy ?? []) {
+    entry.src = entry.src.replace("{arch}", goArch);
+  }
+}
+
 export interface ImageBuildReport {
   configPath: string;
   arch: ImageArch;
@@ -202,6 +228,7 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
   // Arch is always the SDK's own getDefaultArch() (or the explicit --arch
   // override), never whatever happens to be hardcoded in the config file.
   raw.arch = opts.arch;
+  resolveArchPlaceholders(raw, opts.arch);
   if (!validateBuildConfig(raw)) {
     throw new Error(`invalid build config at ${opts.configPath}`);
   }

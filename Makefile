@@ -1,4 +1,4 @@
-.PHONY: build test clean guest e2e
+.PHONY: build test clean guest guest-amd64 guest-arm64 e2e
 
 # image targets land in M1.3 — not wired yet.
 
@@ -13,12 +13,33 @@ clean:
 
 # Reproducible static build of the guest Go binaries: dropcap and policygate
 # (M7). CGO disabled and a stripped, buildid-less binary keep the image
-# content hash stable across rebuilds on the same source.
+# content hash stable across rebuilds on the same source. Output now lands
+# under an arch-suffixed guest/build/<GOARCH>/ so this native build and the
+# explicit cross-compiles below it (guest-amd64, guest-arm64) can coexist on
+# disk; image/corb-image.json's postBuild.copy expects exactly this layout.
 guest:
 	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=$$(go env GOARCH) \
-		go build -trimpath -ldflags="-s -w -buildid=" -o build/dropcap ./cmd/dropcap
+		go build -trimpath -ldflags="-s -w -buildid=" -o build/$$(go env GOARCH)/dropcap ./cmd/dropcap
 	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=$$(go env GOARCH) \
-		go build -trimpath -ldflags="-s -w -buildid=" -o build/policygate ./cmd/policygate
+		go build -trimpath -ldflags="-s -w -buildid=" -o build/$$(go env GOARCH)/policygate ./cmd/policygate
+
+# Plain cross-compiles into guest/build/<GOARCH>/ — Go handles GOOS/GOARCH
+# natively, no chroot or QEMU emulation needed for these Go-only static
+# binaries. Scoped deliberately to just this Go-binary layer: the full image
+# pipeline's postBuild.commands step, which chroots into the assembled
+# rootfs and runs real target-arch code, is a separate, much larger,
+# explicitly out-of-scope effort.
+guest-amd64:
+	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+		go build -trimpath -ldflags="-s -w -buildid=" -o build/amd64/dropcap ./cmd/dropcap
+	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+		go build -trimpath -ldflags="-s -w -buildid=" -o build/amd64/policygate ./cmd/policygate
+
+guest-arm64:
+	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+		go build -trimpath -ldflags="-s -w -buildid=" -o build/arm64/dropcap ./cmd/dropcap
+	cd guest && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+		go build -trimpath -ldflags="-s -w -buildid=" -o build/arm64/policygate ./cmd/policygate
 
 # M2.4: real end-to-end suite (test/e2e/**), boots actual VMs against a
 # freshly built guest image. Chosen dependency chain, and why: `e2e` rebuilds
