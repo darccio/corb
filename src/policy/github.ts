@@ -31,6 +31,19 @@ import type { AuditWriter } from "./audit.ts";
  */
 const DEFAULT_GITHUB_API_HOST = "api.github.com";
 
+/**
+ * `[egress.github-api]`'s method allowlist when the block is present but
+ * `methods` is not spelled out inside it. Never consulted when the whole
+ * `[egress.github-api]` table is absent — see `githubApiGate`'s doc comment,
+ * point 1. This default deliberately does NOT live in
+ * `src/config/load.ts`'s `BUILTIN_DEFAULTS`: "the block is present but
+ * `methods` wasn't spelled out" defaults sensibly (fail-closed: `GET`/`HEAD`
+ * only, matching `docs/adr/0005`'s allowlist-never-blocklist stance); "the
+ * block is entirely absent" does not synthesize one (`BUILTIN_DEFAULTS` must
+ * never gain a `github-api` entry at all).
+ */
+const DEFAULT_GITHUB_API_METHODS = ["GET", "HEAD"];
+
 // Deliberately minimal, scoped to exactly what `docs/design.md`'s own
 // `deny-paths` examples need (`"**/actions/secrets/**"`,
 // `"**/actions/variables/**"`, `"/user/keys**"`): `**` matches across `/`
@@ -107,13 +120,18 @@ function denyResponse(reason: string): Response {
  *      nothing to say about the request at all — pass through untouched. A
  *      request to, say, `api.anthropic.com` must never be touched by this
  *      gate.
- *   4. Hostname matches: `githubApi.methods`, if set, is an *allowlist*
+ *   4. Hostname matches: resolve the effective method allowlist the same
+ *      way `hosts` was resolved above — `githubApi.methods ?? ["GET",
+ *      "HEAD"]` — and deny any request whose method is not in it
  *      (`docs/design.md`'s own words: "enforced in onRequest — allowlist,
- *      not blocklist") — a method not in it is denied. Left unset, there is
- *      no method restriction at all; this is the concrete mechanism that
- *      makes `gh api -X DELETE` refusable once a workspace sets
- *      `methods = ["GET", "POST", "PATCH"]` itself. There is no built-in
- *      default method list.
+ *      not blocklist"). This is the concrete mechanism that makes `gh api
+ *      -X DELETE` refusable: a workspace that sets `methods = ["GET",
+ *      "POST", "PATCH"]` itself gets exactly that list, but a workspace
+ *      that configures `[egress.github-api]` only for `hosts` and/or
+ *      `deny-paths` and never touches `methods` at all still gets a
+ *      fail-closed default (`GET`/`HEAD` only, matching `docs/adr/0005`'s
+ *      allowlist-never-blocklist stance) rather than every method passing
+ *      through unrestricted.
  *   5. `githubApi["deny-paths"]`, if set, is a glob *blocklist* matched
  *      against the pathname — both its raw form and its percent-decoded
  *      form (see `decodeToFixpoint`), since `URL.pathname` never decodes on
@@ -122,8 +140,10 @@ function denyResponse(reason: string): Response {
  *      would otherwise have permitted. A pathname containing a malformed
  *      percent-escape is denied outright (fail-closed on ambiguous input)
  *      rather than matched against its raw form only.
- *   6. If neither restriction is configured (the block exists only to set
- *      `hosts`, say), the gate matches the host and denies nothing.
+ *   6. A request whose method is in the effective allowlist from step 4 and
+ *      whose path matches no configured `deny-paths` pattern (or
+ *      `deny-paths` is unset entirely) passes through untouched — the gate
+ *      has nothing further to say about it.
  *
  * A denial returns a synthetic 403 `Response` and records exactly one
  * `channel: "http", decision: "deny"` audit event, named by which rule
@@ -162,7 +182,8 @@ export function githubApiGate(
     // module comment for why this is reimplemented rather than imported.
     const subject = `${req.method} ${url.hostname}${url.pathname}`;
 
-    if (githubApi.methods !== undefined && !githubApi.methods.includes(req.method)) {
+    const methods = githubApi.methods ?? DEFAULT_GITHUB_API_METHODS;
+    if (!methods.includes(req.method)) {
       const reason = "method not allowed";
       audit.record({ channel: "http", decision: "deny", subject, reason, sessionId });
       return denyResponse(reason);

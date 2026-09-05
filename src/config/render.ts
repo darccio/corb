@@ -120,7 +120,11 @@ function renderEgress(egress: EffectiveConfig["egress"]): string[] {
       // operator reading "(unset)" would wrongly conclude nothing is being
       // gated at all, when in fact the gate is live against the default host.
       `    hosts: ${githubApi.hosts === undefined ? "(unset, defaults to api.github.com)" : fmtArray(githubApi.hosts)}`,
-      `    methods: ${fmtArray(githubApi.methods)}`,
+      // Same treatment for `methods`: `githubApiGate` defaults an unset
+      // `methods` to `["GET", "HEAD"]` at enforcement time (fail-closed, not
+      // "no restriction") — a bare "(unset)" here would misleadingly read as
+      // unrestricted.
+      `    methods: ${githubApi.methods === undefined ? "(unset, defaults to [GET, HEAD])" : fmtArray(githubApi.methods)}`,
       `    deny-paths: ${fmtArray(githubApi["deny-paths"])}`,
     );
   }

@@ -141,6 +141,26 @@ describe("config/render: renderText", () => {
     expect(text).toContain("hosts: [ghes.example.com]");
     expect(text).not.toContain("api.github.com");
   });
+
+  it("makes an unset github-api.methods' live default ([GET, HEAD]) visible, not just '(unset)'", () => {
+    // Same enforcement gap as the `hosts` case above, but for `methods`:
+    // `src/policy/github.ts`'s `githubApiGate` defaults an unset `methods`
+    // to `["GET", "HEAD"]` at enforcement time (fail-closed), so a bare
+    // "(unset)" here would misleadingly read as "every method is allowed",
+    // when in fact only GET/HEAD pass through.
+    const workspace = noChangeWorkspace();
+    workspace.fullConfig.egress["github-api"] = { hosts: ["ghes.example.com"] };
+    const text = renderText(workspace);
+    expect(text).toContain("methods: (unset, defaults to [GET, HEAD])");
+  });
+
+  it("shows an explicitly configured github-api.methods verbatim, not the default", () => {
+    const workspace = noChangeWorkspace();
+    workspace.fullConfig.egress["github-api"] = { methods: ["GET", "POST", "PATCH"] };
+    const text = renderText(workspace);
+    expect(text).toContain("methods: [GET, POST, PATCH]");
+    expect(text).not.toContain("defaults to [GET, HEAD]");
+  });
 });
 
 describe("config/render: renderJson", () => {

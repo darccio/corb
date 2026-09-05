@@ -2,10 +2,12 @@
 // `githubApiGate`'s semantics: the config-driven-only no-op when
 // `[egress.github-api]` is entirely absent, the hostname-scoping that keeps
 // this gate from ever touching an unrelated request, the `hosts` default and
-// override, the `methods` allowlist, the `deny-paths` glob blocklist against
-// all three of `docs/design.md`'s own example patterns, the "neither
-// restriction violated" pass-through, and the audit event shape/content for
-// a denial (with no double-audit on allow).
+// override, the `methods` allowlist including its own fail-closed default
+// (`GET`/`HEAD`, applied whenever the table is present but `methods` itself
+// is unset) and override, the `deny-paths` glob blocklist against all three
+// of `docs/design.md`'s own example patterns, the "neither restriction
+// violated" pass-through, and the audit event shape/content for a denial
+// (with no double-audit on allow).
 import { describe, expect, it, vi } from "vitest";
 import type { PartialEgressGithubApiConfig } from "../../../src/config/schema.ts";
 import type { AuditWriter } from "../../../src/policy/audit.ts";
@@ -49,10 +51,10 @@ describe("policy/github githubApiGate", () => {
     expect(audit.record).toHaveBeenCalledTimes(1);
   });
 
-  it("hostname matches and neither methods nor deny-paths is configured — denies nothing", () => {
+  it("hostname matches and neither methods nor deny-paths is configured — a method within the default allowlist (GET) denies nothing", () => {
     const audit = fakeAudit();
     const gate = githubApiGate({}, audit, "s");
-    expect(gate(req("https://api.github.com/repos/dario/corb", "DELETE"))).toBeUndefined();
+    expect(gate(req("https://api.github.com/repos/dario/corb", "GET"))).toBeUndefined();
     expect(audit.record).not.toHaveBeenCalled();
   });
 
@@ -77,6 +79,53 @@ describe("policy/github githubApiGate", () => {
     const result = gate(req("https://api.github.com/repos/dario/corb", "DELETE"));
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(403);
+  });
+
+  describe("methods unset (table present) — fail-closed default of GET/HEAD only", () => {
+    it("denies a POST request, reason \"method not allowed\"", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({}, audit, "s");
+      const result = gate(req("https://api.github.com/repos/dario/corb", "POST")) as Response;
+      expect(result).toBeInstanceOf(Response);
+      expect(result.status).toBe(403);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ decision: "deny", reason: "method not allowed" }),
+      );
+    });
+
+    it("denies a DELETE request the same way", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({ hosts: ["api.github.com"] }, audit, "s");
+      const result = gate(req("https://api.github.com/repos/dario/corb", "DELETE")) as Response;
+      expect(result).toBeInstanceOf(Response);
+      expect(result.status).toBe(403);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ decision: "deny", reason: "method not allowed" }),
+      );
+    });
+
+    it("still allows a GET request through", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({}, audit, "s");
+      expect(gate(req("https://api.github.com/repos/dario/corb", "GET"))).toBeUndefined();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it("still allows a HEAD request through", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({}, audit, "s");
+      expect(gate(req("https://api.github.com/repos/dario/corb", "HEAD"))).toBeUndefined();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it("an explicit methods list still overrides the default: methods: [\"DELETE\"] allows DELETE and denies GET", () => {
+      const audit = fakeAudit();
+      const gate = githubApiGate({ methods: ["DELETE"] }, audit, "s");
+      expect(gate(req("https://api.github.com/repos/dario/corb", "DELETE"))).toBeUndefined();
+      const result = gate(req("https://api.github.com/repos/dario/corb", "GET")) as Response;
+      expect(result).toBeInstanceOf(Response);
+      expect(result.status).toBe(403);
+    });
   });
 
   describe("deny-paths — design.md's own three example patterns", () => {
@@ -183,11 +232,18 @@ describe("policy/github githubApiGate", () => {
     expect(audit.record).not.toHaveBeenCalled();
   });
 
-  it("deny-paths denies even when method is not restricted at all (methods unset)", () => {
+  it("deny-paths denies even when the method is allowed under the default methods list (methods itself unset)", () => {
+    // Uses GET, not DELETE: DELETE would now be caught by the new
+    // fail-closed default methods list (GET/HEAD only) before deny-paths is
+    // ever consulted, which would prove the wrong thing here. GET is in the
+    // default list, so this isolates deny-paths as the rule that fires.
     const audit = fakeAudit();
     const gate = githubApiGate({ "deny-paths": ["**/actions/secrets/**"] }, audit, "s");
-    const result = gate(req("https://api.github.com/repos/dario/corb/actions/secrets/FOO", "DELETE"));
+    const result = gate(req("https://api.github.com/repos/dario/corb/actions/secrets/FOO", "GET")) as Response;
     expect(result).toBeInstanceOf(Response);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "path denied: **/actions/secrets/**" }),
+    );
   });
 
   it("records exactly one deny audit event with the documented subject/reason shape, and no allow event", () => {
