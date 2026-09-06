@@ -23,7 +23,12 @@
   },
   "container": { "force": true, "runtime": "docker" },
   "rootfs": { "label": "corb-root", "sizeMb": 3072 },
-  "env": { "LANG": "C.UTF-8", "CORB_IMAGE_KIND": "default" },
+  "env": {
+    "LANG": "C.UTF-8",
+    "CORB_IMAGE_KIND": "default",
+    "PI_SKIP_VERSION_CHECK": "1",
+    "PI_TELEMETRY": "0"
+  },
   "init": { "rootfsInitExtra": "overlay/init-extra.sh" },
   "postBuild": {
     "copy": [

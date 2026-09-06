@@ -183,7 +183,10 @@ optional = true
 # `/model`'s background refresh hits https://pi.dev/api/models/providers/<id>
 # on every provider, not just the one you have configured. Missing this
 # doesn't break chat/completions, only shows "Could not refresh <provider>;
-# showing cached models." in `/model`.
+# showing cached models." in `/model`. (The image's own `env` block sets
+# PI_SKIP_VERSION_CHECK=1/PI_TELEMETRY=0, so Pi's separate startup
+# update-check and install-telemetry pings to pi.dev never fire in the
+# first place -- only the model-catalog refresh above needs this host.)
 allow                  = ["api.anthropic.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com", "pi.dev"]
 block-internal-ranges  = true
 
