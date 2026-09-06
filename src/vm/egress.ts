@@ -197,6 +197,40 @@ export function composeOnRequest(hooks: readonly OnRequestHook[]): OnRequestHook
 }
 
 /**
+ * Forces `Accept-Encoding: identity` on every outbound guest request — a
+ * workaround for a confirmed Gondolin defect (`docs/gondolin-notes.md` R21),
+ * not a corb-side bug. Gondolin's own HTTP relay
+ * (`node_modules/@earendil-works/gondolin/dist/src/qemu/http.js`)
+ * unconditionally strips a compressed upstream response's `content-encoding`/
+ * `content-length` headers before forwarding it to the guest, assuming the
+ * body it forwards is already decompressed — but for at least the real,
+ * reproducible case this was found against (a ~162 KiB `content-encoding:
+ * gzip` response from `pi.dev`'s model-catalog endpoint), the body hitting
+ * the guest is still raw compressed bytes with nothing left to tell it so.
+ * The guest's own `fetch()`/`.json()` then fails parsing binary garbage as
+ * UTF-8 JSON (`Unexpected token '(' ... is not valid JSON`, surfaced to the
+ * end user as Pi's "Could not refresh <provider>; showing cached models.").
+ * Declining compression outright sidesteps Gondolin's broken relay path
+ * entirely, confirmed empirically against the real failing case
+ * (`docs/gondolin-notes.md` R21) — a real booted VM's `pi update --models
+ * --force` goes from that exact failure to "Model catalogs refreshed" with
+ * only this header forced.
+ *
+ * Deliberately applied as an unconditional wrapper *outside*
+ * `composeOnRequest`'s policy hooks below, not as one more hook inside it:
+ * `OnRequestHook` only supports "pass through" (`undefined`) or "fully
+ * handled" (a `Response`) — rewriting the request itself and still passing
+ * it on needs Gondolin's own `onRequest` return-a-`Request` capability
+ * (`docs/gondolin-notes.md` R16), which none of the policy hooks below need
+ * and this function alone does.
+ */
+export function forceIdentityAcceptEncoding(req: Request): Request {
+  const headers = new Headers(req.headers);
+  headers.set("accept-encoding", "identity");
+  return new Request(req, { headers });
+}
+
+/**
  * Structurally equivalent to "policy content-checks are off" — the default
  * `policy` value `buildEgressConfig` uses when a caller omits it entirely.
  * Matches `sentinel()`'s own step 1 (`policy.enabled === false` -> pass
@@ -314,16 +348,32 @@ export function buildEgressConfig(
   const allowedHosts = [...(egress.allow ?? []), POLICY_HOST];
   const allowedInternalHosts = egress["allow-internal"] ?? [];
 
+  const policyOnRequest = composeOnRequest([
+    sentinel(policy, dirs, audit, sessionId),
+    githubApiGate(egress["github-api"], audit, sessionId),
+    gitHttpGate(git, audit, sessionId),
+  ]);
+
   const { httpHooks, env: secretEnv } = createHttpHooks({
     allowedHosts,
     allowedInternalHosts,
     blockInternalRanges: egress["block-internal-ranges"],
     secrets: secretBindings,
-    onRequest: composeOnRequest([
-      sentinel(policy, dirs, audit, sessionId),
-      githubApiGate(egress["github-api"], audit, sessionId),
-      gitHttpGate(git, audit, sessionId),
-    ]),
+    // `policyOnRequest(...)` resolving to `undefined` means "none of the
+    // policy hooks had an opinion" — it does NOT mean "no change", and
+    // returning it as-is here would silently discard `rewritten`, since
+    // Gondolin's own `onRequest` contract treats an `undefined` return as
+    // "use the original, untouched request" (confirmed the hard way: an
+    // earlier version of this line returned `policyOnRequest(...)` directly
+    // and passed every unit test, but a real booted VM showed the rewrite
+    // never actually reached the wire whenever no policy hook fired — the
+    // common case, since none of them touch `pi.dev`/`openrouter.ai`
+    // traffic at all). Falling back to `rewritten` on a pass-through is
+    // what makes the rewrite actually take effect.
+    onRequest: async (req) => {
+      const rewritten = forceIdentityAcceptEncoding(req);
+      return (await policyOnRequest(rewritten)) ?? rewritten;
+    },
     onResponse: (res, req) => {
       audit.record({
         channel: "http",

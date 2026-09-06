@@ -22,6 +22,7 @@ vi.mock("@earendil-works/gondolin", () => ({
 import {
   buildEgressConfig,
   buildSecretBindings,
+  forceIdentityAcceptEncoding,
   MissingSecretError,
   safeSubject,
   SecretHostsMissingError,
@@ -132,6 +133,39 @@ describe("vm/egress buildSecretBindings", () => {
     const env = { REQUIRED_PRESENT: "value-a" };
     expect(() => buildSecretBindings(secrets, env)).toThrow(MissingSecretError);
     expect(() => buildSecretBindings(secrets, env)).toThrow(/REQUIRED_MISSING/);
+  });
+});
+
+describe("vm/egress forceIdentityAcceptEncoding", () => {
+  // docs/gondolin-notes.md R21: a confirmed Gondolin defect, not a corb bug —
+  // Gondolin's own HTTP relay strips a compressed response's
+  // content-encoding/content-length headers without actually guaranteeing
+  // the body it hands the guest is decompressed. Declining compression on
+  // the way out (this function) sidesteps it entirely.
+  it("sets accept-encoding to identity on a request with no prior accept-encoding header", () => {
+    const req = new Request("https://pi.dev/api/models/providers/openrouter");
+    const rewritten = forceIdentityAcceptEncoding(req);
+    expect(rewritten.headers.get("accept-encoding")).toBe("identity");
+  });
+
+  it("overrides a caller-supplied accept-encoding header rather than appending to it", () => {
+    const req = new Request("https://pi.dev/api/models/providers/openrouter", {
+      headers: { "accept-encoding": "gzip, br" },
+    });
+    const rewritten = forceIdentityAcceptEncoding(req);
+    expect(rewritten.headers.get("accept-encoding")).toBe("identity");
+  });
+
+  it("preserves method, url, and every other header unchanged", () => {
+    const req = new Request("https://pi.dev/api/models/providers/openrouter", {
+      method: "POST",
+      headers: { accept: "application/json", "user-agent": "pi-coding-agent/0.84.2" },
+    });
+    const rewritten = forceIdentityAcceptEncoding(req);
+    expect(rewritten.method).toBe("POST");
+    expect(rewritten.url).toBe(req.url);
+    expect(rewritten.headers.get("accept")).toBe("application/json");
+    expect(rewritten.headers.get("user-agent")).toBe("pi-coding-agent/0.84.2");
   });
 });
 
@@ -318,13 +352,20 @@ describe("vm/egress buildEgressConfig", () => {
     });
   });
 
-  it("onRequest passes a request through (resolves undefined) when egress['github-api'] is undefined and the host isn't POLICY_HOST", async () => {
+  it("onRequest passes a request through, rewritten (not undefined — see forceIdentityAcceptEncoding/R21), when egress['github-api'] is undefined and the host isn't POLICY_HOST", async () => {
     buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
     const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
-      onRequest: (req: Request) => Promise<Response | undefined> | Response | undefined;
+      onRequest: (req: Request) => Promise<Request | Response | undefined> | Request | Response | undefined;
     };
     const req = new Request("https://api.github.com/repos/dario/corb", { method: "DELETE" });
-    await expect(callArgs.onRequest(req)).resolves.toBeUndefined();
+    const result = await callArgs.onRequest(req);
+    // Deliberately not `undefined`: `docs/gondolin-notes.md` R21's fix means
+    // every pass-through request is still the accept-encoding-forced
+    // rewrite, never Gondolin's "no change, use the original" signal.
+    expect(result).toBeInstanceOf(Request);
+    expect((result as Request).method).toBe("DELETE");
+    expect((result as Request).url).toBe(req.url);
+    expect((result as Request).headers.get("accept-encoding")).toBe("identity");
   });
 
   it("wires onResponse to record an 'allow' AuditEvent with the exact expected shape, including sessionId", async () => {
@@ -401,13 +442,15 @@ describe("vm/egress buildEgressConfig", () => {
     );
   });
 
-  it("regression guard: omitting the git parameter entirely (INERT_GIT default) leaves a git-push-shaped request passing through untouched, same as every pre-existing call site in this file", async () => {
+  it("regression guard: omitting the git parameter entirely (INERT_GIT default) leaves a git-push-shaped request passing through (rewritten, not denied — see R21 note above)", async () => {
     buildEgressConfig(egress(), undefined, {}, fakeAudit(), "s");
     const callArgs = createHttpHooksMock.mock.calls[0]?.[0] as {
-      onRequest: (req: Request) => Promise<Response | undefined> | Response | undefined;
+      onRequest: (req: Request) => Promise<Request | Response | undefined> | Request | Response | undefined;
     };
 
     const req = new Request("https://github.com/dario/corb/git-receive-pack", { method: "POST" });
-    await expect(callArgs.onRequest(req)).resolves.toBeUndefined();
+    const result = await callArgs.onRequest(req);
+    expect(result).toBeInstanceOf(Request);
+    expect((result as Request).method).toBe("POST");
   });
 });
