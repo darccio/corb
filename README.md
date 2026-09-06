@@ -175,7 +175,16 @@ hosts    = ["api.github.com"]
 optional = true
 
 [egress]
-allow                  = ["api.anthropic.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com"]
+# api.anthropic.com: the model provider (swap for whatever `[agent].provider`
+# actually needs, e.g. `openrouter.ai`).
+# api.github.com/objects.githubusercontent.com/codeload.github.com: your
+# own git/gh workflow.
+# pi.dev: Pi's own model-catalog service, needed regardless of provider --
+# `/model`'s background refresh hits https://pi.dev/api/models/providers/<id>
+# on every provider, not just the one you have configured. Missing this
+# doesn't break chat/completions, only shows "Could not refresh <provider>;
+# showing cached models." in `/model`.
+allow                  = ["api.anthropic.com", "api.github.com", "objects.githubusercontent.com", "codeload.github.com", "pi.dev"]
 block-internal-ranges  = true
 
 [git]
