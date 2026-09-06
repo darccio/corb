@@ -83,6 +83,7 @@ import {
   assertNoDuplicateNames,
   assertValidWorkspaceName,
   buildGateConfigMount,
+  buildGuestEnv,
   findPrimaryEntry,
   parseCorbImageJson,
   publicWorkspacePath,
@@ -181,6 +182,51 @@ describe("vm/session: parseCorbImageJson", () => {
   // but `test/unit/vm/attach.test.ts` only imports the *type* `CorbImageJson`
   // from `session.ts`, never `parseCorbImageJson` itself, so there is no
   // existing coverage of this function to duplicate.
+});
+
+describe("vm/session: buildGuestEnv", () => {
+  const IDENTITY: CorbImageJson = {
+    user: "agent",
+    uid: 1000,
+    gid: 1000,
+    paths: {
+      dropcapPath: "/usr/local/bin/dropcap",
+      home: "/home/agent",
+      sessionsDir: "/home/agent/.pi/sessions",
+    },
+  };
+
+  // Confirmed empirically in a real booted `corb:0.1.0` VM (see
+  // `buildGuestEnv`'s own doc comment): Gondolin's own guest init exports
+  // `NODE_EXTRA_CA_CERTS` pointed at `/etc/gondolin/mitm/ca.crt`, a raw
+  // `sandboxfs` mount readable only by uid 0 — `dropcap 1000 1000 cat` on it
+  // returns "Permission denied", while the same command against
+  // `/run/gondolin/ca-certificates.crt` (the merged bundle
+  // `SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE` already use)
+  // reads cleanly. This is the one CA env var `buildGuestEnv` cannot leave
+  // to Gondolin's own default.
+  it("overrides NODE_EXTRA_CA_CERTS to the merged, agent-readable bundle — not Gondolin's own root-only default", () => {
+    const env = buildGuestEnv({}, {}, IDENTITY);
+    expect(env.NODE_EXTRA_CA_CERTS).toBe("/run/gondolin/ca-certificates.crt");
+  });
+
+  it("does not set SSL_CERT_FILE/CURL_CA_BUNDLE/REQUESTS_CA_BUNDLE — left to Gondolin's own (already-correct) default", () => {
+    const env = buildGuestEnv({}, {}, IDENTITY);
+    expect(env.SSL_CERT_FILE).toBeUndefined();
+    expect(env.CURL_CA_BUNDLE).toBeUndefined();
+    expect(env.REQUESTS_CA_BUNDLE).toBeUndefined();
+  });
+
+  it("spreads secretEnv placeholders, sets HOME/USER/PATH from identity, and forwards TERM only when the host has it set", () => {
+    const withTerm = buildGuestEnv({ ANTHROPIC_API_KEY: "placeholder-1" }, { TERM: "xterm-256color" }, IDENTITY);
+    expect(withTerm.ANTHROPIC_API_KEY).toBe("placeholder-1");
+    expect(withTerm.HOME).toBe("/home/agent");
+    expect(withTerm.USER).toBe("agent");
+    expect(withTerm.TERM).toBe("xterm-256color");
+
+    const withoutTerm = buildGuestEnv({}, {}, IDENTITY);
+    expect(withoutTerm.TERM).toBeUndefined();
+  });
 });
 
 describe("vm/session: assertValidWorkspaceName", () => {

@@ -644,12 +644,33 @@ export function rawWorkspacePath(name: string): string {
  * Guest environment for the `dropcap`/`pi` exec. None of this can come from
  * `/etc/profile` (`docs/gondolin-notes.md` §3) — array-form `exec` runs no login
  * shell — so everything the guest process needs is listed explicitly here.
- * `NODE_EXTRA_CA_CERTS`/`SSL_CERT_FILE`/etc. are deliberately *not* set:
- * `docs/gondolin-notes.md` R3 records that Gondolin's own guest init exports
- * them unconditionally for every guest process regardless of `VM.create()`/
- * `vm.exec()` config, so setting them again here would be redundant.
+ *
+ * `SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE` are deliberately
+ * *not* set here: `docs/gondolin-notes.md` R3 records that Gondolin's own
+ * guest init exports them unconditionally for every guest process, already
+ * pointed at `/run/gondolin/ca-certificates.crt` — a merged bundle written
+ * to a plain `0644` file on `/run`'s tmpfs during boot, before `dropcap`
+ * ever drops privilege, so setting them again here would be redundant.
+ *
+ * `NODE_EXTRA_CA_CERTS` is the one exception, and IS set here, overriding
+ * Gondolin's own default: that default points at
+ * `/etc/gondolin/mitm/ca.crt` instead — the raw file inside Gondolin's own
+ * automatic MITM-CA mount, which (like every `sandboxfs` mount,
+ * `docs/gondolin-notes.md` R5/R12) is mounted `user_id=0,group_id=0` with no
+ * `allow_other`, so only uid 0 can read it at all. `dropcap`'s drop to the
+ * `agent` uid loses that access entirely — confirmed empirically in a real
+ * booted `corb:0.1.0` VM: `dropcap 1000 1000 cat /etc/gondolin/mitm/ca.crt`
+ * returns `Permission denied`, while `dropcap 1000 1000 cat
+ * /run/gondolin/ca-certificates.crt` reads all 181693 bytes cleanly. Pi
+ * (a Node program) silently falls back to Node's own bundled public root
+ * store when this happens — harmless for a real, publicly-signed host, but
+ * would break TLS validation outright for any future connection Gondolin
+ * actually MITMs. Pointed at the exact same merged bundle the other three
+ * vars above already use, since that file both contains the MITM CA (baked
+ * into it during the same boot-time merge) and is actually readable by the
+ * `agent` uid.
  */
-function buildGuestEnv(
+export function buildGuestEnv(
   secretEnv: Record<string, string>,
   hostEnv: NodeJS.ProcessEnv,
   identity: CorbImageJson,
@@ -659,6 +680,7 @@ function buildGuestEnv(
     HOME: identity.paths.home,
     USER: identity.user,
     PATH: GUEST_PATH,
+    NODE_EXTRA_CA_CERTS: "/run/gondolin/ca-certificates.crt",
     ...(hostEnv.TERM !== undefined ? { TERM: hostEnv.TERM } : {}),
     // Nice-to-have, not a host mount — see the M1.6 report's "sessions
     // mount" note. Points Pi at the sessions directory the image already

@@ -893,9 +893,21 @@ env: {
   ...env,                                                    // from createHttpHooks
   HOME: "/home/agent",
   NODE_EXTRA_CA_CERTS: "/run/gondolin/ca-certificates.crt",  // Node ignores the system store
-  SSL_CERT_FILE:       "/run/gondolin/ca-certificates.crt",
 }
 ```
+
+`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE` are deliberately *not*
+listed here — Gondolin's own guest init already exports all three pointed at
+this same merged bundle for every guest process, unconditionally
+(`docs/gondolin-notes.md` R3), so restating them would be redundant.
+`NODE_EXTRA_CA_CERTS` is the one exception that must be set explicitly:
+Gondolin's own default for it points at `/etc/gondolin/mitm/ca.crt` instead
+— the raw file inside Gondolin's automatic MITM-CA mount, root-only by
+construction (`docs/gondolin-notes.md` R5/R12/R20) — which the `agent` uid
+`dropcap` drops to cannot read at all, only Node's bundled public root
+store as a silent fallback. `buildGuestEnv()` (`src/vm/session.ts`)
+overrides it to the same merged, actually-`agent`-readable bundle path the
+other three vars already use.
 
 ### Provider and model selection
 
