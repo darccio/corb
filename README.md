@@ -11,6 +11,9 @@ guest process can route around them; and every policy decision lands in one
 audit log. See [`docs/design.md`](docs/design.md) for the full architecture and
 the reasoning behind it.
 
+The [user documentation](docs/README.md) covers setup, workspaces,
+configuration, commands, and the enforcement model.
+
 ## Requirements
 
 - **Node.js >= 24.0.0** (`package.json`'s `engines.node`).
