@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{description}}">
+  <meta name="theme-color" content="#f7f7f5">
+  <title>{{title}} — corb</title>
+  <link rel="icon" href="../assets/bec.png" type="image/png">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="sheet">
+    <header class="masthead"><a class="wordmark" href="../index.html" aria-label="corb home">corb</a><span class="edition">technical documentation</span></header>
+    <nav aria-label="Main navigation">
+      {{navigation}}
+    </nav>
+    <div class="docket"><p>corb project<br>{{label}}</p><p class="docket-right">Version 0.1.0<br>Category: experimental</p></div>
+    <main id="main" class="document-grid">
+      <article>
+        {{body}}
+      </article>
+      <aside class="margin" aria-label="On this page">
+        <h2>Contents</h2>
+        <ol>{{contents}}</ol>
+        <p class="margin-note">{{note}}</p>
+      </aside>
+    </main>
+    <footer><p>corb / {{slug}} / v0.1.0</p><p><a href="../index.html">overview</a> · <a href="{{next_href}}">next: {{next_title}}</a> · <a href="#main">back to top</a></p></footer>
+  </div>
+</body>
+</html>

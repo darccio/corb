@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Corb runs the Pi coding agent inside a restricted micro-VM, with host-held credentials, explicit network access, filesystem rules, and an audit log.">
+  <meta name="theme-color" content="#f7f7f5">
+  <title>corb — sandboxed coding agents</title>
+  <link rel="icon" href="assets/bec.png" type="image/png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="sheet">
+    <header class="masthead">
+      <a class="wordmark" href="index.html" aria-label="corb home">corb</a>
+      <span class="edition">a small tool / a real boundary</span>
+    </header>
+    <nav aria-label="Main navigation">
+      <a href="index.html" aria-current="page">overview</a>
+      <a href="docs/getting-started.html">getting started</a>
+      <a href="docs/workspaces.html">workspaces</a>
+      <a href="docs/cli.html">reference</a>
+      <a href="https://github.com/darccio/corb">source</a>
+    </nav>
+    <div class="docket" aria-label="Document metadata">
+      <p>corb project<br>Technical overview<br>draft-corb-overview-01</p>
+      <p class="docket-right">Version 0.1.0<br>Category: experimental<br>Linux / macOS</p>
+    </div>
+    <main id="main" class="document-grid landing">
+      <article>
+        <h1>A restricted workspace<br>for your coding agent.</h1>
+        <section id="abstract">
+          <h2>Abstract</h2>
+          <p>Corb is a command-line tool that runs the <a href="https://pi.dev">Pi</a> coding agent inside a <a href="https://earendil-works.github.io/gondolin/">Gondolin</a> micro-VM. You choose the directories it can reach, the hosts it can contact, and the Git operations it can perform.</p>
+          <p>Model credentials stay on the host. Filesystem restrictions apply to every process in the guest. Policy decisions go into one audit log.</p>
+          <p class="small"><a href="docs/getting-started.html">Build your first session</a> · <a href="docs/security.html">Read the boundary</a></p>
+        </section>
+        <section id="operation">
+          <h2>1. Operation</h2>
+          <pre class="command"><code>corb run ~/Code/packet-loss --trust-config</code></pre>
+          <p>Corb boots a VM, mounts the project at <code>/work/packet-loss</code>, and starts Pi in your terminal. Writable mounts write back to the host directory. The first run requires explicit acceptance of the effective configuration.</p>
+          <pre aria-label="Corb architecture"><code>host                         guest micro-VM
+------------------------     -------------------
+workspace directories  &lt;---&gt; /work/&lt;name&gt;
+filesystem policy            Pi + its processes
+network + Git policy   &lt;---- outbound requests
+credentials + audit log      secret placeholders</code></pre>
+        </section>
+        <section id="boundaries">
+          <h2>2. Boundaries</h2>
+          <ul>
+            <li>Network access uses an explicit host allowlist.</li>
+            <li>Model API keys are substituted on the host for permitted destinations.</li>
+            <li>Directories can be writable or read only, with additional rules for individual paths.</li>
+            <li>Git access and GitHub API requests can be restricted by policy.</li>
+          </ul>
+          <p>These controls have specific limits. Read <a href="docs/security.html">Security and policy</a> before choosing a configuration.</p>
+        </section>
+        <section id="documentation">
+          <h2>3. Documentation</h2>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th scope="col">Document</th><th scope="col">Contents</th></tr></thead>
+              <tbody>
+                <tr><td><a href="docs/getting-started.html">Getting started</a></td><td>Requirements, build, credentials, first run.</td></tr>
+                <tr><td><a href="docs/workspaces.html">Workspaces</a></td><td>Mounts, primary directory, trust, saved-workspace plans.</td></tr>
+                <tr><td><a href="docs/configuration.html">Configuration</a></td><td>The global TOML file and its effective settings.</td></tr>
+                <tr><td><a href="docs/cli.html">Command reference</a></td><td>Run, inspect, attach, stop, and diagnose sessions.</td></tr>
+                <tr><td><a href="docs/security.html">Security and policy</a></td><td>Enforcement, credentials, Git gates, and limitations.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section id="status">
+          <h2>4. Implementation status</h2>
+          <p><span class="status">EXPERIMENTAL</span></p>
+          <p>Corb is run from a source checkout today. It is not yet published to npm. The current runtime launches Pi and reads one global configuration file.</p>
+          <p>Named workspace files, agent extensions, and configured system-prompt append files are not implemented. The documentation describes the working commands and labels planned behavior explicitly.</p>
+        </section>
+      </article>
+      <aside class="margin" aria-label="Bec and a margin note">
+        <figure class="bec">
+          <img src="assets/bec.png" width="1254" height="1254" alt="Bec, a black raven with cream outlines and bright pink accents." fetchpriority="high">
+          <figcaption>Fig. 1. Bec.<br>Resident peer reviewer.</figcaption>
+        </figure>
+        <p class="margin-note">[1] <a href="https://www.enciclopedia.cat/gran-enciclopedia-catalana/corb-0"><em>Corb</em></a> is Catalan for raven (<em>Corvus corax</em>).<br>The bird has opinions.<br>The config has the last word.</p>
+      </aside>
+    </main>
+    <footer>
+      <p>corb / technical documentation / v0.1.0</p>
+      <p><a href="https://github.com/darccio/corb">repository</a> · <a href="docs/getting-started.html">start here</a> · <a href="#main">back to top</a></p>
+    </footer>
+  </div>
+</body>
+</html>

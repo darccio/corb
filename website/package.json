@@ -1,0 +1,9 @@
+{
+  "name": "corb-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "preview": "python3 -m http.server 4173 --directory dist"
+  }
+}
