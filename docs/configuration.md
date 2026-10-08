@@ -13,6 +13,11 @@ parse time.
 `config.toml` and stores `trusted.json` there. The override replaces the default
 directory.
 
+Corb does not read policy files from the repository. For a project's own settings,
+select a separate host config directory as shown in the
+[walkthrough](walkthrough.md#apply-repository-specific-setup). Pi's repository
+instructions and `.pi` settings are separate from Corb's configuration.
+
 Host paths in TOML are used as written; `~` is not expanded. Use absolute paths.
 Configuration, state, and the audit file must not overlap a mounted directory.
 

@@ -13,6 +13,8 @@ and [`docs/design.md`](docs/design.md) for the full architecture.
 
 The [user documentation](docs/README.md) covers setup, workspaces,
 configuration, commands, and the enforcement model.
+For the usual operations, follow the [development walkthrough](docs/walkthrough.md):
+choose a checkout, apply project settings, develop with Pi, and review its edits.
 
 ## Requirements
 

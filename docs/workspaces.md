@@ -4,6 +4,16 @@ A workspace is the collection of host directories and settings used to start a
 Corb session. One session can include several repositories, reference material,
 and scratch space.
 
+To start a new workspace, prepare a directory on the host and run `corb run DIR`.
+There is no creation or registration command. Corb does not read repository-local
+policy files or run setup scripts. Follow the [development
+walkthrough](walkthrough.md) for a complete example, including project-specific
+host configuration and Pi's repository instructions.
+
+Each run starts a fresh VM and one Pi process. Multiple mounts belong to that
+same session and agent. Mounted host files persist; guest-only files and default
+Pi history do not. The walkthrough shows how to mount persistent history.
+
 ## Directory mounts
 
 ```bash

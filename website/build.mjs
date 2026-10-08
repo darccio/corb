@@ -11,6 +11,9 @@ const pages = [
   { slug: "getting-started", label: "Getting started",
     description: "Build Corb from source, configure a host-held model credential, and start your first sandboxed Pi session.",
     note: 'Source of truth:<br><a href="https://github.com/darccio/corb/blob/main/docs/getting-started.md">repository guide</a>' },
+  { slug: "walkthrough", label: "Development walkthrough",
+    description: "Start a Corb workspace, apply repository settings, develop a feature with Pi, review changes, and keep conversation history across sessions.",
+    note: 'One-time setup:<br><a href="getting-started.html">Getting started</a><br><br>Detailed mount behavior:<br><a href="workspaces.html">Workspaces</a>' },
   { slug: "workspaces", label: "Workspace model",
     description: "How Corb mounts multiple directories, selects Pi's working directory, merges configuration, and records workspace trust.",
     note: "One session has one VM and one configured Pi process.<br><br>Multiple mounts do not create multiple agents." },
@@ -30,6 +33,7 @@ const pages = [
 const navigation = [
   ["../index.html", "overview"],
   ["getting-started.html", "getting started"],
+  ["walkthrough.html", "walkthrough"],
   ["workspaces.html", "workspaces"],
   ["cli.html", "reference"],
   ["https://github.com/darccio/corb", "source"],

@@ -95,3 +95,7 @@ omit `--trust-config` unless the persistent configuration widens access.
 
 > Use a project directory outside the Corb checkout for your first session.
 > Rebuilding Corb while a session uses its image adds avoidable moving parts.
+
+Continue with the [development walkthrough](walkthrough.md) for project-specific
+configuration, repository instructions, feature development, review, and keeping
+Pi history across sessions.

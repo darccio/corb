@@ -33,7 +33,12 @@ current directory.
 corb run ~/Code/packet-loss --trust-config
 corb run ~/Code/packet-loss --dry-run
 corb run ~/Code/packet-loss --expose 3000
+corb run ~/Code/packet-loss -- "Read the README and propose a feature plan."
 ```
+
+Paths passed to Pi after `--` are guest paths, such as `/work/packet-loss`.
+For persistent Pi transcripts and `--continue`, see the
+[walkthrough](walkthrough.md#keep-conversation-history-across-runs).
 
 ## Explain
 
