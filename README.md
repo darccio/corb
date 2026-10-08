@@ -3,13 +3,13 @@
 Corb is a command-line tool that boots a [Gondolin](https://earendil-works.github.io/gondolin/)
 micro-VM, mounts one or more host directories into it as a restricted workspace,
 and runs the [Pi](https://pi.dev) coding agent (`@earendil-works/pi-coding-agent`)
-interactively inside it. The properties it exists to provide: the model API key
-never enters the guest; network egress is restricted to an explicit allowlist;
-git and GitHub access are mediated by policy, with credentials staying on the
-host; per-path filesystem rules are enforced below the guest kernel, so no
-guest process can route around them; and every policy decision lands in one
-audit log. See [`docs/design.md`](docs/design.md) for the full architecture and
-the reasoning behind it.
+interactively inside it. Host-side filesystem and network rules constrain every
+guest process, model credentials stay on the host, and policy decisions go into
+one audit log. Command shims in the image also check selected tool invocations
+before running their real binaries. The stock image shims `git` and `gh`;
+support for another tool requires image and runtime integration. See
+[`docs/security.md`](docs/security.md) for the enforcement points and limits,
+and [`docs/design.md`](docs/design.md) for the full architecture.
 
 The [user documentation](docs/README.md) covers setup, workspaces,
 configuration, commands, and the enforcement model.
@@ -292,6 +292,8 @@ configured on the host:
 
 ## Documentation map
 
+- [`docs/todo.md`](docs/todo.md) — planned command-policy improvements:
+  mandatory arguments and extensible command shims.
 - [`docs/design.md`](docs/design.md) — Corb's own architecture and the
   reasoning behind it.
 - [`docs/gondolin-notes.md`](docs/gondolin-notes.md) — verified facts,

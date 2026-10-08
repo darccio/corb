@@ -75,7 +75,7 @@ If the required cgroup controllers are unavailable, Corb reports that the
 affected limits are not applied and continues. VM sizing is separate from host
 cgroup limits.
 
-## Network and Git
+## Network access
 
 ```toml
 [egress]
@@ -86,20 +86,14 @@ websockets = false
 [egress.github-api]
 methods = ["GET", "HEAD"]
 deny-paths = ["**/actions/secrets/**"]
-
-[git]
-allow-hosts = ["github.com"]
-allow-repos = ["bec/packet-loss"]
-allow-push = false
 ```
 
-`egress.allow` lists permitted hosts. The GitHub API table adds HTTP method and
-path restrictions; it does not enable that host on its own. With the table
-absent, this additional API gate is inactive.
+`egress.allow` lists permitted hosts for outbound requests from any guest
+process. Configure the destinations required by your workflow explicitly.
 
-`git.allow-hosts` and `git.allow-repos` constrain Git transport access. Pushes
-are disabled by default. Configure other destinations required by your own
-workflow explicitly.
+The optional GitHub API table adds HTTP method and path restrictions for that
+API; it does not enable its host on its own. With the table absent, this
+additional API gate is inactive.
 
 ## Directory entries
 
@@ -128,6 +122,30 @@ positional-directory behavior.
 
 Rule modes are `hidden`, `deny-read`, `deny-write`, and `shadow-write`. Shadow
 writes use an in-memory overlay instead of changing the host file.
+
+## Command filtering
+
+Command filters are supplied by shims in the guest image. The stock image shims
+`git` and `gh`; Corb's runtime only dispatches those tool names and generates
+fixed policy tables for them. TOML does not expose a list of commands to shim
+or configurable subcommand and flag rules.
+
+Supporting another command requires matching image and runtime changes. See
+[Command filtering](security.md#command-filtering) for how the shims work and
+where enforcement happens. The `[policy]` settings below control the built-in
+content checks; they do not configure filters for arbitrary commands.
+
+## Git transport
+
+```toml
+[git]
+allow-hosts = ["github.com"]
+allow-repos = ["bec/packet-loss"]
+allow-push = false
+```
+
+`git.allow-hosts` and `git.allow-repos` constrain Git transport on the host,
+independently of command shims. Pushes are disabled by default.
 
 ## Content policy and audit
 

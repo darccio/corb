@@ -391,6 +391,11 @@ R13).
 
 ## 4. Local git and `gh` gate
 
+Command filtering uses a shim installed in the image before a selected guest
+tool. The shim checks the invocation before running the real binary. This
+pattern can be extended to other commands; the shipped implementation below
+supports `git` and `gh`.
+
 git and `gh` run in the guest, so a policy table in front of them is a
 convenience layer, not a security boundary. Being clear about that is what makes
 it safe to have one at all: the worst case of a bypass is the guest doing
@@ -406,10 +411,10 @@ The gate exists for two reasons: to fail fast and legibly on operations that
 never leave the guest (local config edits, history rewriting), and to be the
 launch point for the content checks in §5.
 
-It shadows exactly two binaries on `PATH`. It does **not** replace `/bin/sh`.
-Replacing the shell means hand-parsing shell syntax, which is a large amount of
-fragile code that buys nothing here, since there is no host round-trip to
-intercept before.
+The stock image shadows exactly two binaries on `PATH`. It does **not** replace
+`/bin/sh`. Replacing the shell means hand-parsing shell syntax, which is a large
+amount of fragile code that buys nothing here, since there is no host round-trip
+to intercept before.
 
 ```
 /usr/local/bin/git      -> policygate
@@ -462,6 +467,30 @@ the subcommand is not always `argv[1]`. Consult the table using that resolved
 subcommand, run any content check attached to it, then `exec` the real binary
 in-guest as the same unprivileged user. The gate never asks the host to
 execute anything.
+
+### Extending command coverage
+
+Adding a command filter is an image and runtime change today:
+
+1. Install the real tool and its shim in the image. The current wiring is in
+   [`image/corb-image.json`](../image/corb-image.json).
+2. Extend `ToolFromInvocation` in
+   [`guest/internal/gate/policy.go`](../guest/internal/gate/policy.go) and the
+   host-generated `GATE_CONFIG` in
+   [`src/vm/session.ts`](../src/vm/session.ts). Tool dispatch currently rejects
+   every basename except `git` and `gh`. Adapt the argument checks to the new
+   tool's syntax; the existing logic resolves subcommands after an allowlist of
+   value-less global flags.
+3. If the tool needs an out-of-guest content check, add its collector and
+   `GatedHook` dispatch, and extend the host request contract and validation in
+   [`src/policy/checks.ts`](../src/policy/checks.ts) and
+   [`src/policy/sentinel.ts`](../src/policy/sentinel.ts). The host currently
+   accepts only `git.commit` and `git.push` operations.
+
+A symlink to `policygate` alone does not add support for another command. There
+is no user configuration for per-tool argument policies. Shims remain a
+convenience layer; host-side filesystem and network rules cover the processes
+that invoke real binaries directly or use tools with no shim.
 
 ### Exit codes
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Corb runs the Pi coding agent inside a restricted micro-VM, with host-held credentials, explicit network access, filesystem rules, and an audit log.">
+  <meta name="description" content="Corb runs Pi inside a restricted micro-VM, with host-held credentials, filesystem and network rules, command filtering through image-installed shims, and an audit log.">
   <meta name="theme-color" content="#f7f7f5">
   <title>corb — sandboxed coding agents</title>
   <link rel="icon" href="assets/bec.png" type="image/png">
@@ -32,8 +32,8 @@
         <h1>A restricted workspace<br>for your coding agent.</h1>
         <section id="abstract">
           <h2>Abstract</h2>
-          <p>Corb is a command-line tool that runs the <a href="https://pi.dev">Pi</a> coding agent inside a <a href="https://earendil-works.github.io/gondolin/">Gondolin</a> micro-VM. You choose the directories it can reach, the hosts it can contact, and the Git operations it can perform.</p>
-          <p>Model credentials stay on the host. Filesystem restrictions apply to every process in the guest. Policy decisions go into one audit log.</p>
+          <p>Corb is a command-line tool that runs the <a href="https://pi.dev">Pi</a> coding agent inside a <a href="https://earendil-works.github.io/gondolin/">Gondolin</a> micro-VM. You choose the directories it can reach and the hosts it can contact. Command shims in the image check selected tool invocations before they run.</p>
+          <p>Model credentials stay on the host. Filesystem and network restrictions apply to every process in the guest. Policy decisions go into one audit log.</p>
           <p class="small"><a href="docs/getting-started.html">Build your first session</a> · <a href="docs/security.html">Read the boundary</a></p>
         </section>
         <section id="operation">
@@ -43,8 +43,8 @@
           <pre aria-label="Corb architecture"><code>host                         guest micro-VM
 ------------------------     -------------------
 workspace directories  &lt;---&gt; /work/&lt;name&gt;
-filesystem policy            Pi + its processes
-network + Git policy   &lt;---- outbound requests
+filesystem + network rules   Pi + its processes
+command policy         &lt;---&gt; image-installed shims
 credentials + audit log      secret placeholders</code></pre>
         </section>
         <section id="boundaries">
@@ -53,9 +53,9 @@ credentials + audit log      secret placeholders</code></pre>
             <li>Network access uses an explicit host allowlist.</li>
             <li>Model API keys are substituted on the host for permitted destinations.</li>
             <li>Directories can be writable or read only, with additional rules for individual paths.</li>
-            <li>Git access and GitHub API requests can be restricted by policy.</li>
+            <li>Image-installed command shims check subcommands and flags before invoking real tools.</li>
           </ul>
-          <p>These controls have specific limits. Read <a href="docs/security.html">Security and policy</a> before choosing a configuration.</p>
+          <p>The stock image shims <code>git</code> and <code>gh</code>. Adding another command needs image and runtime integration. Read <a href="docs/security.html#command-filtering">Command filtering</a> for the mechanism and its limits.</p>
         </section>
         <section id="documentation">
           <h2>3. Documentation</h2>
@@ -67,7 +67,8 @@ credentials + audit log      secret placeholders</code></pre>
                 <tr><td><a href="docs/workspaces.html">Workspaces</a></td><td>Mounts, primary directory, trust, saved-workspace plans.</td></tr>
                 <tr><td><a href="docs/configuration.html">Configuration</a></td><td>The global TOML file and its effective settings.</td></tr>
                 <tr><td><a href="docs/cli.html">Command reference</a></td><td>Run, inspect, attach, stop, and diagnose sessions.</td></tr>
-                <tr><td><a href="docs/security.html">Security and policy</a></td><td>Enforcement, credentials, Git gates, and limitations.</td></tr>
+                <tr><td><a href="docs/security.html">Security and policy</a></td><td>Process, filesystem, network, and command controls.</td></tr>
+                <tr><td><a href="docs/todo.html">Planned improvements</a></td><td>Mandatory arguments and extensible command shims.</td></tr>
               </tbody>
             </table>
           </div>
