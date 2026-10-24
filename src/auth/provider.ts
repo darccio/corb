@@ -104,3 +104,29 @@ export function getBrokeredProvider(id: string): BrokeredProvider {
   }
   return provider;
 }
+
+/**
+ * Whether `hostname` matches one `egress.allow` pattern, with Gondolin's own
+ * semantics (`host/patterns.js`, which the package does not export): `*`
+ * alone matches everything, and `*` inside a pattern matches any substring.
+ * Case-insensitive.
+ */
+function matchesAllowPattern(hostname: string, pattern: string): boolean {
+  const normalized = pattern.trim().toLowerCase();
+  if (normalized === "") {
+    return false;
+  }
+  if (normalized === "*") {
+    return true;
+  }
+  const escaped = normalized
+    .split("*")
+    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
+  return new RegExp(`^${escaped}$`, "i").test(hostname);
+}
+
+/** `provider`'s API hosts that `allow` (`egress.allow`) does not permit. A login does not grant network access. */
+export function unreachableApiHosts(provider: BrokeredProvider, allow: readonly string[] | undefined): string[] {
+  return provider.apiHosts.filter((host) => !(allow ?? []).some((pattern) => matchesAllowPattern(host, pattern)));
+}

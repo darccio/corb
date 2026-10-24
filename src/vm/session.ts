@@ -44,6 +44,7 @@ import { startWatchdog, type WatchdogHandle } from "./watchdog.ts";
 import { removeSessionSidecar, writeSessionSidecar, type SessionSidecar } from "./registry.ts";
 import { parseDuration } from "../util/duration.ts";
 import { POLICY_HOST } from "../policy/sentinel.ts";
+import type { BrokeredSession } from "../auth/broker.ts";
 // M5.4: the outermost VFS layer for every mount (see the mount-building loop
 // inside `runSession`). `GlobRule` (`src/vfs/policy.ts`, M5.2) is the fully-
 // required rule shape `withGlobPolicy` (`src/vfs/glob-policy.ts`, M5.3)
@@ -509,6 +510,64 @@ async function readGuestIdentity(vm: VM): Promise<CorbImageJson> {
   return parseCorbImageJson(result.stdout);
 }
 
+/**
+ * The files a host-brokered login (ADR 0012) puts in Pi's agent directory,
+ * keyed by file name: `auth.json` with the stand-in credential, plus
+ * `settings.json` when the provider asks for guest Pi settings. Nothing here
+ * is secret — the real tokens stay with `brokered` on the host.
+ */
+export function buildBrokeredGuestFiles(brokered: Pick<BrokeredSession, "provider" | "guest">, websockets: boolean): Record<string, string> {
+  const files: Record<string, string> = {
+    "auth.json": `${JSON.stringify({ [brokered.provider.id]: brokered.guest.piAuthEntry }, null, 2)}\n`,
+  };
+  const settings = brokered.provider.guestPiSettings({ websockets });
+  if (Object.keys(settings).length > 0) {
+    files["settings.json"] = `${JSON.stringify(settings, null, 2)}\n`;
+  }
+  return files;
+}
+
+/**
+ * Pi's agent directory in the guest: Pi's own default
+ * (`~/.pi/agent`, `PI_CODING_AGENT_DIR` unset), resolved against the
+ * image's recorded home directory.
+ */
+export function guestPiAgentDir(identity: CorbImageJson): string {
+  return path.posix.join(identity.paths.home, ".pi", "agent");
+}
+
+/**
+ * Writes `files` into Pi's agent directory as root, then hands the
+ * directory to the agent user (0700 directories, 0600 files). It stays an
+ * ordinary writable directory: Pi takes lock files next to `auth.json`.
+ * File contents travel as argv, which is fine because none of them is secret.
+ */
+async function writeGuestPiAgentFiles(vm: VM, identity: CorbImageJson, files: Record<string, string>): Promise<void> {
+  const agentDir = guestPiAgentDir(identity);
+  const piDir = path.posix.dirname(agentDir);
+  const names = Object.keys(files);
+  const script = [
+    "set -eu",
+    "umask 077",
+    'agent_dir="$1"; pi_dir="$2"; owner="$3"; shift 3',
+    'mkdir -p "$agent_dir"',
+    'while [ "$#" -gt 0 ]; do printf "%s" "$2" > "$agent_dir/$1"; shift 2; done',
+    'chown -R "$owner" "$pi_dir"',
+    'chmod 0700 "$pi_dir" "$agent_dir"',
+  ].join("\n");
+  const args = names.flatMap((name) => [name, files[name] ?? ""]);
+  const result = await vm.exec(["/bin/sh", "-c", script, "sh", agentDir, piDir, `${identity.uid}:${identity.gid}`, ...args], {
+    env: { PATH: GUEST_PATH },
+    stdout: "buffer",
+    stderr: "buffer",
+  });
+  if (!result.ok) {
+    throw new Error(
+      `corb run: could not write Pi's credentials into the guest (exit ${result.exitCode}): ` + (result.stderr.trim() || result.stdout.trim()),
+    );
+  }
+}
+
 // Exported, like the other private-validation helpers below it in this file
 // (`assertValidWorkspaceName`, `assertNoDuplicateNames`,
 // `resolveWorkspaceDirs`, `findPrimaryEntry`) — purely so
@@ -882,6 +941,15 @@ export interface RunSessionOptions {
    * scope.
    */
   expose?: number;
+  /**
+   * A started host-brokered login for `[agent].provider` (ADR 0012,
+   * `src/auth/broker.ts`), or `undefined` for every API-key provider. Its
+   * stand-in credential is written into Pi's agent directory after boot, and
+   * its `rewrite`/`noteResponse` steps are threaded into
+   * `buildEgressConfig()`. Started by the caller, before this function, so a
+   * missing login fails before any VM exists.
+   */
+  brokered?: BrokeredSession;
 }
 
 interface ResolvedWorkspaceDir {
@@ -1115,6 +1183,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       options.policy,
       options.dirConfigs,
       options.git,
+      options.brokered,
     );
     // `ssh` is always passed, never conditionally omitted: `SshOptions.allowedHosts`
     // is a required `string[]`, and `buildGitSshOptions` itself already
@@ -1207,6 +1276,9 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
 
     const identity = await readGuestIdentity(vm);
     const guestEnv = buildGuestEnv(egressConfig.env, hostEnv, identity);
+    if (options.brokered !== undefined) {
+      await writeGuestPiAgentFiles(vm, identity, buildBrokeredGuestFiles(options.brokered, egressConfig.allowWebSockets));
+    }
 
     const requestPty = canRequestPty(stdin, stdout);
     if (requestPty) {

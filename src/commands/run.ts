@@ -64,8 +64,10 @@ import { decideScope, reExecUnderScope } from "../vm/scope.ts";
 import { classifySessionSocketPath, describeSessionSocketOverflow, gondolinSessionsDir } from "../vm/sockpath.ts";
 import { acceptWorkspace, resolveWorkspace, type ResolvedWorkspace } from "../config/resolve.ts";
 import { renderText, renderTrust } from "../config/render.ts";
-import { defaultAuditPath } from "../config/paths.ts";
+import { credentialsStateDir, defaultAuditPath } from "../config/paths.ts";
 import { createAuditWriter } from "../policy/audit.ts";
+import { startBrokeredSession, type BrokeredSession } from "../auth/broker.ts";
+import { findBrokeredProvider, unreachableApiHosts } from "../auth/provider.ts";
 import type { ConfigLayer, DirMode, PartialAgentConfig, PartialDirConfig } from "../config/schema.ts";
 import type { DirConfig, EffectiveConfig } from "../config/load.ts";
 
@@ -444,6 +446,37 @@ export async function runRunCommand(argv: string[]): Promise<void> {
   // its default ever changed between the two call sites.
   const auditPath = resolved.fullConfig.audit?.path ?? defaultAuditPath();
   const audit = createAuditWriter({ path: auditPath });
+
+  // Host-brokered login (ADR 0012): only when `[agent].provider` names a
+  // provider in `src/auth/provider.ts`'s registry. Started here, before boot,
+  // so a missing or unrefreshable login fails before any VM exists. The real
+  // tokens are registered with the audit writer's redaction pass; the guest
+  // only ever gets the stand-in.
+  let brokered: BrokeredSession | undefined;
+  const brokeredProvider = findBrokeredProvider(resolved.fullConfig.agent?.provider);
+  if (brokeredProvider !== undefined) {
+    const unreachable = unreachableApiHosts(brokeredProvider, resolved.fullConfig.egress.allow);
+    if (unreachable.length > 0) {
+      console.error(
+        `corb: [agent] provider = "${brokeredProvider.id}" needs ${unreachable.map((h) => `"${h}"`).join(", ")} in egress.allow; ` +
+          "Pi's requests to it will be blocked until you add it.",
+      );
+    }
+    try {
+      brokered = await startBrokeredSession(brokeredProvider, {
+        dir: credentialsStateDir(),
+        onSecrets: (values) => audit.addRedactedSecrets(values),
+      });
+    } catch (err) {
+      // Every failure here (not logged in, an unusable credential file, a
+      // refresh the provider refused, a stuck lock) is a sentence for the
+      // user, not a stack trace.
+      console.error(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   await runSession({
     dirs,
     primary,
@@ -465,5 +498,6 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     audit,
     auditPath,
     ...(expose !== undefined ? { expose } : {}),
+    ...(brokered !== undefined ? { brokered } : {}),
   });
 }

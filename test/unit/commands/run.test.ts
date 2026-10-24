@@ -44,6 +44,7 @@ import {
 import type { EffectiveConfig } from "../../../src/config/load.ts";
 import type { AuditWriter } from "../../../src/policy/audit.ts";
 import { InvalidDirRuleError, UnmatchableDirRuleGlobError } from "../../../src/vm/session.ts";
+import { CREDENTIAL_FILE_VERSION, writeStoredCredential } from "../../../src/auth/store.ts";
 
 describe("commands/run: parseRunArgs --dry-run", () => {
   it("defaults dryRun to false when not passed", () => {
@@ -703,5 +704,101 @@ describe("commands/run: runRunCommand", () => {
       await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow(UnmatchableDirRuleGlobError);
       expect(runSessionMock).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("commands/run: runRunCommand with a host-brokered provider", () => {
+  let root: string;
+  let workDir: string;
+  let configDir: string;
+  let stateDir: string;
+  const saved: Record<string, string | undefined> = {};
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  function writeConfig(allow: string[]): void {
+    fs.writeFileSync(
+      path.join(configDir, "config.toml"),
+      ["[agent]", 'provider = "openai-codex"', "", "[egress]", `allow = [${allow.map((h) => `"${h}"`).join(", ")}]`].join("\n"),
+    );
+  }
+
+  function writeLogin(): void {
+    const enc = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const access = `${enc({ alg: "RS256" })}.${enc({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-1" } })}.sig`;
+    writeStoredCredential(path.join(stateDir, "credentials"), {
+      version: CREDENTIAL_FILE_VERSION,
+      provider: "openai-codex",
+      type: "oauth",
+      access,
+      refresh: "real-refresh",
+      expires: Date.now() + 3_600_000,
+      accountId: "acct-1",
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-run-brokered-"));
+    workDir = path.join(root, "work");
+    configDir = path.join(root, "config");
+    stateDir = path.join(root, "state");
+    for (const dir of [workDir, configDir, stateDir]) {
+      fs.mkdirSync(dir);
+    }
+    saved.CORB_CONFIG_DIR = process.env.CORB_CONFIG_DIR;
+    saved.CORB_STATE_DIR = process.env.CORB_STATE_DIR;
+    process.env.CORB_CONFIG_DIR = configDir;
+    process.env.CORB_STATE_DIR = stateDir;
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    runSessionMock.mockClear();
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+    process.exitCode = undefined;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("refuses to boot without a stored login, pointing at corb login", async () => {
+    writeConfig(["chatgpt.com"]);
+    await runRunCommand([workDir, "--trust-config"]);
+    expect(runSessionMock).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy.mock.calls.flat().join("\n")).toMatch(/corb login openai-codex/);
+  });
+
+  it("passes the started broker to runSession, with only the stand-in in its guest credential", async () => {
+    writeConfig(["chatgpt.com"]);
+    writeLogin();
+    await runRunCommand([workDir, "--trust-config"]);
+    expect(runSessionMock).toHaveBeenCalledTimes(1);
+    const [options] = runSessionMock.mock.calls[0] as [{ piArgs: string[]; brokered?: { provider: { id: string }; guest: unknown } }];
+    expect(options.piArgs.slice(0, 2)).toEqual(["--provider", "openai-codex"]);
+    expect(options.brokered?.provider.id).toBe("openai-codex");
+    expect(JSON.stringify(options.brokered?.guest)).not.toContain("real-refresh");
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("warns when the provider's API host is not in egress.allow, and still boots", async () => {
+    writeConfig(["pi.dev"]);
+    writeLogin();
+    await runRunCommand([workDir, "--trust-config"]);
+    expect(runSessionMock).toHaveBeenCalledTimes(1);
+    expect(errorSpy.mock.calls.flat().join("\n")).toMatch(/needs "chatgpt.com" in egress.allow/);
+  });
+
+  it("does not start a broker for an API-key provider", async () => {
+    fs.writeFileSync(path.join(configDir, "config.toml"), '[agent]\nprovider = "anthropic"\n');
+    await runRunCommand([workDir, "--trust-config"]);
+    const [options] = runSessionMock.mock.calls[0] as [{ brokered?: unknown }];
+    expect(options.brokered).toBeUndefined();
   });
 });

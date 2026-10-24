@@ -32,6 +32,7 @@ import type { AuditWriter } from "../policy/audit.ts";
 import { githubApiGate } from "../policy/github.ts";
 import { POLICY_HOST, sentinel } from "../policy/sentinel.ts";
 import { gitHttpGate } from "./githttp.ts";
+import type { BrokeredSession } from "../auth/broker.ts";
 
 /** The real secret value plus the hosts Gondolin is allowed to send it to. Matches `createHttpHooks({ secrets })`'s per-entry shape (docs/gondolin-notes.md §5). */
 export interface SecretBinding {
@@ -332,6 +333,7 @@ export function buildEgressConfig(
   policy: EffectivePolicyConfig = INERT_POLICY,
   dirs: readonly DirConfig[] = [],
   git: EffectiveGitConfig = INERT_GIT,
+  brokered?: Pick<BrokeredSession, "rewrite" | "noteResponse">,
 ): EgressConfig {
   const secretBindings = buildSecretBindings(secrets, env);
   audit.addRedactedSecrets(Object.values(secretBindings).map((binding) => binding.value));
@@ -370,11 +372,20 @@ export function buildEgressConfig(
     // common case, since none of them touch `pi.dev`/`openrouter.ai`
     // traffic at all). Falling back to `rewritten` on a pass-through is
     // what makes the rewrite actually take effect.
+    //
+    // A host-brokered login's stand-in swap (`src/auth/broker.ts`, ADR 0012)
+    // runs last, only once no policy hook short-circuited, so none of those
+    // hooks ever sees the real access token.
     onRequest: async (req) => {
       const rewritten = forceIdentityAcceptEncoding(req);
-      return (await policyOnRequest(rewritten)) ?? rewritten;
+      const handled = await policyOnRequest(rewritten);
+      if (handled !== undefined) {
+        return handled;
+      }
+      return brokered !== undefined ? await brokered.rewrite(rewritten) : rewritten;
     },
     onResponse: (res, req) => {
+      brokered?.noteResponse(res, req);
       audit.record({
         channel: "http",
         decision: "allow",
