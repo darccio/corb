@@ -62,6 +62,33 @@ expect-status = [200]
 the host. Normal `doctor` does not. A `header-prefix` can supply a provider's
 required prefix, such as `"Bearer "`.
 
+### Subscription logins
+
+Some providers use a subscription login instead of an API key. Corb runs the
+login on the host and keeps the tokens there. `openai-codex` (ChatGPT Plus or
+Pro) is the only such provider so far.
+
+```toml
+[agent]
+provider = "openai-codex"
+model = "gpt-6.1-sol"
+
+[egress]
+allow = ["chatgpt.com", "pi.dev"]
+```
+
+Log in once with `corb login openai-codex`. Corb stores the login in
+`~/.local/state/corb/credentials/` (or `$CORB_STATE_DIR/credentials/`). The
+file is readable only by you. Every Corb session on the host uses the same
+login, and Corb refreshes it when it is close to expiry.
+
+No `[secrets.*]` entry is needed. `chatgpt.com` must be in `egress.allow`; the
+login does not grant network access. `auth.openai.com` is not needed in the
+guest, because the login and every refresh happen on the host.
+
+`corb run` stops before it boots the VM if there is no stored login. Pick a
+model from Pi's `/model` list for the provider.
+
 ## VM and resources
 
 ```toml

@@ -51,6 +51,29 @@ Print the merged configuration and trust verdict without starting a session. Use
 the same mount flags as the run you want to inspect. `--json` emits
 machine-readable output.
 
+## Login
+
+```bash
+corb login [PROVIDER] [--device-code]
+corb logout PROVIDER
+```
+
+Log in to a subscription provider on the host. `openai-codex` (ChatGPT Plus or
+Pro) is the only provider so far. With no provider, `login` lists the providers
+and whether each has a stored login.
+
+The default login prints a URL to open in a browser. The browser returns to
+`localhost:1455` on the host when the login is done. If the browser runs on
+another machine, or another program uses that port, paste the address the
+browser ends on into the terminal. `--device-code` prints a code to enter at
+the provider's site instead.
+
+`logout` deletes the stored login from the host. It does not revoke it at the
+provider.
+
+See [Subscription logins](configuration.md#subscription-logins) for the
+configuration a session needs.
+
 ## Session commands
 
 ```bash
@@ -80,7 +103,8 @@ corb doctor [--verify-secrets]
 ```
 
 Check the host environment, dependencies, cgroup delegation, and required
-credential variables. `--verify-secrets` additionally sends the configured
+credential variables. When `[agent].provider` uses a subscription login, it also
+checks that the login exists and that its API host is allowed. `--verify-secrets` additionally sends the configured
 credential-verification requests.
 
 ## Image build

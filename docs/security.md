@@ -37,8 +37,15 @@ The guest receives secret placeholders. The host replaces a placeholder with the
 real value only for the secret's configured destination hosts. The network
 allowlist and secret destination list are separate settings.
 
+A subscription login (`corb login`) works the same way. Its access and refresh
+tokens stay on the host. Pi gets a stand-in token that is not signed and holds
+no secret. The host replaces it with the real access token only on HTTPS
+requests to the provider's API host, such as `chatgpt.com`. A stand-in copied
+out of the guest is useless. A process in the guest can still use the stand-in
+to make its own requests to that API host, as it can with a placeholder.
+
 WebSocket access is disabled by default; enabled WebSocket traffic is opaque
-after the upgrade.
+after the upgrade. The token swap also applies to the upgrade request.
 
 ### Transport and API checks
 
