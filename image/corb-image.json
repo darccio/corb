@@ -43,7 +43,7 @@
       "cd /tmp/bindfs-1.18.4 && ./configure --prefix=/usr --sysconfdir=/etc --mandir=/usr/share/man --localstatedir=/var && make && make install",
       "rm -rf /tmp/bindfs.tar.gz /tmp/bindfs-1.18.4",
       "apk del build-base linux-headers fuse3-dev",
-      "npm i -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@0.84.2",
+      "npm i -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@1.4.0",
       "addgroup -g 1000 agent && adduser -D -u 1000 -G agent -h /home/agent -s /bin/sh agent",
       "mkdir -p /work /home/agent/sessions && chown -R 1000:1000 /home/agent /work",
       "rm -f /usr/bin/npm /usr/bin/npx /bin/su /usr/bin/su /usr/bin/sudo /usr/bin/doas /sbin/apk",
