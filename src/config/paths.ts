@@ -56,3 +56,15 @@ export function defaultAuditPath(stateDir: string = corbStateDir()): string {
 export function sessionsStateDir(stateDir: string = corbStateDir()): string {
   return path.join(stateDir, "sessions");
 }
+
+/**
+ * Directory holding host-brokered OAuth logins (`corb login <provider>`,
+ * ADR 0012) inside `stateDir` (defaults to `corbStateDir()`) — one
+ * `<provider>.json` file per provider. Shared by every corb process on the
+ * host. Only ever a default a caller passes on to `src/auth/store.ts`, which
+ * takes a plain directory path, mirroring `sessionsStateDir`'s own
+ * relationship to `src/vm/registry.ts`.
+ */
+export function credentialsStateDir(stateDir: string = corbStateDir()): string {
+  return path.join(stateDir, "credentials");
+}

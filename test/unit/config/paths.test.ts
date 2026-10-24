@@ -7,7 +7,7 @@
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { corbStateDir, defaultAuditPath } from "../../../src/config/paths.ts";
+import { corbStateDir, credentialsStateDir, defaultAuditPath } from "../../../src/config/paths.ts";
 
 describe("config/paths corbStateDir / defaultAuditPath", () => {
   const previousStateDir = process.env.CORB_STATE_DIR;
@@ -37,5 +37,10 @@ describe("config/paths corbStateDir / defaultAuditPath", () => {
   it("defaultAuditPath() defaults to corbStateDir()/audit.jsonl", () => {
     process.env.CORB_STATE_DIR = "/tmp/custom-corb-state";
     expect(defaultAuditPath()).toBe(path.join("/tmp/custom-corb-state", "audit.jsonl"));
+  });
+
+  it("credentialsStateDir() defaults to corbStateDir()/credentials, so it follows CORB_STATE_DIR", () => {
+    process.env.CORB_STATE_DIR = "/tmp/custom-corb-state";
+    expect(credentialsStateDir()).toBe(path.join("/tmp/custom-corb-state", "credentials"));
   });
 });
