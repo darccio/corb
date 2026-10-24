@@ -2,7 +2,7 @@
   "user": "agent",
   "uid": 1000,
   "gid": 1000,
-  "piVersion": "0.84.2",
+  "piVersion": "1.4.0",
   "paths": {
     "dropcapPath": "/usr/local/bin/dropcap",
     "home": "/home/agent",

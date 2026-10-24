@@ -159,13 +159,13 @@ describe("vm/egress forceIdentityAcceptEncoding", () => {
   it("preserves method, url, and every other header unchanged", () => {
     const req = new Request("https://pi.dev/api/models/providers/openrouter", {
       method: "POST",
-      headers: { accept: "application/json", "user-agent": "pi-coding-agent/0.84.2" },
+      headers: { accept: "application/json", "user-agent": "pi-coding-agent/1.4.0" },
     });
     const rewritten = forceIdentityAcceptEncoding(req);
     expect(rewritten.method).toBe("POST");
     expect(rewritten.url).toBe(req.url);
     expect(rewritten.headers.get("accept")).toBe("application/json");
-    expect(rewritten.headers.get("user-agent")).toBe("pi-coding-agent/0.84.2");
+    expect(rewritten.headers.get("user-agent")).toBe("pi-coding-agent/1.4.0");
   });
 });
 
