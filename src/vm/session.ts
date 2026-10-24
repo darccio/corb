@@ -541,8 +541,11 @@ export function guestPiAgentDir(identity: CorbImageJson): string {
  * directory to the agent user (0700 directories, 0600 files). It stays an
  * ordinary writable directory: Pi takes lock files next to `auth.json`.
  * File contents travel as argv, which is fine because none of them is secret.
+ * Exported for `test/e2e/brokered-login.e2e.ts`, which drives `VM.create()`
+ * itself (like the other e2e suites) but must write exactly these files the
+ * way a real session does.
  */
-async function writeGuestPiAgentFiles(vm: VM, identity: CorbImageJson, files: Record<string, string>): Promise<void> {
+export async function writeGuestPiAgentFiles(vm: VM, identity: CorbImageJson, files: Record<string, string>): Promise<void> {
   const agentDir = guestPiAgentDir(identity);
   const piDir = path.posix.dirname(agentDir);
   const names = Object.keys(files);
