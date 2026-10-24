@@ -42,9 +42,17 @@ after the upgrade.
 
 ### Transport and API checks
 
-Git transport has separate host-side checks for permitted hosts, repositories,
-and push access. SSH credentials remain on the host. These checks apply even
-when the command shim is bypassed.
+Git-over-SSH has host-side checks for permitted hosts, repositories, and push
+access. SSH credentials remain on the host. Without `git.allow-hosts`, SSH
+egress is disabled.
+
+The Git HTTPS gate checks repositories and push access only on hosts listed in
+`git.allow-hosts`. It recognizes smart-HTTP requests beneath two-part
+`owner/repo` paths; deeper paths such as `group/subgroup/repo` are outside this
+gate. An absent or empty Git host list leaves the HTTPS gate inactive. The
+separate `egress.allow` list still controls HTTP destinations.
+
+These host-side transport checks apply even when the command shim is bypassed.
 
 The optional GitHub API gate constrains HTTP methods and paths. With its
 configuration table absent, that extra gate is inactive.
@@ -104,9 +112,14 @@ person launching the command.
 
 ## Audit
 
-Filesystem denials and shadow writes, network and Git policy decisions, and host
-content-check results are recorded in one JSON Lines audit log. Session events
-use the same log.
+Path-rule denials and shadow writes, completed HTTP responses, host Git/API gate
+decisions, host content-check results, and session events share one JSON Lines
+audit log.
+
+Plain HTTP hostname-allowlist denials do not produce audit entries through the
+current hooks. Local shim argument denials and guest-side content collection or
+transport failures appear on stderr; they do not produce host content-check
+results. The audit log is not a record of every attempted operation.
 
 The default is `~/.local/state/corb/audit.jsonl`. Keep an explicit alternative
 path outside all mounts.

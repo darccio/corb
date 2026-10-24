@@ -1,0 +1,24 @@
+IBM Plex Mono, unmodified official complete WOFF2 builds
+
+Source repository: https://github.com/IBM/plex
+Pinned revision: 763c36ef9117782905ae010056dfbe8fd2653a25
+Retrieved: 2026-10-09
+Upstream path: packages/plex-mono/fonts/complete/woff2/
+Source URL prefix:
+https://raw.githubusercontent.com/IBM/plex/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-mono/fonts/complete/woff2/
+
+Files: IBMPlexMono-Regular.woff2, IBMPlexMono-Bold.woff2,
+IBMPlexMono-Italic.woff2, IBMPlexMono-BoldItalic.woff2.
+Regular and italic use weight 400; bold and bold italic use weight 700.
+Complete builds preserve upstream glyph coverage without local subsetting.
+
+License source:
+https://raw.githubusercontent.com/IBM/plex/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-mono/LICENSE.txt
+LICENSE.txt preserves IBM's copyright notice and SIL Open Font License 1.1.
+
+SHA-256 sums:
+ba204497f16b6d334cee9d1e963a831b73e3a56e1d6300a8489d18df7214b350  IBMPlexMono-Regular.woff2
+ea576f38d05cc44cca48c45314984beb8cc1d2b886f58e1dce99f15dc344eb1d  IBMPlexMono-Bold.woff2
+2024bf2b08027dcd6d09091385756e327744bbe26b782c411381dffc40ffc622  IBMPlexMono-Italic.woff2
+03e97fe28d44cc2bdf18d77284046bc9019ee626bdab1f06e7ea64837680824b  IBMPlexMono-BoldItalic.woff2
+7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da  LICENSE.txt

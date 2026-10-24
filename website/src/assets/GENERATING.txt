@@ -1,0 +1,37 @@
+Website raster assets
+
+The original bec.png is the source artwork. Keep it unchanged. Display images
+use the same artwork, proportions, colors and transparency. WebP derivatives
+are lossless at their chosen dimensions. Favicons use the full bird.
+
+Regenerate from the repository root with ImageMagick 7:
+
+for edge in 320 480 640 960; do
+  magick website/src/assets/bec.png -resize "${edge}x${edge}" -strip \
+    -define webp:lossless=true -define webp:exact=true \
+    "website/src/assets/bec-${edge}.webp"
+done
+
+magick website/src/assets/bec.png -resize 640x640 -depth 8 -strip \
+  -define png:compression-level=9 website/src/assets/bec-640.png
+
+for edge in 32 64; do
+  magick website/src/assets/bec.png -resize "${edge}x${edge}" -depth 8 -strip \
+    -define png:compression-level=9 "website/src/assets/favicon-${edge}.png"
+done
+
+magick -size 1200x630 'xc:#f7f7f5' \
+  \( website/src/assets/bec.png -resize 560x560 \) \
+  -geometry +610+35 -compose Over -composite \
+  -font website/src/assets/fonts/ibm-plex-mono/IBMPlexMono-Bold.woff2 \
+  -fill '#1a1613' -pointsize 58 -annotate +64+144 'corb' \
+  -pointsize 40 -annotate +64+298 'Run Pi in a' \
+  -annotate +64+354 'restricted micro-VM.' \
+  -font website/src/assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.woff2 \
+  -pointsize 20 -annotate +64+448 'Filesystem and network rules.' \
+  -depth 8 -strip -define png:compression-level=9 \
+  website/src/assets/corb-social.png
+
+These generated files are checked in. Normal website builds need neither
+ImageMagick nor an image processing package. Font provenance and licensing
+are in fonts/ibm-plex-mono/SOURCE.txt and LICENSE.txt.

@@ -234,3 +234,94 @@ If startup or a command fails, use `corb doctor` for host dependencies,
 `corb explain "$project"` for policy, and the host audit log at
 `~/.local/state/corb/audit.jsonl` for policy denials. Config changes take effect
 on the next run; widening persistent access requires `--trust-config` again.
+
+## Read a denied operation in the audit log
+
+This check uses a disposable project and separate configuration and state. It
+needs the built Corb image from [Getting started](getting-started.md) and `jq`
+on the host to filter the audit log. Leave Pi idle and use an attached guest shell;
+this check needs no model credential or prompt.
+
+In the first host terminal, prepare a harmless fixture:
+
+```bash
+demo=$(mktemp -d /tmp/corb-denied-write.XXXXXX)
+mkdir "$demo/project" "$demo/config" "$demo/state" "$demo/sessions"
+printf 'Original fixture.\n' > "$demo/project/frozen.txt"
+cp "$demo/project/frozen.txt" "$demo/before.txt"
+cat > "$demo/config/config.toml" <<'TOML'
+[vm]
+max-session = "5m"
+
+[egress]
+allow = []
+
+[git]
+ssh-agent = false
+allow-hosts = []
+allow-repos = []
+
+[[dir]]
+name = "project"
+rules = [
+  { glob = "frozen.txt", mode = "deny-write", reason = "website demonstration: preserve the fixture" },
+]
+TOML
+export CORB_CONFIG_DIR="$demo/config" CORB_STATE_DIR="$demo/state"
+export GONDOLIN_SESSIONS_DIR="$demo/sessions"
+printf 'Demo directory: %s\n' "$demo"
+corb explain "$demo/project"
+corb run "$demo/project" --trust-config
+```
+
+Check that `explain` shows the `deny-write` rule, an empty network allowlist,
+and no secrets. In a second host terminal, set `demo` to the printed directory
+and export the same three directory overrides. Run `corb ls`, then
+`corb attach SESSION_ID` using the listed ID. In that attached shell:
+
+```sh
+cd /work/project
+printf 'overwrite\n' >> frozen.txt
+printf 'write exit: %s\n' "$?"
+cat frozen.txt
+exit
+```
+
+Back on the host, compare the fixture and read its audit decision:
+
+```bash
+cmp "$demo/before.txt" "$demo/project/frozen.txt"
+jq -c 'select(.channel == "vfs" and .decision == "deny" and .subject == "write frozen.txt")' \
+  "$demo/state/audit.jsonl"
+corb kill SESSION_ID
+unset CORB_CONFIG_DIR CORB_STATE_DIR GONDOLIN_SESSIONS_DIR
+```
+
+`cmp` must exit successfully. The denial's `sessionId` uses the session label
+shown by `ls`, such as `corb:project:8df9b14e`, rather than the VM ID passed to
+`attach`. Stop the session before removing the temporary directory. Unset the
+overrides in the first host terminal too when its run finishes.
+
+The following output was captured from a real attached uid-1000 guest shell on
+9 October 2026. Pi was idle; no model request was sent:
+
+```text
+/work/project $ printf 'overwrite\n' >> frozen.txt
+/bin/sh: can't create frozen.txt: Permission denied
+/work/project $ printf 'write exit: %s\n' "$?"
+write exit: 1
+/work/project $ cat frozen.txt
+Original fixture.
+```
+
+The host fixture remained byte-for-byte unchanged. Its actual audit record was:
+
+```json
+{"ts":1791526987711,"channel":"vfs","decision":"deny","subject":"write frozen.txt","reason":"website demonstration: preserve the fixture","sessionId":"corb:project:8df9b14e"}
+```
+
+The [capture record](evidence/denied-write-2026-10-09.json)
+contains the effective policy, configuration, Corb revision, image build ID,
+fixture hashes, and publication edits. Terminal control sequences were removed
+and the temporary host directory was replaced with `<capture>` in the policy
+output; the denial and audit fields are unchanged.

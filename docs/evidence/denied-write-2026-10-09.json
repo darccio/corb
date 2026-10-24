@@ -1,0 +1,53 @@
+{
+  "capturedAt": "2026-10-09T06:23:07.711Z",
+  "corbRevision": "28442d9d567fbabe6ba23f32f6e3fc7ad7d34782",
+  "image": {
+    "selector": "corb:0.1.0",
+    "arch": "x86_64",
+    "buildId": "b17273dc-2c3b-5ebb-94ea-82e42c661321"
+  },
+  "execution": "Actual corb run; denial produced in its attached uid-1000 guest shell while Pi was idle. No model prompt, credentials, model response, or user project.",
+  "host": "Linux; QEMU emulator version 11.1.1 (openSUSE Tumbleweed). The default sandbox could not create the VM Unix socket, so the same isolated run was executed outside it. Acceleration was selected automatically and was not recorded.",
+  "session": {
+    "id": "4e72ba09-e0c4-496a-9a64-937d259ac4b0",
+    "label": "corb:project:8df9b14e"
+  },
+  "isolation": {
+    "mounts": [
+      "<capture>/project"
+    ],
+    "configDirectory": "<capture>/config",
+    "stateDirectory": "<capture>/state",
+    "sessionDirectory": "<capture>/sessions",
+    "cacheDirectory": "<capture>/cache",
+    "secretBindings": [],
+    "externalEgressAllowlist": [],
+    "sshAgent": false,
+    "gitAllowHosts": [],
+    "gitAllowRepositories": []
+  },
+  "configToml": "[vm]\nimage = \"corb:0.1.0\"\nmemory = \"1G\"\ncpus = 2\nmax-session = \"5m\"\n\n[egress]\nallow = []\n\n[git]\nssh-agent = false\nallow-hosts = []\nallow-repos = []\n\n[policy]\nfail-open = false\n\n[[dir]]\nname = \"project\"\nrules = [\n  { glob = \"frozen.txt\", mode = \"deny-write\", reason = \"website demonstration: preserve the fixture\" },\n]\n",
+  "effectiveConfig": "workspace: <capture>/project\n\nversion: (unset)\nname: (unset)\nvm:\n  image: corb:0.1.0\n  memory: 1G\n  cpus: 2\n  max-session: 5m\n  limits: (unset)\nagent: (unset)\nsecrets: (none)\negress:\n  allow: []\n  allow-internal: (unset)\n  block-internal-ranges: true\n  websockets: false\n  github-api: (unset)\ngit:\n  ssh-agent: false\n  allow-hosts: []\n  allow-repos: []\n  allow-push: false\ndir:\n  - project (mode=rw, host=<capture>/project, create=(unset))\n    rules:\n      - glob=frozen.txt mode=deny-write reason=website demonstration: preserve the fixture\npolicy:\n  enabled: true\n  secret-scan: true\n  max-changed-files: (unset)\n  fail-open: false\naudit: (unset)\n\ntrust:\n  key (directory path): <capture>/project\n  verdict: REQUIRES-CONFIRMATION\n  scope: config.toml + this workspace directory only (does not include any --dir-added directories)\n  widened (1):\n    - [workspace] no prior trust record exists for this workspace; treated as first-time widening\n  narrowed: (none)\n",
+  "guestTranscript": "/work $ cd /work/project\n/work/project $ printf 'overwrite\\n' >> frozen.txt\n/bin/sh: can't create frozen.txt: Permission denied\n/work/project $ printf 'write exit: %s\\n' \"$?\"\nwrite exit: 1\n/work/project $ cat frozen.txt\nOriginal fixture.",
+  "auditEvent": {
+    "ts": 1791526987711,
+    "channel": "vfs",
+    "decision": "deny",
+    "subject": "write frozen.txt",
+    "reason": "website demonstration: preserve the fixture",
+    "sessionId": "corb:project:8df9b14e"
+  },
+  "hostVerification": {
+    "method": "cmp before.txt project/frozen.txt exited 0; before and after bytes and SHA-256 independently compared.",
+    "beforeSha256": "6ee0d306ca103a1414100a2db25d64c78ad796339b06e324208cac753d3e2392",
+    "afterSha256": "6ee0d306ca103a1414100a2db25d64c78ad796339b06e324208cac753d3e2392",
+    "content": "Original fixture.\n"
+  },
+  "teardown": "corb kill reported teardown complete; both temporary session directories are empty. The remaining attach client was interrupted after its shell had exited.",
+  "editsForPublication": [
+    "Replaced the temporary absolute capture directory with <capture>.",
+    "Removed terminal control sequences and carriage returns.",
+    "Selected the attached shell commands and output, omitting script headers, the attach banner, Pi screen redraws, and unrelated audit events.",
+    "The audit event, actual exit status, denial text, fixture content, image build ID, and session identifiers are unchanged."
+  ]
+}

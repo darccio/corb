@@ -4,24 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="This document could not be found in the Corb documentation.">
+  <meta name="robots" content="noindex">
   <meta name="theme-color" content="#f7f7f5">
   <title>Document not found — corb</title>
-  <link rel="icon" href="/assets/bec.png" type="image/png">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="{{base_path}}assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="{{base_path}}assets/favicon-64.png" type="image/png" sizes="64x64">
+  <link rel="stylesheet" href="{{base_path}}fonts.css">
+  <link rel="stylesheet" href="{{base_path}}styles.css">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="sheet">
-    <header class="masthead"><a class="wordmark" href="/index.html" aria-label="corb home">corb</a><span class="edition">technical documentation</span></header>
-    <nav aria-label="Main navigation"><a href="/index.html">overview</a><a href="/docs/getting-started.html">getting started</a><a href="/docs/workspaces.html">workspaces</a><a href="/docs/cli.html">reference</a></nav>
+    <header class="masthead"><a class="wordmark" href="{{base_path}}index.html" aria-label="corb home">corb</a><span class="edition">technical documentation</span></header>
+    <nav class="site-nav" aria-label="Main navigation">
+      {{navigation}}
+    </nav>
     <div class="docket"><p>corb project<br>Document lookup</p><p class="docket-right">Status: 404</p></div>
-    <main id="main">
+    <main id="main" tabindex="-1">
       <h1>Document not found.</h1>
       <p>The requested page does not exist at this address.</p>
-      <p><a href="/index.html#documentation">Return to the documentation index</a>.</p>
+      <p><a href="{{base_path}}index.html#documentation">Return to the documentation index</a>.</p>
       <p class="small">An unfiled flight plan.</p>
     </main>
-    <footer><p>corb / document lookup / v0.1.0</p><p><a href="/index.html">overview</a></p></footer>
+    <footer><p>corb / document lookup / v0.1.0</p><p><a href="{{base_path}}index.html">overview</a></p></footer>
   </div>
 </body>
 </html>

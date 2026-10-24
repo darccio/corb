@@ -96,6 +96,44 @@ omit `--trust-config` unless the persistent configuration widens access.
 > Use a project directory outside the Corb checkout for your first session.
 > Rebuilding Corb while a session uses its image adds avoidable moving parts.
 
+## Add a read-only reference
+
+For a later session, you can give Pi another directory to consult. Append this
+entry to the configuration above, replacing the example host path with an
+existing absolute directory on your machine:
+
+```toml
+[[dir]]
+name = "reference"
+host = "/home/bec/Code/reference"
+mode = "ro"
+```
+
+TOML paths are literal: Corb does not expand `~` or environment variables in
+`host`. Choose a reference directory outside Corb's configuration and state.
+
+With the same positional project, the combined settings mean:
+
+| Setting | Effect |
+|---|---|
+| `node src/cli.ts run ~/Code/packet-loss` | Mounts the project read/write at `/work/packet-loss`; edits change the host checkout. |
+| The `reference` directory entry | Mounts the specified host directory read-only at `/work/reference`; writes through this mount are refused. |
+| `egress.allow` | Permits outbound requests to `api.anthropic.com` and `pi.dev` from guest processes. |
+| `secrets.ANTHROPIC_API_KEY.hosts` | Limits substitution of that host-held credential to `api.anthropic.com`; it does not grant network access by itself. |
+
+All directory entries in this global configuration participate in every run
+using it. For a reference intended for one project, use a
+[separate project configuration](walkthrough.md#apply-repository-specific-setup).
+
+Leave the current Pi session with `/quit`, then run `explain` again to check
+both mounts and start the next session with `--trust-config` to accept the
+added persistent directory:
+
+```bash
+node src/cli.ts explain ~/Code/packet-loss
+node src/cli.ts run ~/Code/packet-loss --trust-config
+```
+
 Continue with the [development walkthrough](walkthrough.md) for project-specific
 configuration, repository instructions, feature development, review, and keeping
 Pi history across sessions.

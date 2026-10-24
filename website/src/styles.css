@@ -30,15 +30,38 @@ a:hover { color: var(--pink); text-decoration-thickness: 2px; }
 .skip-link:focus { top: 8px; }
 .sheet { max-width: 1028px; margin: 0 auto; padding: 32px 20px 52px; }
 .masthead { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; padding-bottom: 12px; }
-.wordmark { font-size: 25px; font-weight: 800; color: var(--ink); letter-spacing: -1.5px; text-decoration: none; }
+.wordmark { font-size: 25px; font-weight: 700; color: var(--ink); letter-spacing: -1.5px; text-decoration: none; }
 .wordmark:hover { color: var(--ink); text-decoration: underline; }
 .edition { font-size: 12px; }
-nav { display: flex; flex-wrap: wrap; gap: 8px 24px; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 10px 0; font-size: 13px; }
-nav a[aria-current="page"] { color: var(--ink); font-weight: 700; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 8px 24px; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 10px 0; font-size: 13px; }
+.site-nav a[aria-current="page"] { color: var(--ink); font-weight: 700; }
 .docket { display: flex; justify-content: space-between; gap: 20px; margin: 20px 0 32px; font-size: 12px; line-height: 1.6; }
 .docket p { margin: 0; }
 .docket-right { text-align: right; }
 .document-grid { display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 296px); gap: 52px; align-items: start; }
+.landing { grid-template-areas: "introduction bec" "details bec"; row-gap: 0; margin-top: 32px; }
+.landing-intro { grid-area: introduction; min-width: 0; margin-bottom: 32px; }
+.landing-intro h1 { margin-bottom: 20px; }
+.landing-intro .setup-action { margin-bottom: 12px; }
+.landing-intro > :last-child { margin-bottom: 0; }
+.landing-bec { grid-area: bec; min-width: 0; }
+.landing-details { grid-area: details; }
+.landing .enforcement-table { min-width: 620px; table-layout: fixed; }
+.landing .enforcement-table th:first-child { width: 25%; }
+.landing .enforcement-table th:nth-child(2) { width: 33%; }
+.landing .enforcement-table th:nth-child(3) { width: 42%; }
+.landing .bec picture { display: block; }
+.guide-layout { display: grid; grid-template-columns: minmax(0, 640px) minmax(0, 296px); grid-template-areas: "introduction sidebar" "body sidebar"; column-gap: 52px; align-items: start; }
+.guide-introduction { grid-area: introduction; }
+.guide-introduction > :last-child { margin-bottom: 32px; }
+.guide-sidebar { grid-area: sidebar; min-width: 0; padding-top: 2px; font-size: 12px; }
+.guide-sidebar h2 { font-size: 12px; font-weight: 400; margin-bottom: 16px; }
+.guide-sidebar .contents li { margin-bottom: 12px; }
+.guide-sidebar .margin-note { margin-bottom: 0; }
+.guide-mobile-contents { display: none; }
+.guide-mobile-contents summary { cursor: pointer; padding: 8px 0; font-size: 13px; }
+.guide-mobile-contents nav { padding-top: 16px; }
+.guide-body { grid-area: body; min-width: 0; }
 article { min-width: 0; overflow-wrap: anywhere; }
 h1 { font-size: 24px; line-height: 1.4; letter-spacing: -0.8px; margin: 0 0 32px; font-weight: 700; }
 h2 { font-size: 16px; line-height: 1.5; margin: 0 0 16px; }
@@ -55,9 +78,6 @@ pre { margin: 20px 0; padding: 16px 0 16px 16px; border-left: 2px solid var(--in
 .small, figcaption, .margin-note { font-size: 12px; line-height: 1.65; }
 .status { border: 1px solid var(--ink); padding: 2px 6px; font-size: 11px; letter-spacing: 0.5px; display: inline-block; }
 .margin { padding-top: 2px; }
-.margin h2 { font-size: 12px; font-weight: 400; margin-bottom: 16px; }
-.margin ol { font-size: 12px; padding-left: 22px; }
-.margin ol li { margin-bottom: 12px; }
 .margin-note { margin-top: 32px; border-top: 1px solid var(--ink); padding-top: 12px; }
 .bec { margin: 0; }
 .bec img { display: block; width: 100%; height: auto; aspect-ratio: 1; }
@@ -77,8 +97,18 @@ footer p { margin: 0; }
 @media (max-width: 999px) {
   .sheet { max-width: 700px; padding-top: 20px; }
   .document-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .guide-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "introduction" "sidebar" "body"; }
+  .guide-introduction > :last-child { margin-bottom: 20px; }
+  .guide-sidebar { border-top: 1px solid var(--ink); padding-top: 8px; margin-bottom: 32px; }
+  .guide-desktop-contents { display: none; }
+  .guide-mobile-contents { display: block; }
+  .guide-mobile-contents[open] { padding-bottom: 8px; }
+  .guide-mobile-contents .contents { margin-bottom: 0; }
   .margin { border-top: 1px solid var(--ink); padding-top: 20px; margin-bottom: 32px; }
-  .landing .margin { grid-row: 1; border-top: 0; padding-top: 0; margin: 0 0 32px; }
+  .landing { grid-template-areas: "introduction" "bec" "details"; margin-top: 24px; }
+  .landing .margin { border-top: 0; padding-top: 0; margin: 0 0 32px; }
+  .landing .bec picture { width: 220px; max-width: 52%; flex: 0 0 auto; }
+  .landing .bec img { width: 100%; max-width: none; }
   .bec { display: flex; align-items: end; gap: 20px; }
   .bec img { width: 220px; max-width: 52%; }
   .bec figcaption { max-width: 24ch; margin-bottom: 12px; }
@@ -89,22 +119,26 @@ footer p { margin: 0; }
   .sheet { padding-left: 20px; padding-right: 20px; }
   .masthead { gap: 8px; }
   .edition { font-size: 10px; }
-  nav { gap: 8px 16px; font-size: 12px; }
+  .site-nav { gap: 8px 16px; font-size: 12px; }
   .docket { font-size: 10px; gap: 12px; margin-bottom: 24px; }
   h1 { font-size: 22px; }
   .bec img { width: 180px; }
+  .landing .bec picture { width: 180px; }
+  .landing .bec img { width: 100%; }
   .bec figcaption { font-size: 11px; }
 }
 @media print {
   body { font-size: 11pt; background: transparent; color: #1a1613; }
   .sheet { max-width: none; padding: 0; }
-  nav, .skip-link { display: none; }
-  .document-grid { display: block; }
+  .site-nav, .skip-link, .guide-sidebar { display: none; }
+  .document-grid, .guide-layout { display: block; }
   .margin { display: none; }
   .landing .margin { display: block; float: right; width: 140px; margin: 0 0 20px 20px; border: 0; }
+  .landing .enforcement-table { min-width: 0; }
   .bec img { max-width: 100%; }
   .bec figcaption { display: none; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .table-scroll { overflow: visible; }
   a { color: inherit; }
   h2, h3 { break-after: avoid; }
 }

@@ -6,26 +6,46 @@
   <meta name="description" content="{{description}}">
   <meta name="theme-color" content="#f7f7f5">
   <title>{{title}} — corb</title>
-  <link rel="icon" href="../assets/bec.png" type="image/png">
+  {{metadata}}
+  <link rel="icon" href="../assets/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="../assets/favicon-64.png" type="image/png" sizes="64x64">
+  <link rel="stylesheet" href="../fonts.css">
   <link rel="stylesheet" href="../styles.css">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="sheet">
     <header class="masthead"><a class="wordmark" href="../index.html" aria-label="corb home">corb</a><span class="edition">technical documentation</span></header>
-    <nav aria-label="Main navigation">
+    <nav class="site-nav" aria-label="Main navigation">
       {{navigation}}
     </nav>
     <div class="docket"><p>corb project<br>{{label}}</p><p class="docket-right">Version 0.1.0<br>Category: experimental</p></div>
-    <main id="main" class="document-grid">
-      <article>
-        {{body}}
+    <main id="main" tabindex="-1">
+      <article class="guide-layout" aria-labelledby="document-title">
+        <header class="guide-introduction">
+          <h1 id="document-title">{{title}}</h1>
+          {{introduction}}
+        </header>
+        <aside class="guide-sidebar" aria-label="Document navigation">
+          <div class="guide-desktop-contents">
+            <nav aria-label="On this page">
+              <h2>Contents</h2>
+              <ul class="contents">{{contents}}</ul>
+            </nav>
+            <p class="margin-note">{{note}}</p>
+          </div>
+          <details class="guide-mobile-contents">
+            <summary>On this page</summary>
+            <nav aria-label="On this page">
+              <ul class="contents">{{contents}}</ul>
+            </nav>
+            <p class="margin-note">{{note}}</p>
+          </details>
+        </aside>
+        <div class="guide-body">
+          {{body}}
+        </div>
       </article>
-      <aside class="margin" aria-label="On this page">
-        <h2>Contents</h2>
-        <ol>{{contents}}</ol>
-        <p class="margin-note">{{note}}</p>
-      </aside>
     </main>
     <footer><p>corb / {{slug}} / v0.1.0</p><p><a href="../index.html">overview</a> · <a href="{{next_href}}">next: {{next_title}}</a> · <a href="#main">back to top</a></p></footer>
   </div>
