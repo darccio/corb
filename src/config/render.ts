@@ -21,6 +21,7 @@
 import type { DirConfig, EffectiveConfig } from "./load.ts";
 import type { ConfigChange, TrustEvaluation } from "./trust.ts";
 import type { ResolvedWorkspace } from "./resolve.ts";
+import { findBrokeredProvider } from "../auth/provider.ts";
 
 function fmtScalar(value: string | number | boolean | undefined): string {
   return value === undefined ? "(unset)" : String(value);
@@ -86,7 +87,20 @@ function renderAgent(agent: EffectiveConfig["agent"]): string[] {
     `  model: ${fmtScalar(agent.model)}`,
     `  extensions: ${fmtArray(agent.extensions)}`,
     `  append-system-prompt-file: ${fmtScalar(agent["append-system-prompt-file"])}`,
+    ...renderBrokeredLogin(agent.provider),
   ];
+}
+
+// A host-brokered provider (ADR 0012) authenticates with `corb login`, not a
+// `[secrets.*]` key. Says so, and which hosts it needs, without reading the
+// stored login: this module stays a pure function of the config, and `corb
+// login`/`corb doctor` report the login itself.
+function renderBrokeredLogin(providerId: string | undefined): string[] {
+  const provider = findBrokeredProvider(providerId);
+  if (provider === undefined) {
+    return [];
+  }
+  return [`  login: host-brokered, see 'corb login ${provider.id}' (needs ${provider.apiHosts.join(", ")} in egress.allow)`];
 }
 
 // Names and host-binding metadata only — never a secret value (see module comment).
