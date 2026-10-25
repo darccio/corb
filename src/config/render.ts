@@ -166,6 +166,15 @@ function renderGit(git: EffectiveConfig["git"]): string[] {
 
 function renderDirEntry(dir: DirConfig): string[] {
   const lines = [`- ${dir.name} (mode=${fmtScalar(dir.mode)}, host=${fmtScalar(dir.host)}, create=${fmtScalar(dir.create)})`];
+  const builtinRules = dir["builtin-rules"];
+  if (builtinRules.length === 0) {
+    lines.push("  builtin rules (protect-git): (none)");
+  } else {
+    lines.push("  builtin rules (protect-git):");
+    for (const rule of builtinRules) {
+      lines.push(`    - glob=${fmtScalar(rule.glob)} mode=${fmtScalar(rule.mode)} reason=${fmtScalar(rule.reason)}`);
+    }
+  }
   if (dir.rules.length === 0) {
     lines.push("  rules: (none)");
   } else {

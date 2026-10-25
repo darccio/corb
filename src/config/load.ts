@@ -40,6 +40,7 @@ import {
   type PartialVmLimits,
 } from "./schema.ts";
 import { validateMountTargets } from "./guestpaths.ts";
+import { builtinGitRules } from "./gitprotect.ts";
 
 /** Thrown when layers cannot be merged as given — currently only a `[[dir]]` entry with no `name`. */
 export class ConfigMergeError extends Error {
@@ -63,8 +64,12 @@ export interface DirConfig {
   host?: string;
   mode?: DirMode;
   create?: boolean;
+  "protect-git"?: boolean;
+  "builtin-rules": DirRuleConfig[];
   rules: DirRuleConfig[];
 }
+
+type MergedDirConfig = Omit<DirConfig, "builtin-rules">;
 
 export interface EffectiveEgressConfig {
   allow?: string[];
@@ -399,14 +404,14 @@ function mergeAuditConfig(base: PartialAuditConfig | undefined, next: PartialAud
   return result;
 }
 
-function mergeDirEntry(base: DirConfig[], incoming: PartialDirConfig): DirConfig[] {
+function mergeDirEntry(base: MergedDirConfig[], incoming: PartialDirConfig): MergedDirConfig[] {
   if (incoming.name === undefined) {
     throw new ConfigMergeError("a [[dir]] entry has no 'name', which is required to merge dir layers");
   }
   const idx = base.findIndex((d) => d.name === incoming.name);
   const existing = idx === -1 ? undefined : base[idx];
 
-  const merged: DirConfig = {
+  const merged: MergedDirConfig = {
     name: incoming.name,
     // Rules append across layers (rule 1); every other field replaces
     // wholesale-if-set (rule 3) — see module comment, rule 2.
@@ -424,6 +429,10 @@ function mergeDirEntry(base: DirConfig[], incoming: PartialDirConfig): DirConfig
   if (create !== undefined) {
     merged.create = create;
   }
+  const protectGit = incoming["protect-git"] ?? existing?.["protect-git"];
+  if (protectGit !== undefined) {
+    merged["protect-git"] = protectGit;
+  }
 
   if (idx === -1) {
     return [...base, merged];
@@ -433,7 +442,7 @@ function mergeDirEntry(base: DirConfig[], incoming: PartialDirConfig): DirConfig
   return copy;
 }
 
-function mergeDirList(base: DirConfig[], next: PartialDirConfig[] | undefined): DirConfig[] {
+function mergeDirList(base: MergedDirConfig[], next: PartialDirConfig[] | undefined): MergedDirConfig[] {
   if (next === undefined) {
     return base;
   }
@@ -512,7 +521,7 @@ export function mergeConfigLayers(layers: ConfigLayer[]): EffectiveConfig {
   let secrets: Record<string, PartialSecretConfig> | undefined;
   let egress: PartialEgressConfig | undefined;
   let git: PartialGitConfig | undefined;
-  let dir: DirConfig[] = [];
+  let dir: MergedDirConfig[] = [];
   let policy: PartialPolicyConfig | undefined;
   let audit: PartialAuditConfig | undefined;
 
@@ -534,7 +543,10 @@ export function mergeConfigLayers(layers: ConfigLayer[]): EffectiveConfig {
   const result: EffectiveConfig = {
     egress: finalizeEgress(egress),
     git: finalizeGit(git),
-    dir,
+    dir: dir.map((entry) => ({
+      ...entry,
+      "builtin-rules": entry.mode !== "ro" && entry["protect-git"] !== false ? builtinGitRules() : [],
+    })),
     policy: finalizePolicy(policy),
   };
   if (version !== undefined) {

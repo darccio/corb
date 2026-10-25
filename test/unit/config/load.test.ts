@@ -9,6 +9,54 @@ import { describe, expect, it } from "vitest";
 import type { ConfigLayer } from "../../../src/config/schema.ts";
 import { BUILTIN_DEFAULTS, ConfigMergeError, mergeConfigLayers } from "../../../src/config/load.ts";
 import { GuestPathError } from "../../../src/config/guestpaths.ts";
+import { builtinGitRules } from "../../../src/config/gitprotect.ts";
+
+describe("config/load: built-in Git rules", () => {
+  it.each([
+    { name: "implicit" },
+    { name: "explicit", mode: "rw" as const },
+    { name: "enabled", "protect-git": true },
+  ])("protects $name rw mounts even without a Git repository", (entry) => {
+    const config = mergeConfigLayers([{ dir: [entry] }]);
+    expect(config.dir[0]?.["builtin-rules"]).toEqual(builtinGitRules());
+    expect(config.dir[0]?.rules).toEqual([]);
+    if (!("protect-git" in entry)) {
+      expect(config.dir[0]).not.toHaveProperty("protect-git");
+    }
+  });
+
+  it.each([
+    { name: "readonly", mode: "ro" as const },
+    { name: "disabled", "protect-git": false },
+  ])("adds no built-in rules to $name mounts", (entry) => {
+    expect(mergeConfigLayers([{ dir: [entry] }]).dir[0]?.["builtin-rules"]).toEqual([]);
+  });
+
+  it("merges protect-git as a scalar and recomputes built-in rules after mode changes", () => {
+    const base: ConfigLayer = { dir: [{ name: "repo", "protect-git": false }] };
+    expect(mergeConfigLayers([base, { dir: [{ name: "repo", mode: "rw" }] }]).dir[0]?.["builtin-rules"]).toEqual([]);
+    expect(mergeConfigLayers([base, { dir: [{ name: "repo", "protect-git": true }] }]).dir[0]?.["builtin-rules"])
+      .toEqual(builtinGitRules());
+    const readonly = mergeConfigLayers([{ dir: [{ name: "repo", mode: "ro" }] }]);
+    expect(mergeConfigLayers([readonly, { dir: [{ name: "repo", mode: "rw" }] }]).dir[0]?.["builtin-rules"])
+      .toEqual(builtinGitRules());
+  });
+
+  it("recomputes rather than merges built-in rules, without duplicating user rules", () => {
+    const userRules = [{ glob: "frozen.txt", mode: "deny-write" as const }];
+    const first = mergeConfigLayers([{ dir: [{ name: "repo", rules: userRules }] }]);
+    first.dir[0]!["builtin-rules"].push({ glob: "forged", mode: "hidden" });
+    const merged = mergeConfigLayers([first]);
+    expect(merged.dir[0]?.["builtin-rules"]).toEqual(builtinGitRules());
+    expect(merged.dir[0]?.rules).toEqual(userRules);
+  });
+
+  it("protects CLI --dir mounts during the second merge", () => {
+    const persistent = mergeConfigLayers([{ dir: [{ name: "repo" }] }]);
+    const full = mergeConfigLayers([persistent, { dir: [{ name: "cli", host: "/tmp/cli" }] }]);
+    expect(full.dir.map((entry) => entry["builtin-rules"])).toEqual([builtinGitRules(), builtinGitRules()]);
+  });
+});
 
 describe("config/load", () => {
   it("BUILTIN_DEFAULTS sets only the documented minimal, structural defaults", () => {
@@ -94,6 +142,7 @@ describe("config/load", () => {
           name: "corb",
           host: "~/Code/corb",
           mode: "rw",
+          "builtin-rules": builtinGitRules(),
           rules: [
             { glob: "**/.env*", mode: "hidden", reason: "local secrets file" },
             { glob: "**/*_test.go", mode: "deny-write", reason: "tests are frozen" },
@@ -104,6 +153,7 @@ describe("config/load", () => {
           host: "~/.cache/corb/scratch",
           mode: "ro",
           create: true,
+          "builtin-rules": [],
           rules: [],
         },
       ],
@@ -185,6 +235,7 @@ describe("config/load", () => {
         name: "corb",
         host: "~/Code/corb-2",
         mode: "ro",
+        "builtin-rules": [],
         rules: [
           { glob: "a", mode: "hidden" },
           { glob: "b", mode: "deny-write" },
@@ -198,8 +249,8 @@ describe("config/load", () => {
     const second: ConfigLayer = { dir: [{ name: "reference", host: "~/Code/reference-docs", mode: "ro" }] };
     const effective = mergeConfigLayers([first, second]);
     expect(effective.dir).toEqual([
-      { name: "corb", host: "~/Code/corb", mode: "rw", rules: [] },
-      { name: "reference", host: "~/Code/reference-docs", mode: "ro", rules: [] },
+      { name: "corb", host: "~/Code/corb", mode: "rw", "builtin-rules": builtinGitRules(), rules: [] },
+      { name: "reference", host: "~/Code/reference-docs", mode: "ro", "builtin-rules": [], rules: [] },
     ]);
   });
 

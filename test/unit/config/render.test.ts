@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { EffectiveConfig } from "../../../src/config/load.ts";
 import type { ResolvedWorkspace } from "../../../src/config/resolve.ts";
 import { renderJson, renderText } from "../../../src/config/render.ts";
+import { builtinGitRules } from "../../../src/config/gitprotect.ts";
 
 function baseConfig(): EffectiveConfig {
   return {
@@ -21,7 +22,7 @@ function baseConfig(): EffectiveConfig {
       websockets: false,
     },
     git: { "ssh-agent": true, "allow-push": false },
-    dir: [{ name: "myproj", host: "/home/user/myproj", mode: "rw", rules: [] }],
+    dir: [{ name: "myproj", host: "/home/user/myproj", mode: "rw", "builtin-rules": builtinGitRules(), rules: [] }],
     policy: { enabled: true, "secret-scan": true, "fail-open": true },
   };
 }
@@ -60,7 +61,7 @@ function wideningWorkspace(): ResolvedWorkspace {
 function cliAddedDirWorkspace(): ResolvedWorkspace {
   const persistentConfig = baseConfig();
   const fullConfig = baseConfig();
-  fullConfig.dir = [...persistentConfig.dir, { name: "extra", host: "/tmp/extra", mode: "ro", rules: [] }];
+  fullConfig.dir = [...persistentConfig.dir, { name: "extra", host: "/tmp/extra", mode: "ro", "builtin-rules": [], rules: [] }];
   return {
     dir: "/home/user/myproj",
     persistentConfig,
@@ -72,6 +73,22 @@ function cliAddedDirWorkspace(): ResolvedWorkspace {
 }
 
 describe("config/render: renderText", () => {
+  it("shows built-in Git rules separately from user rules", () => {
+    const workspace = noChangeWorkspace();
+    workspace.fullConfig.dir[0]!.rules = [{ glob: "frozen.txt", mode: "deny-write" }];
+    const text = renderText(workspace);
+    expect(text).toContain("builtin rules (protect-git):");
+    expect(text).toContain("glob=.git mode=deny-write reason=protect host Git metadata");
+    expect(text).toMatch(/builtin rules \(protect-git\):[\s\S]+rules:\n\s+- glob=frozen.txt/);
+    const json = JSON.parse(renderJson(workspace));
+    expect(json.config.dir[0]["builtin-rules"]).toEqual(builtinGitRules());
+    expect(json.config.dir[0].rules).toEqual([{ glob: "frozen.txt", mode: "deny-write" }]);
+  });
+
+  it("shows when a directory has no built-in Git rules", () => {
+    expect(renderText(cliAddedDirWorkspace())).toContain("builtin rules (protect-git): (none)");
+  });
+
   it("contains the key config sections and a visible trust verdict for a no-change workspace", () => {
     const text = renderText(noChangeWorkspace());
     expect(text).toContain("workspace: /home/user/myproj");

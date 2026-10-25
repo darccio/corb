@@ -179,6 +179,7 @@ export interface PartialDirConfig {
   host?: string;
   mode?: DirMode;
   create?: boolean;
+  "protect-git"?: boolean;
   rules?: PartialDirRuleConfig[];
 }
 
@@ -628,7 +629,7 @@ function parseDirRule(value: unknown, location: string, sourceLabel: string): Pa
   return result;
 }
 
-const DIR_KEYS = ["name", "host", "mode", "create", "rules"] as const;
+const DIR_KEYS = ["name", "host", "mode", "create", "protect-git", "rules"] as const;
 
 function parseDirEntry(value: unknown, location: string, sourceLabel: string): PartialDirConfig {
   const table = expectTable(value, location, sourceLabel);
@@ -645,6 +646,9 @@ function parseDirEntry(value: unknown, location: string, sourceLabel: string): P
   }
   if (table.create !== undefined) {
     result.create = expectBoolean(table.create, joinPath(location, "create"), sourceLabel);
+  }
+  if (table["protect-git"] !== undefined) {
+    result["protect-git"] = expectBoolean(table["protect-git"], joinPath(location, "protect-git"), sourceLabel);
   }
   if (table.rules !== undefined) {
     const rulesPath = joinPath(location, "rules");

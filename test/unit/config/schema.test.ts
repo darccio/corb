@@ -7,6 +7,27 @@
 import { describe, expect, it } from "vitest";
 import { ConfigParseError, parseConfigLayer } from "../../../src/config/schema.ts";
 
+describe("config/schema: protect-git", () => {
+  it.each([true, false])("parses protect-git = %s", (protectGit) => {
+    const layer = parseConfigLayer(`[[dir]]\nname = "repo"\nprotect-git = ${protectGit}`, "test");
+    expect(layer.dir).toEqual([{ name: "repo", "protect-git": protectGit }]);
+  });
+
+  it("leaves an unset protect-git absent", () => {
+    expect(parseConfigLayer('[[dir]]\nname = "repo"', "test").dir).toEqual([{ name: "repo" }]);
+  });
+
+  it("rejects a non-boolean protect-git", () => {
+    expect(() => parseConfigLayer('[[dir]]\nname = "repo"\nprotect-git = "false"', "test"))
+      .toThrow("dir[0].protect-git");
+  });
+
+  it("rejects builtin-rules in TOML", () => {
+    expect(() => parseConfigLayer('[[dir]]\nname = "repo"\nbuiltin-rules = []', "test"))
+      .toThrow("unknown key 'dir[0].builtin-rules'");
+  });
+});
+
 const FULL_VALID_TOML = `
 version = 1
 name    = "corb-dev"

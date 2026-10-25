@@ -8,8 +8,85 @@
 // keys and divergence for different configs; and `recordAcceptance` producing
 // a new store/record without mutating its inputs.
 import { describe, expect, it } from "vitest";
-import type { EffectiveConfig } from "../../../src/config/load.ts";
+import { mergeConfigLayers, type EffectiveConfig } from "../../../src/config/load.ts";
+import { builtinGitRules } from "../../../src/config/gitprotect.ts";
 import { evaluateTrust, hashEffectiveConfig, recordAcceptance, type TrustStore } from "../../../src/config/trust.ts";
+
+describe("config/trust: built-in Git protection", () => {
+  function config(protectGit?: boolean, mode?: "ro" | "rw") {
+    return mergeConfigLayers([{ dir: [{
+      name: "repo",
+      ...(protectGit === undefined ? {} : { "protect-git": protectGit }),
+      ...(mode === undefined ? {} : { mode }),
+    }] }]);
+  }
+
+  it.each([undefined, true])("turning protection off from %s requires confirmation", (previousFlag) => {
+    const result = evaluateTrust(config(previousFlag), config(false));
+    expect(result.verdict).toBe("requires-confirmation");
+    expect(result.widened.map((change) => change.field)).toContain("dir.repo.protect-git");
+    expect(result.widened.map((change) => change.field)).toContain("dir.repo.builtin-rules");
+  });
+
+  it.each([undefined, true])("turning protection on to %s is narrowing", (currentFlag) => {
+    const result = evaluateTrust(config(false), config(currentFlag));
+    expect(result.verdict).toBe("trusted");
+    expect(result.narrowed.map((change) => change.field)).toContain("dir.repo.protect-git");
+    expect(result.narrowed.map((change) => change.field)).toContain("dir.repo.builtin-rules");
+  });
+
+  it("treats an absent protect-git like true even on a read-only mount", () => {
+    expect(evaluateTrust(config(undefined, "ro"), config(true, "ro")))
+      .toEqual({ verdict: "trusted", widened: [], narrowed: [] });
+    expect(evaluateTrust(config(true, "ro"), config(undefined, "ro")))
+      .toEqual({ verdict: "trusted", widened: [], narrowed: [] });
+  });
+
+  it("keeps old accepted records without either field trusted", () => {
+    const current = config();
+    const old = JSON.parse(JSON.stringify(current)) as EffectiveConfig;
+    Reflect.deleteProperty(old.dir[0]!, "builtin-rules");
+    Reflect.deleteProperty(old.dir[0]!, "protect-git");
+    const store = recordAcceptance({}, "/repo", old, 1);
+    const result = evaluateTrust(store["/repo"]!.acceptedConfig, current);
+    expect(result.verdict).toBe("trusted");
+    expect(result.widened).toEqual([]);
+    expect(result.narrowed).toHaveLength(builtinGitRules().length);
+  });
+
+  it("still treats appended user rules as narrowing", () => {
+    const previous = config();
+    const current = mergeConfigLayers([previous, { dir: [{ name: "repo", rules: [{ glob: "frozen.txt", mode: "hidden" }] }] }]);
+    const result = evaluateTrust(previous, current);
+    expect(result.verdict).toBe("trusted");
+    expect(result.widened).toEqual([]);
+    expect(result.narrowed).toEqual([{ field: "dir.repo.rules", description: "dir 'repo' gained rule 'frozen.txt' (hidden)" }]);
+  });
+
+  it("requires confirmation when a built-in rule is removed", () => {
+    const previous = config();
+    const current = structuredClone(previous);
+    current.dir[0]!["builtin-rules"].pop();
+    expect(evaluateTrust(previous, current).widened.map((change) => change.field)).toContain("dir.repo.builtin-rules");
+  });
+
+  it("compares built-in rule reasons and order like user rules", () => {
+    const previous = config();
+    const reordered = structuredClone(previous);
+    reordered.dir[0]!["builtin-rules"].reverse();
+    expect(evaluateTrust(previous, reordered).verdict).toBe("requires-confirmation");
+    const changed = structuredClone(previous);
+    changed.dir[0]!["builtin-rules"][0]!.reason = "new reason";
+    expect(evaluateTrust(previous, changed).verdict).toBe("requires-confirmation");
+  });
+
+  it("requires confirmation when rw becomes ro, then when ro becomes rw", () => {
+    const writable = config(undefined, "rw");
+    const readonly = config(undefined, "ro");
+    expect(evaluateTrust(writable, readonly).verdict).toBe("requires-confirmation");
+    expect(evaluateTrust(readonly, writable).verdict).toBe("requires-confirmation");
+  });
+});
 
 function baseConfig(): EffectiveConfig {
   return {
