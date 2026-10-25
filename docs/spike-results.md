@@ -989,3 +989,414 @@ The script closes every VM in sequence and removes the checkpoint file.
 timed boots verbatim, plus the checkpoint's own JSON metadata trailer
 (`guestAssetBuildId`, `compatibleVmm: ["qemu","krun"]`, `snapshotKind:
 "disk"`).
+
+## DAR-15 — toolchain layers from disk checkpoints <!-- se: ignore=SE_NO_EMDASH -->
+
+**Date:** 2026-10-25
+
+**Gondolin version:** `@earendil-works/gondolin@0.12.0`
+
+**Verdict:** **go with limits** for one flat toolchain layer per workspace.
+
+A layer can add Go and PostgreSQL tools, retain Corb's protected files, and resume with real session mounts and egress hooks.
+The agreed package database recipe covers the missing base packages.
+It does not correct every old package record.
+
+The current content tag also omits inputs that affect the base.
+DAR-16 must resolve these limits before it can promise complete stale-layer detection.
+The image's Git TLS check fails on the stock base as well as the layers.
+
+No complete image-gate pass is claimed.
+
+### What was built
+
+All spike code lives in `spike/dar-15-layers/`.
+Production code, guest helpers, and image sources did not change.
+The script copies the image gates and builds session options from the real egress and mount helpers.
+
+It uses qemu with explicit `memory: "1G"` and `cpus: 2` for the final trials.
+
+The stock image remained `corb:0.1.0`, buildId `2747a805-7a7e-5798-84ca-077fb5086311`.
+Its content tag is `corb:0.1.0-x86_64-171874b9`.
+Two separate spike images use only `corb-spike:dar-15-plain` and `corb-spike:dar-15-fixed`.
+
+The code calls `buildAssets`, `importImageFromDirectory`, and `tagImage` directly.
+It checks the stock tag before and after both builds.
+It never calls `corb image build`.
+
+The build VM mounts the host's verified `apk.static` read-only at `/opt/corb-build`.
+It has no workspace mount or secrets.
+Later build trials allow only `dl-cdn.alpinelinux.org` through `createHttpHooks`.
+
+The first trial used Corb's normal egress builder, which also adds the inert `policy.corb.invalid` sentinel.
+No request reached that sentinel.
+The script corrects this difference in later trials.
+
+Checkpoints and adjacent JSON files live under the spike's `runtime/layers/dar-15/` directory.
+This models `corbStateDir()/layers/<workspace>/` without changing user state.
+The JSON records the local base buildId, layer sha256, creation time, and size.
+
+Ignored runtime files hold the large disks and full file manifests.
+Tracked evidence logs hold the results and manifest hashes.
+
+### 1. Can `apk.static` run?
+
+Yes. The host downloads `apk-tools-static` 3.0.8-r0 from Alpine v3.23 for x86_64.
+It verifies the APKINDEX signature with keys read from the trusted base image.
+It checks the package's `C:` value, package signature, and signed payload `datahash` before extracting the binary.
+
+A one-byte index change fails signature verification.
+The verified package checksum is `Q1TYC5NlmaJJePxA9+zAkNE5CJYMU=`.
+
+Root can run the binary from the read-only VFS mount outside `PATH`.
+The image's `/etc/apk/keys` and `/etc/apk/repositories` suffice.
+HTTPS updates and package downloads work through the egress relay.
+
+The build commands use `SSL_CERT_FILE=/run/gondolin/ca-certificates.crt`.
+All observed package requests contact `dl-cdn.alpinelinux.org`.
+No trial needs `--allow-untrusted` or an HTTP trust fallback.
+
+One later update receives HTTP 502 before installation.
+Its separate retry succeeds over HTTPS.
+
+### 2. What happens with the package database gap?
+
+The gap is real.
+Gondolin unpacks `rootfsPackages` without registering their packages or running their install scripts.
+The plain rebuilt image records 20 packages.
+
+It lacks the 13 configured non-kernel package capabilities.
+The installed `apk-tools` record survives today's removal of `/sbin/apk`.
+
+On the stock image, simulation and installation of `go postgresql16-client` select 18 added packages.
+The install takes 10.14 seconds in this trial.
+It adds dependencies such as GCC and binutils without replacing the missing Node package record.
+
+It does not install `apk-tools` or restore `/sbin/apk`.
+It leaves the existing `libapk` files in place.
+The GCC package download succeeds with an `onResponse` hook and the SDK's default 64 MiB response limit.
+
+Node, Pi, Git, bindfs, `go version`, and `psql --version` still work.
+All 11 protected file hashes stay equal.
+However, the BusyBox trigger recreates `/bin/su`.
+
+The image's removals check then fails.
+An accepted build must repeat the removals cleanup after its last APK transaction.
+
+The PostgreSQL trigger prints `apk: not found` but returns success.
+Its script calls bare `apk list` for an optional newer-major-version notice.
+The trigger has already selected the default `psql` binary at that point.
+
+The client runs as PostgreSQL 16.15.
+This result supports the tested package set, not every Alpine install script.
+Toolchains with their own installers, such as Go, pip, and Cargo, remain allowed.
+
+The forbidden `PATH` names remain `npm`, `npx`, `su`, `sudo`, `doas`, `apk`, and `apk.static`.
+
+### 3. Does a layer work with real session options?
+
+Yes. A loaded checkpoint resumes with qemu and the canonical runtime asset directory.
+The options include `buildEgressConfig` hooks and environment, synthetic DNS, a real workspace provider, and `buildGateConfigMount()`.
+The build-only APK mount is absent on resume.
+
+Its leftover `/opt/corb-build` directory is empty.
+
+Through `dropcap 1000 1000`, Go, PostgreSQL, Node, Pi, Git, and bindfs work.
+The agent reads and writes `/work/work`.
+The host sees its written file.
+
+The agent reads `/run/corb/gate.json`.
+Curl and Node validate HTTPS through the merged CA bundle.
+These requests also exercise DNS.
+
+A real Pi 1.4.0 session starts, sends a request, receives `ready`, and exits successfully.
+The script supplies a small synthetic model response through an HTTP hook.
+It uses no real model credentials or external model service.
+
+This verifies the Pi session path, not a live provider integration.
+
+### 4. Do the image gates detect bad layers?
+
+The copied gates run against a VM resumed after the build VM stops.
+The original uncleaned layer passes five of seven gates.
+It fails removals because `/bin/su` returned.
+
+After cleanup, the layer passes six of seven gates.
+The stock base and fixed base also pass six of seven.
+
+The shared failure is the Git leg of the CA gate.
+`git ls-remote https://github.com/octocat/Hello-World.git` reports `curl 35` and `tlsv1 alert decrypt error`.
+Forcing HTTP/1.1 or setting `GIT_SSL_CAINFO` explicitly does not fix it.
+
+Curl and Node TLS checks pass.
+The spike does not attribute this stock-image failure to checkpoints or claim that it fixed it.
+
+Each negative uses an independent mutation, checkpoint, and resumed VM.
+The assertions require the intended detector to fail.
+The unrelated Git failure cannot satisfy a negative test.
+
+| Mutation | Required detector | Result |
+| --- | --- | --- |
+| Add an unexpected SUID binary | Copied SUID gate | Rejects it |
+| Put `apk.static` on `PATH` | Seven-name removals check | Rejects it |
+| Add the SUID path to `/etc/corb/suid-allowlist.txt` | Protected hashes | Rejects it, although the copied SUID gate accepts the changed allowlist |
+| Append bytes to `/usr/local/bin/dropcap` | Protected hashes | Rejects it, although the functional privilege gate still passes |
+
+The protected check hashes `/init`, `/usr/local/bin/dropcap`, `/usr/local/libexec/*`, `/etc/corb/*`, `/usr/bin/bindfs`, and `/etc/apk/keys`.
+It compares the resumed layer with hashes from a separate base VM.
+The copied removals gate checks six names.
+
+The spike adds an explicit `apk.static` check to cover all seven agreed names.
+The SUID gate does not inspect file capabilities.
+The spike does not claim capability coverage.
+
+### 5. Does the agreed base database recipe work?
+
+The fixed spike registers `rootfsPackages` except `linux-virt` with `apk add --no-cache` before removals.
+It removes the installer with `apk del apk-tools`.
+The fixed database records 55 packages and covers every configured non-kernel capability.
+
+`openssh-client-default` provides the virtual `openssh-client` capability.
+There is no `apk-tools` package record afterward.
+Removals passes on the fixed base.
+
+The other gates have the same single Git TLS failure as the stock control.
+
+Two sequential host builds measured 44.60 seconds for plain and 86.30 seconds for fixed.
+These are single observations, not a controlled estimate of the recipe's added time.
+Both ext4 files have the same 3,221,225,472-byte logical size.
+
+Used filesystem space rises by 311,296 bytes, or 304 KiB.
+
+Registration has two limits.
+First, both stock and fixed libraries match signed OpenSSL 3.5.9-r0 package bytes.
+Their database records still name 3.5.4-r0 and its older checksums.
+
+The recipe covers absent packages but does not reconcile every existing package record with Gondolin's unpacked files.
+The spike adds no unapproved upgrade or reinstall recipe.
+Second, registration changes the SSH provider.
+
+The plain image's binary matches signed `openssh-client-krb5` 10.2_p1-r0.
+The fixed image matches signed `openssh-client-default` at the same version.
+Seven other sampled tool binaries retain equal hashes.
+
+A Go and PostgreSQL install on the fixed base changes no pre-existing tool or library file content.
+Its 10 changed existing regular files are APK database/world files, account databases, and their backups.
+It adds 6,758 regular files.
+
+All protected hashes remain equal.
+The build still needs the removals cleanup after the BusyBox trigger.
+The clean checkpoint resumes with the same working tools, workspace, gate config, TLS checks, and Pi session.
+
+### 6. Are checkpoints flat after another install?
+
+Yes. The script resumes the Go-only layer, adds PostgreSQL, and checkpoints again.
+The resulting qcow2 header points directly to the fixed base's `rootfs.ext4`.
+It does not point to the Go layer.
+
+The script hides that first layer, boots the result, and passes the real session checks.
+It restores the hidden file in `finally`.
+
+The flat result is 390,005,044 bytes.
+A single build of both package sets is 389,808,432 bytes.
+The difference is 196,612 bytes, about 192 KiB.
+
+Installing PostgreSQL onto the Go layer takes 1.60 seconds.
+The flattened checkpoint takes 0.56 seconds.
+The agreed one-flat-layer design stands.
+
+A fresh rebuild takes seconds to tens of seconds for these packages.
+It avoids managing a dependency chain of checkpoints.
+
+### 7. What does a layer cost?
+
+These are individual x86_64 measurements on this host.
+Install time excludes repository update, simulation, manifests, and gate checks.
+Checkpoint time includes the SDK's sync and VM stop.
+
+The full spike spends more time on evidence and validation than this table shows.
+
+| Layer | Boot to first exec | Install | Checkpoint | Layer bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Go only | 2.79 s | 7.20 s | 0.151 s | 385,941,800 |
+| PostgreSQL only | 2.78 s | 1.00 s | 0.097 s | 11,075,880 |
+| Both, first fixed trial | 2.78 s | 16.77 s | 0.145 s | 389,808,432 |
+| Both, repeated definition | 2.83 s | 7.79 s | 0.119 s | 389,677,360 |
+
+The clean combined layer resumes to first exec in 3.03 seconds.
+The stock cold control with the same gate mount takes 2.96 seconds.
+Without that mount, the same stock image takes 33.66 seconds.
+
+`init-extra.sh` polls for the absent gate file for about 30 seconds.
+This explains M9.5's earlier 33.5-second measurement.
+Resume still performs a full boot and gives no memory snapshot or faster startup path.
+
+The host's `/tmp` is a 16 GiB tmpfs.
+Fresh build overlays start at 589,824 logical bytes and 528,384 allocated bytes.
+Before the combined checkpoint, the overlay uses 389,808,128 logical and 389,746,688 allocated bytes.
+
+A clean resumed overlay starts at 655,360 logical and 593,920 allocated bytes.
+The stacked install uses a small temporary overlay, then flattens into a new roughly 390 MB checkpoint.
+Builds and resumes therefore consume host RAM through tmpfs as well as guest memory.
+
+The evidence records the actual temporary paths and available space at each boot.
+
+### 8. Are layers reproducible, and what does hashing mean?
+
+Two builds of the same package definition produce different layer hashes and sizes.
+Their backing paths are equal.
+Their metadata differs only in `createdAt`.
+
+Their persistent regular-file content manifests are equal.
+The CA certificate and bundle bytes are equal too.
+Their inode timestamps and generations differ, as do APK database file timestamps.
+
+The raw guest disks differ from ext4 metadata onward.
+The spike does not claim that CA contents changed in these trials.
+
+Resuming the canonical checkpoint does not change its hash.
+Two concurrent canonical resumes also preserve it.
+Resuming a copy against a relocated copy of the same-buildId base changes that checkpoint in place.
+
+The header's backing path changes, its sha256 changes, and its trailer remains readable.
+The original checkpoint remains unchanged.
+
+DAR-16 must verify the recorded hash and base identity before resume.
+It must compare the checkpoint's full backing path with the resolved canonical base path.
+If a rebase is needed, it must serialize that change before sessions can share the file.
+
+After a successful rebase, it must compute the new hash and replace the local JSON atomically.
+A copied checkpoint can avoid mutating an artifact already in use.
+
+The shareable inputs remain the agreed content tag, exact package versions, APKINDEX `C:` values, and layer-definition hash.
+They identify the intended recipe but do not fully identify today's fetched base bytes.
+The content hash covers the config and `postBuild.copy` inputs.
+
+It omits the file referenced by `rootfsInitExtra`.
+A copied-input experiment changes that file without changing `171874b9`.
+Changing a copied helper does change the hash.
+
+The same content tag also permits newly fetched base package versions under the current build process.
+DAR-16 must resolve this gap without moving per-machine buildIds or artifact hashes into `corb.sum`.
+
+`pins-proposal.toml` gives the complete proposed format for the measured stock-base trial.
+It contains all 18 added package pins and covers dependencies.
+The shape is:
+
+```toml
+version = 1
+
+[target.x86_64]
+base = "corb:0.1.0-x86_64-171874b9"
+definition-sha256 = "<sha256 of the normalized layer definition>"
+
+[[target.x86_64.package]]
+name = "go"
+version = "1.25.10-r0"
+apkindex-checksum = "<the signed APKINDEX C: value>"
+repository = "community"
+```
+
+The definition hash in the example covers sorted JSON fields for requested packages and `build-hosts`.
+This is a format proposal for review, not a new approved canonicalization rule.
+The real example keeps Gondolin buildIds, local file hashes, paths, and creation times in local state only.
+
+A rebuild must validate every exact version and `C:` value against a signed index and the downloaded package.
+If a version disappears, it must fail clearly and require new pins.
+A local APK cache remains follow-up work.
+
+A host-only verifier checks all 18 exact pins against fresh signed indexes and CDN packages.
+It verifies the package signatures, `C:` values, exact identities, and payload hashes.
+A missing version and a changed checksum both fail with clear messages.
+
+The verifier deletes its temporary downloads and adds no APK cache feature.
+
+### 9. What else breaks?
+
+DNS, CA bundles, the `/work` re-export, `dropcap`, and Pi startup work on resumed layers.
+A real guest HTTP server is reachable through `enableIngress()` and host HTTP GET.
+`corb gc` leaves the live VM and layer intact.
+
+That check uses task-only state and registry directories set before Node imports Gondolin.
+It does not exercise deletion of old layers or define a future retention policy.
+
+Two sessions can resume the same canonical layer together.
+Both receive distinct temporary overlays with explicit 1 GiB memory and two CPUs each.
+Different writes to the same guest root path stay isolated.
+
+The shared checkpoint hash remains equal.
+This checks the same-path case only.
+A shared checkpoint must not undergo an in-place rebase while another session uses it.
+
+### Limits and notes for DAR-16
+
+- Keep one flattened layer per workspace and rebuild it after definition changes.
+- Export the image gates so a resumed VM can run them without a second image-only boot path.
+- Add `apk.static` to removals and repeat removals after the final package transaction.
+- Hash protected files against the trusted base before accepting a checkpoint.
+- Correct the base package database gap in `image/corb-image.json`.
+  The tested recipe leaves stale OpenSSL metadata and changes the SSH provider.
+  Those differences need an explicit production decision.
+- Resolve the current base content-tag omissions before promising complete stale detection.
+  Compare local buildId and resolved base assets before calling `resume()`.
+  A mismatched buildId requires a rebuild, not a forced rebase.
+- Keep the shareable pins separate from local checkpoint metadata.
+  Verify signed indexes and exact package identities during rebuild.
+- Serialize backing-path changes and update the local hash after rebase.
+- Change the `--tag` behavior in `src/commands/image.ts` before using it for alternate images.
+  Today it also retags `corb:<pkgVersion>`.
+- Preserve build isolation: no workspace, no secrets, a separate read-only installer mount, and only the agreed build hosts.
+- Treat package script failures carefully.
+  The measured PostgreSQL warning is harmless for the tested client commands, but APK success alone cannot prove every toolchain works.
+- Track the stock Git TLS gate failure separately.
+  A layer cannot claim every image gate passes while that control also fails.
+
+The spike verifies x86_64 with qemu only.
+It does not verify aarch64, krun, file-capability scanning, live model credentials, or arbitrary package sets.
+It does not implement production layer selection, invalidation, pin refresh, or garbage collection.
+
+### Differences from the prompt and trial corrections
+
+- The libraries described as OpenSSL 3.5.4-r0 actually contain signed 3.5.9-r0 bytes.
+  Both stock and fixed database records still name 3.5.4-r0.
+- The agreed registration recipe covers missing capabilities but changes the SSH provider and leaves those stale OpenSSL records.
+- The earlier 33.5-second boot figure includes an avoidable gate-mount wait.
+  The controlled complete mount setup takes about 3 seconds.
+- The current content tag omits `rootfsInitExtra` bytes and does not pin fetched base package versions.
+  The agreed shareable fields cannot yet detect every changed base.
+- Package triggers restore `su` and print a non-fatal missing-`apk` warning.
+  The spike repeats removals and records the warning rather than restoring the package manager.
+- The stock Git TLS gate fails during this experiment.
+  Neither a base nor a layer earns a complete gate pass.
+- The first build hook includes an inert policy sentinel.
+  Later build hooks use only the CDN host.
+- The first host comparison cannot find `debugfs` on `PATH`.
+  A later run uses its absolute path.
+  Another follow-up corrects the CA filename and confirms equal CA bytes.
+- The initial package coverage check treats `openssh-client` as a literal package name.
+  The corrected check accounts for virtual package capabilities.
+- One fixed install attempt stops at an HTTP 502 before installing anything.
+  The retry uses a new log and succeeds over HTTPS.
+
+### Evidence files
+
+All paths below are under `spike/dar-15-layers/`.
+
+| Logs | Evidence |
+| --- | --- |
+| `evidence-01-signed-bootstrap.log` through `evidence-04-base-database.log` | Signed installer, source checks, signature negative, stock database |
+| `evidence-05-original-install.log` through `evidence-08-cleaned-original.log` | Stock install, real resume, stock gate control, removals cleanup |
+| `evidence-09-negative-suid.log` through `evidence-12-negative-dropcap.log` | Four independent negative layers and intended detector results |
+| `evidence-13-busybox-trigger.log`, `evidence-14-postgresql-trigger.log` | Verified trigger source and the restored `su` and missing `apk` causes |
+| `evidence-15-build-plain.log` through `evidence-20-content-tag-inputs.log` | Separate image builds, package capabilities, signed library bytes, tag inputs |
+| `evidence-21-fixed-base-control.log`, `evidence-22-fixed-install.log` | Fixed base gates and the preserved HTTP 502 failure before install |
+| `evidence-23-base-tool-bytes.log`, `evidence-24-ssh-package-identity.log` | Tool byte comparison and signed SSH provider identities |
+| `evidence-25-fixed-install-retry.log`, `evidence-26-fixed-resume.log` | Successful HTTPS retry phase, file changes, cleaned checkpoint, session checks |
+| `evidence-27-pins-proposal.log` | Signed-index pin proposal |
+| `evidence-28-go-only-cost.log` through `evidence-30-stacking.log` | Separate layer costs, flattening, boot without the first layer |
+| `evidence-31-repeat-layer.log`, `evidence-32-boot-delay-control.log` | Repeated definition and controlled gate-mount boot delay |
+| `evidence-33-repeat-hashes.log` | Preserved host script failure because `debugfs` was absent from `PATH` |
+| `evidence-34-repeat-hash-details.log`, `evidence-35-repeat-ca-details.log` | Host comparison, then corrected CA path, equal bytes and differing inode metadata |
+| `evidence-36-moved-base.log` | Copied checkpoint rebase, hash change, readable trailer, real session checks |
+| `evidence-37-ingress-gc.log`, `evidence-38-concurrent-resume.log` | Isolated ingress/GC and two safe concurrent resumers |
+| `evidence-39-exact-pin-verification.log` | All 18 exact pins, signed packages and payloads, plus two rejection checks |
