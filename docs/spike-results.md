@@ -2,46 +2,46 @@
 
 Dated, evidence-backed answers to the blocking M0 spike gates in
 [`gondolin-notes.md`](./gondolin-notes.md) §13. Throwaway code lives under
-`spike/`; this file is the durable record of what was run and what came back.
+`spike/`. This file is the durable record of what was run and what came back.
 
 ---
 
-## M0.1 — R1: HTTP/2 to the model API
+## M0.1: R1: HTTP/2 to the model API
 
 **Date:** 2026-08-22
+
 **Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
-**Verdict: PASS.** Gondolin's HTTP/1.x-only egress is not a blocker. A real TLS
-handshake to `api.anthropic.com` completes and negotiates HTTP/1.1 (never
-HTTP/2), and chunked/streaming responses are delivered to the guest
-incrementally, not buffered and dumped at the end.
+
+**Verdict: PASS.** Gondolin's HTTP/1.x egress works for the model API.
+A real TLS handshake to `api.anthropic.com` negotiates HTTP/1.1 rather than HTTP/2.
+The guest receives chunked and streaming responses incrementally.
+The relay does not buffer the complete response before delivery.
 
 ### What was built
 
 `spike/m0-1-http2/`:
 
-- `package.json` — standalone package, depends on exactly
-  `@earendil-works/gondolin@0.12.0`.
-- `build-config.json` — minimal `BuildConfig`: `alpine.rootfsPackages:
-  ["linux-virt", "nodejs", "curl", "ca-certificates", "bash"]`, **no
-  `postBuild` section**, so the build needs neither Docker nor root on this
-  native-Linux host. Built via the `gondolin build` CLI (from
-  `node_modules/.bin`) with `/usr/sbin:/sbin` prepended to `PATH` for
-  `mkfs.ext4`/`resize2fs` — the notes' warning about e2fsprogs not being on
-  this user's PATH was confirmed accurate; the build fails obscurely without
-  the prepend and succeeds cleanly with it. Assets under
-  `spike/m0-1-http2/assets/`.
-- `run-spike.mjs` — boots the VM (`sandbox.imagePath` pointing at the assets
-  directory, `dns: { mode: "synthetic", syntheticHostMapping: "per-host" }`,
-  `httpHooks` from `createHttpHooks({ allowedHosts, allowedInternalHosts })`,
-  `env.NODE_EXTRA_CA_CERTS = "/run/gondolin/ca-certificates.crt"`), runs both
-  checks via `vm.exec`, closes the VM in a `finally`.
-- `stream-server.mjs` — host-side chunked test server (5 chunks, 400ms apart,
-  `Transfer-Encoding: chunked`, SSE-shaped payload), HTTPS with a self-signed
-  cert or plain HTTP via `--http`.
-- `guest-stream-check.mjs` — runs inside the guest via `node`, consumes the
-  stream with global `fetch`, logs a timestamp per chunk.
+- `package.json` defines a standalone package. It depends on exactly `@earendil-works/gondolin@0.12.0`.
+- `build-config.json` is a minimal `BuildConfig`. It sets `alpine.rootfsPackages:
+  ["linux-virt", "nodejs", "curl", "ca-certificates", "bash"]` and has no `postBuild` section.
+  The native Linux build needs neither Docker nor root.
+  The build used `gondolin build` from `node_modules/.bin`.
+  It prepended `/usr/sbin:/sbin` to `PATH` for `mkfs.ext4` and `resize2fs`.
+  The notes correctly warned that this user's `PATH` omitted e2fsprogs.
+  The build fails without this prefix and succeeds with it.
+  Assets live under `spike/m0-1-http2/assets/`.
+- `run-spike.mjs` boots the VM with `sandbox.imagePath` set to the assets directory.
+  It sets `dns: { mode: "synthetic", syntheticHostMapping: "per-host" }`.
+  It gets `httpHooks` from `createHttpHooks({ allowedHosts, allowedInternalHosts })`.
+  It sets `env.NODE_EXTRA_CA_CERTS = "/run/gondolin/ca-certificates.crt"`.
+  It runs both checks through `vm.exec` and closes the VM in a `finally`.
+- `stream-server.mjs` runs a host HTTP or HTTPS server with a self-signed certificate.
+  It sends five chunks, 400ms apart, with `Transfer-Encoding: chunked` and an SSE payload.
+  `--http` selects plain HTTP.
+- `guest-stream-check.mjs` runs in the guest through `node`.
+  It reads the stream through global `fetch` and logs a timestamp per chunk.
 
-### Check 1 — real-endpoint protocol check (no API key needed)
+### Check 1: real-endpoint protocol check (no API key needed)
 
 `vm.exec(["/usr/bin/curl", "-v", "--cacert", "/run/gondolin/ca-certificates.crt", "https://api.anthropic.com/v1/messages", "-X", "POST", "-d", "{}"])`.
 
@@ -66,73 +66,69 @@ Verbatim key lines from curl's verbose output (full log:
 
 Response body: `{"type":"error","error":{"type":"authentication_error","message":"x-api-key header is required"}}`.
 
-Reading: curl offered both `h2` and `http/1.1` in its ALPN extension; the
-connection (proxied through Gondolin's MITM at `192.168.127.3`, the guest's
-fixed LAN address, to the real upstream at `198.19.0.1`, an address inside the
-synthetic-DNS mapped range) came back negotiated to `http/1.1`. The leaf
-certificate is issued by `gondolin-mitm-ca` for `CN=api.anthropic.com` — the
-MITM terminating-TLS behaviour documented in §4 of `gondolin-notes.md`,
-confirmed live. The TLS handshake fully completed, the HTTP/1.1 request went
-out and a real HTTP/1.1 response (401, API-key-gated, exactly as expected with
-no key configured) came back. This is the "pass" shape described in the task
-brief: a hard protocol failure would have looked like a stalled or reset
-connection before any HTTP-layer response, not a clean 401.
+Curl offered both `h2` and `http/1.1` in its ALPN extension.
+The connection negotiated `http/1.1` through Gondolin's MITM proxy.
+The proxy used `192.168.127.3`, the guest's fixed LAN address.
+The upstream used `198.19.0.1` from the synthetic DNS range.
+`gondolin-mitm-ca` issued the leaf certificate for `CN=api.anthropic.com`.
+This confirms the TLS termination described in §4 of `gondolin-notes.md`.
 
-### Check 2 — incremental (streaming) delivery
+The TLS handshake completed, and the HTTP/1.1 request received a real 401 response.
+No API key was configured, so the 401 was expected.
+This meets the task brief's pass condition.
+A protocol failure instead stalls or resets the connection before any HTTP response.
+
+### Check 2: incremental (streaming) delivery
 
 This required two rounds of debugging past the originally planned test setup,
 both of which are themselves informative results and are kept as evidence.
 
-**Round 1 (failed, and why):** the initial plan was to bind the local test
-server to `127.0.0.1` on the host and have the guest fetch
-`https://127.0.0.1:<port>/stream`, on the theory that Gondolin's egress
-mediation would intercept and forward it (this is also why
-`allowedInternalHosts` needs to explicitly list `127.0.0.1` — it is one of the
-ranges `blockInternalRanges` blocks by default). This failed with:
+**Round 1 failed.** The initial plan bound the host test server to `127.0.0.1`.
+The guest then fetched `https://127.0.0.1:<port>/stream`.
+The test assumed Gondolin's egress mediator forwarded this request.
+`allowedInternalHosts` explicitly included `127.0.0.1` because `blockInternalRanges` blocks it by default.
+The request failed with:
 
 ```
 [guest] fetch failed: TypeError: fetch failed
 [guest] cause: Error: connect ECONNREFUSED 127.0.0.1:8443
 ```
 
-— reproduced identically with plain HTTP too (ruling out a TLS/cert cause; see
-`evidence-02-plain-http-still-fails-on-127-loopback.log`). The host-side
-server's access log showed **zero** connection attempts during these guest
-runs, confirming the request never reached the host at all. Root cause: a
-literal `127.0.0.1` destination is routed by the **guest's own kernel** to the
-guest's own loopback device and never traverses the virtio-net path that
-Gondolin's egress mediator sits on — it isn't network traffic from the guest's
-perspective, so there is nothing for the host-side proxy to intercept.
-`blockInternalRanges`/`allowedInternalHosts` evidently exist to guard against
-a *hostname* resolving (via the host's own DNS resolution of the `Host`
-header) to an internal-looking address, not to imply that literal
-guest-loopback traffic is proxied to the host. **This is a test-harness
-finding, not a Gondolin defect** — nothing in the constraints permitted
-editing `/etc/hosts`, so the fix was to bind the test server to the host's
-real LAN-facing interface address (`192.168.1.201`, found via `ip -4 addr
-show`) instead of loopback, and pass that literal IP in the guest's request
-URL and in `allowedHosts`/`allowedInternalHosts`. Still no system
-configuration changes — only a socket bind to an address the host already
-owns.
+Plain HTTP failed in the same way.
+This rules out a TLS or certificate cause.
+See `evidence-02-plain-http-still-fails-on-127-loopback.log`.
+The host server logged zero connection attempts during these guest runs.
+The request never reached the host.
 
-**Round 2 (self-signed HTTPS on the LAN IP, failed as anticipated):** with the
-server rebound to `192.168.1.201`, HTTPS with the self-signed cert
-(`openssl req -x509 ... -subj '/CN=127.0.0.1'`) was tried first, per the task
-brief. It failed:
+The guest kernel routes a literal `127.0.0.1` destination to its own loopback device.
+The request never crosses the virtio-net path where Gondolin mediates egress.
+The host proxy therefore has no request to intercept.
+`blockInternalRanges` and `allowedInternalHosts` guard hostnames that resolve to internal addresses.
+They do not route guest loopback traffic to the host.
+The host resolves the HTTP `Host` header independently.
+
+This finding concerns the test setup rather than a Gondolin defect.
+The task prohibited edits to `/etc/hosts`.
+The test instead bound the server to the host's existing LAN address, `192.168.1.201`.
+`ip -4 addr show` supplied that address.
+The guest request URL, `allowedHosts`, and `allowedInternalHosts` then used this IP.
+The test only bound a socket and changed no system configuration.
+
+**Round 2 failed as expected.** The server now listened at `192.168.1.201`.
+The task first required HTTPS with the self-signed certificate from `openssl req -x509 ... -subj '/CN=127.0.0.1'`.
+That request failed:
 
 ```
 [guest] fetch failed: TypeError: fetch failed
 [guest] cause: Error: ...SSL alert number 40 (handshake failure)
 ```
 
-(full log: `evidence-03-selfsigned-https-rejected-on-host-upstream-leg.log`).
-This is exactly the anticipated risk: the host-to-upstream leg (Gondolin's own
-outbound connection from the host process to the local test server) uses the
-host's normal TLS stack, which rejects a self-signed certificate it has no
-reason to trust. Per the documented fallback, the test server was restarted
-in plain-HTTP mode. **Streaming behaviour does not depend on TLS** — MITM CA
-trust is M0.2's concern, not this one — so this is a legitimate substitution,
-not a compromise of what's being tested.
+The full log is `evidence-03-selfsigned-https-rejected-on-host-upstream-leg.log`.
+Gondolin's outbound host connection uses the host's normal TLS stack.
+That stack rejected the test server's untrusted self-signed certificate, as expected.
+The test then used the documented plain HTTP fallback.
+Streaming behaviour does not depend on TLS.
+M0.2 separately tests MITM CA trust, so this substitution preserves this test's purpose.
 
 **Round 3 (pass):** plain HTTP, bound to `192.168.1.201`. Verbatim guest
 output (full log: `evidence-05-final-combined-pass.log`, also standalone in
@@ -148,12 +144,11 @@ output (full log: `evidence-05-final-combined-pass.log`, also standalone in
 [guest] stream ended at t+2526ms, total chunks=5
 ```
 
-The host-side server sends chunks 400ms apart; the guest received them
-~400ms apart in return (533 → 915 → 1316 → 1717 → 2118, deltas of 382, 401,
-401, 401ms), matching the send cadence to within scheduling jitter. Server-side
-log for this run confirms exactly one connection at the matching timestamp,
-sourced from the host's own proxy address (as expected for a MITM'd
-connection):
+The host server sent chunks 400ms apart.
+The guest received them at 533, 915, 1316, 1717, and 2118ms.
+The gaps were 382, 401, 401, and 401ms, within scheduling jitter of the send cadence.
+The server logged one connection at the matching timestamp.
+The source was the host's proxy address, as expected for a MITM connection:
 
 ```
 [server] connection from 192.168.1.201:43876 at 2026-08-22T12:47:57.536Z
@@ -162,42 +157,36 @@ connection):
 [server] wrote chunk 4 at 2026-08-22T12:47:59.538Z
 ```
 
-This is the "pass" shape from the task brief: timestamps spread out over the
-full 2+ second duration, not clustered at one instant — the mediation layer is
-not buffering the whole response before releasing it to the guest.
+This meets the task brief's pass condition.
+The timestamps span the full duration of more than two seconds.
+They do not cluster at one instant, so the mediation layer preserves incremental delivery.
 
 ### Verdict and reasoning
 
 **PASS**, on both the letter and the intent of the gate:
 
-1. A real TLS handshake to `api.anthropic.com` completes; ALPN negotiates
-   `http/1.1` even though the client offered `h2` — consistent with the
-   documented "HTTP/1.x and TLS interception only, no HTTP/2" behaviour, and
-   consistent with the plan's own prediction that this would be a non-issue
-   because Node's undici doesn't request HTTP/2 unless `allowH2: true` is set
-   explicitly (which Corb's design does not do).
-2. Incremental delivery survives the egress mediation end-to-end: chunk
-   arrival timestamps are spread across the full send duration, not
-   clustered.
+1. A real TLS handshake to `api.anthropic.com` completed.
+   ALPN negotiated `http/1.1` although the client offered `h2`.
+   This matches the documented HTTP/1.x TLS interception behaviour.
+   Node's undici requests HTTP/2 only with `allowH2: true`.
+   Corb does not set that option, as the plan already noted.
+2. Incremental delivery survives egress mediation.
+   Chunk arrival timestamps span the full send duration.
 
-Nothing ambiguous was left outstanding for R1 specifically. The two dead ends
-along the way (guest-loopback routing, self-signed cert on the upstream leg)
-were both anticipated risks called out in the task brief and were resolved by
-the documented fallbacks, not by working around the actual thing being
-tested.
+R1 has no unresolved findings.
+The guest loopback route and the self-signed upstream certificate caused two failed attempts.
+The task brief allowed fallbacks for both risks.
+Those fallbacks resolved the setup problems without changing the property under test.
 
 ### What surprised us / had to be routed around
 
-- **The 127.0.0.1 loopback-routing dead end was not anticipated by name in
-  the brief**, though the brief did leave room for "or find another approach
-  that stays inside your process." Worth remembering for future host-loopback
-  test harnesses against Gondolin guests: bind to a real host-owned interface
-  address, not `127.0.0.1`.
-- The self-signed-cert rejection on the host→upstream leg happened exactly as
-  the brief predicted, and the HTTP fallback resolved it cleanly.
-- Left running: nothing. Both the guest VM and the host test server were torn
-  down (`vm.close()` in a `finally`; the server process killed) after each
-  run.
+- The brief did not name the `127.0.0.1` loopback routing problem.
+  It allowed another approach within the process.
+  Future tests can bind to an existing host interface instead of `127.0.0.1`.
+- The self-signed certificate rejection matched the brief's prediction.
+  The HTTP fallback resolved it.
+- No process stayed running.
+  Each run closed the guest VM through `vm.close()` in a `finally` and killed the host test server.
 
 ### Evidence files
 
@@ -206,83 +195,72 @@ All under `spike/m0-1-http2/`:
 | File | Contents |
 |---|---|
 | `evidence-01-first-attempt-127-loopback-fails.log` | Check 1 pass + Check 2 first failed attempt (HTTPS, `127.0.0.1`) |
-| `evidence-02-plain-http-still-fails-on-127-loopback.log` | Check 2, plain HTTP, `127.0.0.1` — rules out a TLS cause, isolates the loopback-routing issue |
-| `evidence-03-selfsigned-https-rejected-on-host-upstream-leg.log` | Check 2, self-signed HTTPS, real LAN IP — anticipated host-upstream cert rejection |
-| `evidence-04-http-lanip-check2-only-pass.log` | Check 2 only, plain HTTP, real LAN IP — pass |
-| `evidence-05-final-combined-pass.log` | Both checks in a single VM boot — final combined pass, the primary evidence record |
+| `evidence-02-plain-http-still-fails-on-127-loopback.log` | Check 2, plain HTTP, `127.0.0.1`, rules out a TLS cause, isolates the loopback-routing issue |
+| `evidence-03-selfsigned-https-rejected-on-host-upstream-leg.log` | Check 2, self-signed HTTPS, real LAN IP, anticipated host-upstream cert rejection |
+| `evidence-04-http-lanip-check2-only-pass.log` | Check 2 only, plain HTTP, real LAN IP, pass |
+| `evidence-05-final-combined-pass.log` | Both checks in a single VM boot, final combined pass, the primary evidence record |
 
 ---
 
-*(M0.2 — R3, MITM CA trust — is separate and not yet run as part of this
+*(M0.2, R3, MITM CA trust, is separate and not yet run as part of this
 entry.)*
 
 ---
 
-## M0.2 — R3: MITM CA trust for node, curl, git and go
+## M0.2: R3: MITM CA trust for node, curl, git and go
 
 **Date:** 2026-08-22
+
 **Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
-**Verdict: PASS for all four tools** — with a surprising, load-bearing
-correction to the premise: **none of them need an explicit CA env var from
-Corb's own configuration.** Gondolin's own guest init unconditionally exports
-`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` and
-`NODE_EXTRA_CA_CERTS` for every process it execs, regardless of what `env` is
-passed to `VM.create()` or `vm.exec()`. Corb's design can still set these
-explicitly (harmless, self-documenting, defensive against a future Gondolin
-change), but it is not required for trust to work.
+
+**Verdict: PASS for all four tools.** Corb need not set explicit CA environment variables for these checks.
+Gondolin's guest init exports `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, and `NODE_EXTRA_CA_CERTS` unconditionally.
+These reach every guest process regardless of the `env` passed to `VM.create()` or `vm.exec()`.
+Corb can set them explicitly to guard against a future Gondolin change.
+The current guest defaults already provide trust.
 
 ### What was built
 
 `spike/m0-2-mitm-ca/`:
 
-- `package.json` — standalone package, depends on exactly
-  `@earendil-works/gondolin@0.12.0`.
-- `build-config.json` — minimal `BuildConfig`: `alpine.rootfsPackages:
-  ["linux-virt", "nodejs", "curl", "ca-certificates", "bash", "git", "go"]`,
-  **no `postBuild` section** — every package is a plain `apk` add needing no
-  compilation, so the build needs neither Docker nor root. Built via the
-  `gondolin build` CLI with `/usr/sbin:/sbin` prepended to `PATH` (same
-  e2fsprogs-on-PATH requirement M0.1 found). `rootfs.sizeMb` bumped to 3072
-  (from M0.1's 2048) to fit the Go toolchain. Assets under
-  `spike/m0-2-mitm-ca/assets/`.
-- `check.go` — stdlib-only (`net/http`) POST to `https://api.anthropic.com/v1/messages`;
-  a completed handshake plus any HTTP response (even 401) is a pass, a
-  certificate error is a fail. No API key, no external Go modules (so `go
-  run` needs no module downloads).
-- `run-spike.mjs` — the main driver: boots one VM (`httpHooks` from
-  `createHttpHooks({ allowedHosts: ["api.anthropic.com", "github.com"] })`,
-  **no CA env vars set at the `VM.create()` level on purpose**), then for each
-  of node/curl/git/go runs the same real-endpoint check twice via
-  `vm.exec(argv, { env })` — once with a deliberately minimal `env` (no
-  tool-specific CA var) and once with that tool's documented var pointed at
-  `/run/gondolin/ca-certificates.crt`. Also runs a diagnostic comparing the
-  guest's system trust bundle (`/etc/ssl/certs/ca-certificates.crt`) against
-  Gondolin's merged bundle.
-- `diag-env.mjs`, `diag-env2.mjs` — follow-up diagnostics (see "what
-  surprised us" below): dump the full guest process environment via
-  `/usr/bin/env` under different `VM.create()`/`vm.exec()` env configurations,
-  to find out where the CA trust env vars actually come from.
-- `diag-ca-install.mjs` — checks whether Gondolin's attempt to install its CA
-  into the guest's system trust store via `update-ca-certificates` actually
-  changes `/etc/ssl/certs/ca-certificates.crt`.
-- `diag-negative-control.mjs` — the rigorous version of the "with/without"
-  test: since Gondolin's init makes a true "without" baseline impossible via
-  simple omission (see below), this explicitly overrides *every* relevant CA
-  env var to a nonexistent path (`/nonexistent/definitely-not-a-cert.crt`) for
-  a genuine negative control, then restores the real merged bundle path as a
-  positive control, both within the same VM boot, for all four tools.
+- `package.json` defines a standalone package. It depends on exactly `@earendil-works/gondolin@0.12.0`.
+- `build-config.json` is a minimal `BuildConfig`. It sets `alpine.rootfsPackages:
+  ["linux-virt", "nodejs", "curl", "ca-certificates", "bash", "git", "go"]` with no `postBuild` section.
+  Each package needs only APK extraction, without compilation.
+  The build needs neither Docker nor root.
+  It uses `gondolin build` with `/usr/sbin:/sbin` prepended to `PATH`, as M0.1 required for e2fsprogs.
+  `rootfs.sizeMb` increased from 2048 to 3072 for Go.
+  Assets live under `spike/m0-2-mitm-ca/assets/`.
+- `check.go` sends an HTTP POST to `https://api.anthropic.com/v1/messages` through the standard `net/http` package.
+  A completed handshake with any HTTP response passes. A 401 also passes.
+  A certificate error fails.
+  The check needs no API key or external Go modules.
+  `go run` needs no module downloads.
+- `run-spike.mjs` boots one VM.
+  It uses `createHttpHooks({ allowedHosts: ["api.anthropic.com", "github.com"] })` without explicit CA variables at the `VM.create()` level.
+  It checks node, curl, git, and go through `vm.exec(argv, { env })`.
+  Each tool runs once with minimal `env`.
+  It then runs with its CA variable set to `/run/gondolin/ca-certificates.crt`.
+  The script also compares `/etc/ssl/certs/ca-certificates.crt` with Gondolin's merged bundle.
+- `diag-env.mjs` and `diag-env2.mjs` locate the source of the CA variables.
+  They dump the guest environment through `/usr/bin/env` under different `VM.create()` and `vm.exec()` configurations.
+- `diag-ca-install.mjs` checks whether `update-ca-certificates` changes the guest system bundle at `/etc/ssl/certs/ca-certificates.crt`.
+- `diag-negative-control.mjs` supplies a real negative control.
+  Gondolin's init makes omission of the variables insufficient.
+  The script overrides every relevant CA variable with `/nonexistent/definitely-not-a-cert.crt`.
+  It then restores the merged bundle path for a positive control.
+  Both checks run for all four tools within one VM.
 
 ### What surprised us: a "bare" run is not actually bare
 
-The task brief's plan was: run each tool once with its CA env var unset, once
-with it set, and expect "fails without / passes with" as the diagnostic
-signal. The first full run (`evidence-01-full-run.log`) did **not** produce
-that split — every tool passed on both the "bare" and "explicit" run. Digging
-into why (rather than assuming Alpine's system store already trusted the CA):
+The task expected each tool to fail without its CA variable and pass with it.
+The first run in `evidence-01-full-run.log` did not show that split.
+Every tool passed with both the minimal and explicit environment.
+The diagnostics traced this result rather than assuming the system store already trusted the CA.
 
-1. `evidence-02-env-diagnostic.log`: a direct-exec `/usr/bin/env` inside the
-   guest, called with `vm.exec(["/usr/bin/env"], { env: { PATH: "/usr/bin:/bin" } })`
-   — i.e. an `ExecOptions.env` that mentions nothing CA-related — still shows:
+1. `evidence-02-env-diagnostic.log` captures a direct `/usr/bin/env` in the guest.
+   It uses `vm.exec(["/usr/bin/env"], { env: { PATH: "/usr/bin:/bin" } })` without CA settings.
+   The output still contains:
 
    ```
    CURL_CA_BUNDLE=/run/gondolin/ca-certificates.crt
@@ -292,15 +270,13 @@ into why (rather than assuming Alpine's system store already trusted the CA):
    UV_SYSTEM_CERTS=true
    ```
 
-2. `evidence-03-env-source-diagnostic.log`: ruling out that this comes from
-   `createHttpHooks()`'s returned `env` — that object was logged as `{}` (no
-   secrets configured) — and ruling out that `VM.create()`'s own `env` field
-   is the source, by omitting it from `VM.create()` entirely. The same five
-   vars still appeared in the guest process environment.
-3. Reading the shipped package directly settled it:
-   `node_modules/@earendil-works/gondolin/dist/src/alpine/init-scripts.js`
-   contains a shell function that runs during Gondolin's own guest `/init`
-   (PID 1, per `gondolin-notes.md` §8) which unconditionally does:
+2. `evidence-03-env-source-diagnostic.log` excludes `createHttpHooks()` as the source.
+   Its returned `env` was `{}` because the check configured no secrets.
+   The check also omitted `VM.create()`'s `env` field.
+   The same five variables still appeared.
+3. The shipped `node_modules/@earendil-works/gondolin/dist/src/alpine/init-scripts.js` settles the source.
+   Its guest `/init` function runs as PID 1, as `gondolin-notes.md` §8 describes.
+   It unconditionally exports:
 
    ```sh
    export SSL_CERT_FILE="${runtime_ca_bundle}"
@@ -309,38 +285,32 @@ into why (rather than assuming Alpine's system store already trusted the CA):
    export NODE_EXTRA_CA_CERTS="${mitm_ca_cert}"
    ```
 
-   (`runtime_ca_bundle` = `/run/gondolin/ca-certificates.crt`, the merged
-   bundle; `mitm_ca_cert` = `/etc/gondolin/mitm/ca.crt`, the raw CA cert —
-   Node gets pointed at the single CA cert, the other three at the merged
-   bundle). This runs regardless of any host-side JS configuration, and its
-   exports are inherited by every process the guest execs.
-4. `diag-ca-install.mjs` / `evidence-04-update-ca-certificates-diagnostic.log`:
-   the same init script also tries to install the CA into the system trust
-   store proper via `update-ca-certificates`, and the guest does have that
-   binary and a populated `/usr/local/share/ca-certificates/gondolin-mitm-ca.crt`.
-   But a manual re-run of `update-ca-certificates` still leaves
-   `/etc/ssl/certs/ca-certificates.crt` at its original 120-certificate count
-   (never picking up the 121st, Gondolin's own CA) — so **the system trust
-   store itself does *not* end up trusting the CA** on this Alpine build; only
-   the four exported env vars do. This is a minor loose end (not chased
-   further — it doesn't change any verdict below, since the env-var path
-   already gives all four tools working trust) but is worth knowing: any
-   guest tool that consults *only* the OS trust store, ignoring all of
-   `SSL_CERT_FILE`/`SSL_CERT_DIR`/`CURL_CA_BUNDLE`/`NODE_EXTRA_CA_CERTS`, would
-   still fail today, despite `update-ca-certificates` reporting success.
+   `runtime_ca_bundle` means `/run/gondolin/ca-certificates.crt`, the merged bundle.
+   `mitm_ca_cert` means `/etc/gondolin/mitm/ca.crt`, the single raw CA certificate.
+   Node receives the single certificate while the other three tools receive the merged bundle.
+   These exports run independently of host JS configuration.
+   Every guest child process inherits them.
+4. `diag-ca-install.mjs` records its result in `evidence-04-update-ca-certificates-diagnostic.log`.
+   The init script also runs `update-ca-certificates` to add the CA to the system store.
+   The guest has that binary and a populated `/usr/local/share/ca-certificates/gondolin-mitm-ca.crt`.
+   A manual rerun still leaves `/etc/ssl/certs/ca-certificates.crt` at 120 certificates.
+   It never gains Gondolin's certificate as the 121st entry.
+   The system store therefore does not trust the CA on this Alpine build.
 
-Because of this, "unset the var, see it fail" isn't achievable by omission —
-Gondolin's init has already set it before any exec runs. The genuine negative
+Only the four exported variables provide trust in these checks.
+The spike did not investigate the system-store problem further because the exported paths passed for all four tools.
+A guest tool that uses only the system store can still fail despite `update-ca-certificates` reporting success.
+Such a tool ignores `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`, and `NODE_EXTRA_CA_CERTS`.
+
+Because of this, "unset the var, see it fail" is not achievable by omission, Gondolin's init has already set it before any exec runs. The genuine negative
 control is to override the var(s) to a bad path, done in
 `diag-negative-control.mjs`.
 
 ### Per-tool evidence (bogus-override negative control vs. real bundle)
 
-All from `evidence-05-negative-control.log`, one VM boot, all four tools run
-twice: once with `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`,
-`REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `GIT_SSL_CAINFO` all pointed at
-`/nonexistent/definitely-not-a-cert.crt`, once with the applicable ones
-pointed at the real `/run/gondolin/ca-certificates.crt`.
+`evidence-05-negative-control.log` records one VM boot and two runs per tool.
+The negative run points `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, and `GIT_SSL_CAINFO` at `/nonexistent/definitely-not-a-cert.crt`.
+The positive run points the applicable variables at `/run/gondolin/ca-certificates.crt`.
 
 **node** (`NODE_EXTRA_CA_CERTS`):
 
@@ -397,21 +367,17 @@ GO_BODY: {"type":"error","error":{"type":"authentication_error","message":"x-api
 
 Every "bogus" failure is a **certificate-trust error specifically**
 (`self-signed certificate in certificate chain`, `error adding trust anchors`,
-`x509: certificate signed by unknown authority`) — not a DNS failure, a
+`x509: certificate signed by unknown authority`), not a DNS failure, a
 network-unreachable error, or a protocol error. That isolates the cause
 precisely to CA trust, for all four tools.
 
 ### Why the first ("bare", pre-negative-control) run is still useful evidence
 
-`evidence-01-full-run.log` is kept because it answers the practical question
-Corb actually cares about: *does a guest process launched the way Corb will
-actually launch it (inheriting Gondolin's default guest environment, with no
-special handling) get TLS trust for these four tools?* Answer: **yes, for all
-four, with zero extra configuration required from Corb.** The
-negative-control run in `evidence-05-negative-control.log` exists to prove
-*why* — to confirm this isn't an accident of the system trust store (it
-isn't — see the `update-ca-certificates` finding above) but a direct,
-reproducible effect of Gondolin's own env-var injection.
+`evidence-01-full-run.log` preserves the result for Corb's normal guest launch.
+All four tools get TLS trust through the default guest environment without extra configuration from Corb.
+The negative control in `evidence-05-negative-control.log` explains why.
+It proves that Gondolin's environment variables provide the trust.
+The system trust store alone does not, as the `update-ca-certificates` check showed.
 
 ### Reasoning per tool
 
@@ -419,18 +385,14 @@ reproducible effect of Gondolin's own env-var injection.
 |---|---|---|---|
 | node | `NODE_EXTRA_CA_CERTS` | yes | no |
 | curl | `CURL_CA_BUNDLE` (also honours `SSL_CERT_FILE`, also auto-injected) | yes | no |
-| git | no git-specific var needed — its libcurl/OpenSSL backend reads `SSL_CERT_FILE` directly | yes (`SSL_CERT_FILE`) | no |
+| git | no git-specific var needed, its libcurl/OpenSSL backend reads `SSL_CERT_FILE` directly | yes (`SSL_CERT_FILE`) | no |
 | go | `SSL_CERT_FILE`/`SSL_CERT_DIR`, read directly by `crypto/x509` on Linux | yes (`SSL_CERT_FILE`) | no |
 
-This means `docs/design.md` §8's guest-env template (which sets
-`NODE_EXTRA_CA_CERTS` and `SSL_CERT_FILE` explicitly alongside `...env` from
-`createHttpHooks`) is **not wrong, but is redundant** — Gondolin already
-guarantees these before that `env` object is even applied. Setting them
-explicitly is harmless defensive belt-and-braces (and guards against a future
-Gondolin version changing this default), so no change to `design.md` is
-required by this finding, but it is worth the design doc's authors knowing the
-explicit vars are a safety net, not the mechanism actually carrying trust
-today.
+The guest environment template in `docs/design.md` §8 sets `NODE_EXTRA_CA_CERTS` and `SSL_CERT_FILE` alongside `...env` from `createHttpHooks`.
+Gondolin already supplies these variables before it applies that `env` object.
+Explicit values remain a harmless defence against future default changes.
+This finding requires no change to `design.md`.
+The explicit variables provide a safety net while Gondolin's init provides trust today.
 
 ### Evidence files
 
@@ -438,77 +400,69 @@ All under `spike/m0-2-mitm-ca/`:
 
 | File | Contents |
 |---|---|
-| `evidence-01-full-run.log` | Main driver run: all four tools, "no var mentioned" vs "var explicitly set to the real bundle" (both pass — the surprise that led to the rest) |
-| `evidence-02-env-diagnostic.log` | Full guest process env dump proving the CA vars are present even when `ExecOptions.env` doesn't mention them |
+| `evidence-01-full-run.log` | Main driver run: all four tools, "no var mentioned" vs "var explicitly set to the real bundle" (both pass, the surprise that led to the rest) |
+| `evidence-02-env-diagnostic.log` | Full guest process env dump proving the CA vars are present even when `ExecOptions.env` does not mention them |
 | `evidence-03-env-source-diagnostic.log` | Rules out `createHttpHooks()`'s `env` and `VM.create()`'s `env` as the source (both absent/omitted, vars still present) |
 | `evidence-04-update-ca-certificates-diagnostic.log` | Confirms the guest's system trust store (`/etc/ssl/certs/ca-certificates.crt`) does **not** end up containing Gondolin's CA, despite `update-ca-certificates` reporting success |
 | `evidence-05-negative-control.log` | The rigorous fail-without/pass-with test: every CA env var forced to a nonexistent path (genuine failure, cert-trust errors only) vs. pointed at the real merged bundle (pass), all four tools, one VM boot |
 
 Left running: nothing. The VM was closed in a `finally` block on every run
 (`run-spike.mjs`, `diag-env.mjs`, `diag-env2.mjs`, `diag-ca-install.mjs`,
-`diag-negative-control.mjs` all follow this pattern); no lingering
+`diag-negative-control.mjs` all follow this pattern). No lingering
 QEMU/`gondolin-krun-runner` processes after the session.
 
 ---
 
-## M0.4 — R2: exec concurrency with a long-lived interactive process
+## M0.4: R2: exec concurrency with a long-lived interactive process
 
 **Date:** 2026-08-30
+
 **Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
-**Verdict: PASS — exec does not serialise.** A second `exec` runs immediately
-and in parallel with a long-lived `pty: true` exec, from the same host
-process *and* from a separate host process over `connectToSession()`. The
-long-lived exec is unaffected: it keeps answering commands throughout, and
-there is zero cross-talk in either direction. **`corb attach` (M8.7) is
-therefore viable** — but only as a *new* shell in the running session, never
-as a rejoin of Pi's existing TUI, which the control protocol cannot express
-at all. The SDK's self-contradiction (§3) resolves in favour of the
-"independent command channel, no cross-talk" page; the "one command at a
-time" page is wrong for `exec`. It is, however, *accidentally* right about
-one thing: `waitForExecIdle()` is real serialisation pressure, and it gates
-`vm.fs`'s **file operations** — which means Corb's `runSession()` can never
-use `vm.fs.readFile`/`writeFile`/`deleteFile` while Pi's TUI is running.
+
+**Verdict: PASS, exec does not serialise.** A second `exec` runs alongside a long-lived `pty: true` exec.
+This works within one host process and across processes through `connectToSession()`.
+The long-lived exec keeps answering commands without cross-talk.
+
+`corb attach` in M8.7 is viable as a new shell in the running session.
+The control protocol cannot rejoin Pi's existing TUI.
+The SDK page describing independent command channels is correct about exec.
+The page describing one command at a time is incorrect about exec.
+
+`waitForExecIdle()` instead gates `vm.fs` file operations.
+Corb's `runSession()` cannot use `vm.fs.readFile`, `writeFile`, or `deleteFile` while Pi's TUI runs.
 
 ### What was built
 
-`spike/m0-4-exec-concurrency/`. Unlike M0.1 and M0.2 this spike has **no
-`package.json`, no `build-config.json` and no `assets/`**: it deliberately
-boots the *real* tagged runtime image via `resolveRuntimeImage()`
-(`src/vm/image.ts`), from the repo's own already-pinned `node_modules`, so
-that what is measured is the guest Corb actually ships — a standalone package
-with its own dependency tree would have measured a different image. It drives
-`VM.create()` directly rather than `runSession()`, the established convention
-for narrow SDK-behaviour checks (see `test/e2e/policygate-content.e2e.ts` and
-`test/e2e/dropcap-status.e2e.ts` for the same reasoning).
+`spike/m0-4-exec-concurrency/` boots the tagged runtime image through `resolveRuntimeImage()` in `src/vm/image.ts`.
+It uses the repository's pinned `node_modules` rather than a separate dependency tree.
+It has no `package.json`, `build-config.json`, or `assets/`.
+This measures the guest Corb ships rather than a different image.
+The script drives `VM.create()` directly to isolate SDK behaviour.
+`test/e2e/policygate-content.e2e.ts` and `test/e2e/dropcap-status.e2e.ts` use the same approach.
 
-- `lib.mjs` — shared helpers. The important one is `withTimeout`: **every**
-  wait in this spike is bounded, and "still pending after N ms" is recorded
-  as a result rather than hung on. If exec had genuinely serialised, a naive
-  `await` would have hung forever and produced no evidence at all.
-- `same-process.mjs` — measurements 1, 1b, 3, 4 and 5, in one process and one
-  VM boot, run twice over two long-exec shapes: `A` = plain `/bin/sh` with a
-  pty, `B` = `dropcap 1000 1000 /bin/sh` with a pty, i.e. production's exact
-  wrapper with `pi` swapped for a shell. Takes `--no-warmup` to reproduce a
-  trap this spike fell into (see below).
-- `session-holder.mjs` — the "`corb run`" side of the cross-process leg.
-  Boots a VM, starts one long-lived `dropcap 1000 1000 /bin/sh` exec
-  (`pty: true`, `stdin: true`, `stdout: "pipe"` — `session.ts`'s shape),
-  logs every byte that exec emits with a wall-clock timestamp, samples
-  `execPressure()` every 2s, and takes commands (`send`, `expect`,
-  `assert-absent`, `pressure`, `status`, `quit`) so the spike can
-  independently interrogate the long exec from outside.
-- `attach-client.mjs` — the `corb attach` side. A **separate host process**
-  with no `VM` object, holding nothing but the session's unix socket. Speaks
-  the raw control protocol over `connectToSession()`.
-- `run-cross-process.sh` — orchestrates the two, `setsid`s the holder, waits
-  bounded for its state file, runs the attach client, then asks the holder
-  whether its long exec survived. Redirects `CORB_STATE_DIR`,
-  `CORB_CONFIG_DIR` and `GONDOLIN_SESSIONS_DIR` (to `/tmp/gsess`, 10
-  characters — well inside `src/vm/sockpath.ts`'s 66-character budget, so the
-  socket bind cannot silently fail and be misread as a concurrency failure).
-- `exec-ceiling.mjs` — how many concurrent execs the session actually allows.
-- `inspect-sdk.sh` — the reading half, made reproducible: prints the exact
-  shipped-SDK source behind every "why" claim below.
+- `lib.mjs` supplies shared helpers such as `withTimeout`.
+  Every wait has a bound and records "still pending after N ms" rather than hanging.
+  Serial execs can otherwise leave a plain `await` pending forever without evidence.
+- `same-process.mjs` runs measurements 1, 1b, 3, 4, and 5 within one process and VM.
+  It tests shape `A`, a plain `/bin/sh` with a pty.
+  Shape `B` uses `dropcap 1000 1000 /bin/sh` with a pty.
+  Shape B matches production's wrapper with a shell instead of `pi`.
+  `--no-warmup` reproduces the boot trap described below.
+- `session-holder.mjs` represents the `corb run` process.
+  It boots a VM and starts a long-lived `dropcap 1000 1000 /bin/sh` exec.
+  It uses `pty: true`, `stdin: true`, and `stdout: "pipe"`, as `session.ts` does.
+  It timestamps every output byte and samples `execPressure()` every two seconds.
+  It accepts `send`, `expect`, `assert-absent`, `pressure`, `status`, and `quit` commands for independent checks.
+- `attach-client.mjs` represents `corb attach` in a separate host process.
+  It holds only the Unix socket, without a `VM` object.
+  It uses the raw protocol through `connectToSession()`.
+- `run-cross-process.sh` starts the holder through `setsid` and waits a bounded time for its state file.
+  It runs the attach client and then checks whether the holder's long exec survived.
+  It redirects `CORB_STATE_DIR`, `CORB_CONFIG_DIR`, and `GONDOLIN_SESSIONS_DIR`.
+  The sessions path is `/tmp/gsess`, 10 characters within `src/vm/sockpath.ts`'s 66-character budget.
+  This avoids confusing a socket bind failure with an exec concurrency failure.
+- `exec-ceiling.mjs` measures the session's exec limit.
+- `inspect-sdk.sh` prints the shipped SDK source behind the findings.
 
 ### Reading the SDK first: what `corb attach` can and cannot be
 
@@ -520,12 +474,12 @@ complete client-to-server vocabulary is:
 export type ClientMessage = BootCommandMessage | ExecCommandMessage | StdinCommandMessage | PtyResizeCommandMessage | ExecWindowCommandMessage | LifecycleCommandMessage | SnapshotCommandMessage;
 ```
 
-There is **no "list running execs" and no "join exec N"**. `SessionIpcServer`
-additionally gives every connected client its own request-id space
-(`// Per-client id translation to keep each external channel independent.`,
-with internal ids allocated downward from `0xffffffff` above an
-`INTERNAL_ID_FLOOR` of `0x80000000`, disjoint from the session owner's small
-ids), and an id a client never allocated is refused rather than routed:
+The protocol has no "list running execs" or "join exec N" operation.
+`SessionIpcServer` gives each client a separate request ID space.
+The source says `// Per-client id translation to keep each external channel independent.`
+Internal IDs decrease from `0xffffffff` above `INTERNAL_ID_FLOOR`, which is `0x80000000`.
+They do not overlap the session owner's small IDs.
+The server refuses an ID that the requesting client never allocated:
 
 ```
         const forwardMappedIdMessage = (message) => {
@@ -534,9 +488,8 @@ ids), and an id a client never allocated is refused rather than routed:
                 sendError(socket, "unknown_id", "request id not found", message.id);
 ```
 
-So rejoining Pi's existing TUI stream is not expressible, and a **new exec is
-the only thing `corb attach` could ever do**. This was then confirmed live —
-see Check 4b below.
+`corb attach` can only start a new exec, because the protocol cannot rejoin Pi's TUI stream.
+Check 4b confirms this in a running session.
 
 The mechanism that makes a second exec *work* is equally explicit.
 `handleExec` in `dist/src/sandbox/server-ops.js` has exactly one queueing
@@ -552,10 +505,10 @@ branch, and it is not about other execs:
 918-        this.startExecNow(entry);
 ```
 
-The only other gate is an admission limit, `maxQueuedExecs`, defaulting to
-`64`. Nothing serialises exec against exec.
+The other admission gate is `maxQueuedExecs`, which defaults to `64`.
+It does not serialise exec against exec.
 
-### Check 1 — same-process concurrency
+### Check 1: same-process concurrency
 
 From `evidence-02-same-process.log`, shape A (plain `/bin/sh` + pty). The
 long exec is proven alive first, then a second `vm.exec()` is issued:
@@ -569,7 +522,7 @@ long exec is proven alive first, then a second `vm.exec()` is issued:
 [15:29:10.142 t+ 33667ms]   exitCode=0 stdout="SECOND_ONESHOT_9483760E\n"
 ```
 
-Shape B (`dropcap 1000 1000 /bin/sh` + pty — production's wrapper) is
+Shape B (`dropcap 1000 1000 /bin/sh` + pty, production's wrapper) is
 identical:
 
 ```
@@ -577,15 +530,13 @@ identical:
 [15:29:25.476 t+ 49001ms]   exitCode=0 stdout="SECOND_ONESHOT_4DBC9534\n"
 ```
 
-**5-6ms across runs** (6ms in
-`evidence-01-boot-warmup-trap-negative-control.log`), **not queued behind a
-shell that never exits.** The two shapes do not differ, so the simple
-stand-in is representative and the `dropcap` wrapper changes nothing about
-exec admission.
+The second exec starts in 5-6ms across runs.
+`evidence-01-boot-warmup-trap-negative-control.log` records 6ms.
+It does not wait for the long-lived shell to exit.
+Both shapes behave the same, so the `dropcap` wrapper does not change exec admission.
 
-"Accepted promptly" is not the same as "actually parallel", so measurement 1b
-uses wall-clock time as an independent check — four concurrent `sleep 3`
-execs alongside the long exec:
+Prompt admission alone does not prove parallel execution.
+Measurement 1b checks elapsed time for four concurrent `sleep 3` execs alongside the long exec:
 
 ```
 [15:29:10.894 t+ 34419ms]   execPressure(long exec + 4 sleeps, sampled 750ms in) = 5
@@ -597,11 +548,11 @@ execs alongside the long exec:
 3013ms, not 12000ms. Genuinely parallel in the guest, not merely queued
 politely.
 
-### Check 2 — cross-process concurrency via `connectToSession()`
+### Check 2: cross-process concurrency via `connectToSession()`
 
 **This is the one that decides M8.7.** From
 `evidence-03-cross-process-attach.log`. The holder process (pid 509514) has
-the long-lived `dropcap`+pty exec; the attach client (pid 509974) is a
+the long-lived `dropcap`+pty exec. The attach client (pid 509974) is a
 different process that only ever sees the socket:
 
 ```
@@ -616,14 +567,14 @@ srwxr-xr-x  1 dario dario    0 30 d’ag.    17:16 48f14dba-f89f-490e-abe6-6c305
 [15:16:37.433 t+    17ms]   <- JSON {"type":"exec_response","id":1,"exit_code":0}
 ```
 
-It executes, and **its stdout comes back** — 13ms end to end, over a socket,
+It executes, and **its stdout comes back**, 13ms end to end, over a socket,
 from a process that has no `VM` object.
 
-### Check 4 — an *interactive* second exec (what `corb attach` actually wants)
+### Check 4: an *interactive* second exec (what `corb attach` actually wants)
 
 Both in-process and over the attach socket. Over the socket, a `pty: true`
 `/bin/sh`, driven for two round-trips with a `pty_resize` in between (the
-`\u001b[6n` cursor-position queries are the shell's own output; the logs
+`\u001b[6n` cursor-position queries are the shell's own output. The logs
 JSON-escape them, so what appears below is literal text, not control bytes):
 
 ```
@@ -635,12 +586,11 @@ JSON-escape them, so what appears below is literal text, not control bytes):
 [15:16:37.858 t+   442ms]   <- JSON {"type":"exec_response","id":2,"exit_code":0}
 ```
 
-The command that produced `40 120` was `stty size; id -u; echo
-ATTACH_PTY_TURN2_1B7E5C33`, visible in that exec's full transcript on line 50
+The command that produced `40 120` was `stty size; id -u; echo ATTACH_PTY_TURN2_1B7E5C33`, visible in that exec's full transcript on line 50
 of the log.
 
-`stty size` returns `40 120` — the exact geometry sent in the `pty_resize`
-message — so it is a real pty with a real, resizable window size, not a pipe.
+`stty size` returns `40 120`, the geometry sent through `pty_resize`.
+This confirms a real pty with a resizable window rather than a pipe.
 
 And in production's shape, an unprivileged shell via `dropcap`:
 
@@ -652,7 +602,7 @@ And in production's shape, an unprivileged shell via `dropcap`:
 [15:16:46.292 t+  8876ms]   result: {"answered":true,"exited":true,"response":{"type":"exec_response","id":3,"exit_code":0},...}
 ```
 
-uid 1000, gid 1000 — an attach shell can be dropped to the agent's own
+uid 1000, gid 1000, an attach shell can be dropped to the agent's own
 privilege exactly the way `session.ts` drops Pi's.
 
 The same shape works in-process too (`evidence-02-same-process.log`), with
@@ -664,13 +614,13 @@ two independent interactive execs live at once:
 [15:29:25.266 t+ 48791ms]   execPressure(two interactive execs, both confirmed live) = 2
 ```
 
-### Check 3 — does the first exec survive? (and cross-talk)
+### Check 3: does the first exec survive? (and cross-talk)
 
-The strongest evidence is the cross-process one, because the two sides are
-logged by two different processes and can be correlated by wall clock. The
-attach client held its `dropcap` pty shell open from **15:16:37.859** to
-**15:16:46.292** and, while holding it, drove the holder's long exec. The
-holder's own log for that window:
+The cross-process run supplies the strongest evidence.
+Separate processes log both sides, so their timestamps allow an independent comparison.
+The attach client held its `dropcap` pty open from 15:16:37.859 to 15:16:46.292.
+During that interval it drove the holder's long exec.
+The holder logged:
 
 ```
 [15:16:38.402 t+ 38952ms] CMD: pressure
@@ -685,12 +635,12 @@ holder's own log for that window:
 [15:16:47.342 t+ 47892ms]   execPressure(periodic) = 1
 ```
 
-The long exec **accepted new input and produced correct output at 15:16:38.4,
-in the middle of the attach client's shell session** — not just "the process
-still exists". Pressure sat at 2 for the whole overlap and fell back to 1
-when the attach shell exited at ~15:16:46.3.
+The long exec accepted new input and produced correct output at 15:16:38.4.
+This happened during the attach client's shell session and proves more than process survival.
+Pressure stayed at 2 throughout the overlap.
+It returned to 1 when the attach shell exited near 15:16:46.3.
 
-After the attach client had exited entirely, the holder was asked again:
+After the attach client exited, another check asked the holder:
 
 ```
 [15:16:47.872 t+ 48422ms]   writing to long exec stdin: "echo AFTER_ATTACH_658927980"
@@ -717,10 +667,10 @@ in-process run reports the same in both directions for both shapes:
 [15:29:25.317 t+ 48842ms]   CROSS-TALK: {"secondPtyMarkerLeakedIntoFirst":false,"oneShotMarkerLeakedIntoFirst":false,"firstMarkersLeakedIntoSecond":false}
 ```
 
-**Check 4b — can an attach client reach the session owner's exec at all?**
-Since the protocol has no "join", the only thing left to try is addressing
-the owner's request id directly. It is refused, exactly as the id-remapping
-code predicts:
+**Check 4b tests access to the session owner's exec.**
+The protocol has no join operation.
+The check therefore addresses the owner's request ID directly.
+The server refuses it, as the ID remapping code predicts:
 
 ```
 [15:16:46.292 t+  8876ms]   holder's long exec has VM-internal id=5
@@ -733,10 +683,10 @@ This is a *good* result: it means a stray or hostile attach client cannot
 inject keystrokes into Pi's TUI. It is also the definitive proof that
 `corb attach` cannot mirror the agent's screen.
 
-### Check 5 — `execPressure()` and `waitForExecIdle()`, read then measured
+### Check 5: `execPressure()` and `waitForExecIdle()`, read then measured
 
 Read first (`evidence-06-sdk-inspection.log`). `execPressure()` is a plain
-count of live exec requests — started plus admitted-but-not-yet-started:
+count of live exec requests, started plus admitted-but-not-yet-started:
 
 ```
 42:    execPressure() {
@@ -759,9 +709,10 @@ count of live exec requests — started plus admitted-but-not-yet-started:
 522-            this.execQueue.length > 0) {
 ```
 
-Measured values match exactly: `0` before any exec, `1` with the long exec,
-`2` with two interactive execs both confirmed live, `5` with the long exec
-plus four sleeps, `64` at the ceiling, back to `0` once everything exits.
+The measured counts match the implementation exactly.
+Pressure is `0` before exec, `1` with the long exec, and `2` with two live interactive execs.
+It reaches `5` with the long exec plus four sleeps and `64` at the ceiling.
+It returns to `0` after every exec exits.
 
 Its three callers are the whole story of what a live exec actually blocks:
 
@@ -787,18 +738,16 @@ Measured, with the long exec running and then not (`evidence-02`):
 [15:29:25.420 t+ 48945ms]     readFile -> "localhost\n"
 ```
 
-**This is the one real serialisation in the system, and it is the exact
-opposite of what R2 assumed.** R2's own mitigation text said that if exec
-serialised, "everything else must be network- or VFS-mediated — and `vm.fs`
-must cover host-side file needs." The measurement inverts that: *exec* is the
-concurrent path and `vm.fs`'s **file operations** are the serialised one.
-`vm.fs.readFile`, `writeFile` and `deleteFile` can never complete while Pi's
-TUI exec is alive — which is to say, never, for the entire duration of a
-`corb run` session. (`vm.fs.stat`/`listDir`/`mkdir`/`access`/`rename` are
-implemented as `exec` calls, not file ops, and keep working fine — 6ms
-above.) Corb does not currently call any of the three blocked methods, so
-nothing is broken today; this is a constraint on what future host-side code
-may do, not a live bug.
+This is the actual serialisation point, opposite to R2's initial assumption.
+If exec serialised, R2 proposed network or VFS mediation with `vm.fs` for host file needs.
+Measurements show that exec runs concurrently while `vm.fs` file transfers serialise.
+`vm.fs.readFile`, `writeFile`, and `deleteFile` cannot finish while Pi's TUI stays alive.
+This lasts for the full `corb run` session.
+
+`vm.fs.stat`, `listDir`, `mkdir`, `access`, and `rename` use exec instead of file transfers.
+They still work, with the 6ms example above.
+Corb currently calls none of the three blocked methods.
+This constrains future host code rather than breaking a current feature.
 
 ### The concurrency ceiling
 
@@ -814,72 +763,63 @@ concurrent `sleep 60` execs.
 
 63 accepted + 1 long exec = exactly `maxQueuedExecs`'s default of 64, then
 clean `queue_full` rejections. The ceiling is **session-wide**, shared
-between the owner's execs and every attach client's execs — the admission
+between the owner's execs and every attach client's execs, the admission
 check reads one counter. The long exec survived the flood untouched.
 
 ### Verdict and reasoning
 
-**PASS. R2 is closed.** Point by point:
+**PASS. The measurements close R2.** Each check passed:
 
-1. **Same-process concurrency:** the second exec runs, promptly (5-6ms),
-   and genuinely in parallel (4x `sleep 3` in 3013ms).
-2. **Cross-process via `connectToSession()`:** it executes and its stdout
-   comes back, 13ms end to end.
-3. **The first exec survives:** it accepted input and produced correct output
-   *during* the second exec's session, stayed unsettled throughout, and
-   showed zero cross-talk in either direction.
-4. **Interactive second exec:** works, with a real resizable pty
-   (`stty size` gives `40 120`) and under `dropcap` at uid/gid 1000.
-5. **`execPressure()`/`waitForExecIdle()`:** exactly what their
-   implementations say — a live-exec counter, and a wait-for-zero that gates
-   `vm.fs`'s three file operations and nothing else.
+1. The same-process second exec starts in 5-6ms.
+   Four parallel `sleep 3` calls complete in 3013ms.
+2. `connectToSession()` executes from a separate process and returns stdout in 13ms end to end.
+3. The first exec accepts input and produces output throughout the second session without cross-talk.
+4. A second interactive exec uses a real resizable pty.
+   `stty size` returns `40 120` under `dropcap` with uid and gid 1000 too.
+5. `execPressure()` counts live execs.
+   `waitForExecIdle()` waits for zero and only gates the three `vm.fs` file transfer methods.
 
-**Recommendation on M8.7: build it — as `corb attach` opening a *new*
+**Recommendation on M8.7: build it, as `corb attach` opening a *new*
 interactive shell in the running session. Not as a way to see or share Pi's
 screen, which is impossible in 0.12.0.** Caveats the implementation must
 carry:
 
-- **Naming and UX must be honest.** The user gets a fresh shell beside the
-  agent, not the agent's terminal. "attach" invites the second reading; if
-  the command keeps that name, its help text and first-run output must say
-  which one it is. `corb shell` would be the more truthful name.
-- **Run it under `dropcap <uid> <gid>`**, like `session.ts` does, and build
-  its guest env the same way — an attach shell that skipped `dropcap` would
-  be a root shell in the guest and a hole in the privilege-drop story that
-  R18 and `dropcap` exist to hold up. Verified working: uid/gid 1000.
-- **Host-side policy is preserved for free.** An attach exec is executed by
-  the *session owner's* sandbox server, so the same `httpHooks`, sentinel and
-  VFS providers apply. The attach client supplies only argv/env; it cannot
-  reach the host-side hooks or the secret manager.
-- **Handle `server_shutdown`.** When `corb run` exits (or its watchdog
-  fires), `vm.close()` rejects every live exec with `error server_shutdown:
-  server is shutting down` and the attach client's socket closes. An attach
-  client must render that as "session ended", not as a crash — see the dead
-  end below for how loudly this fails if ignored.
-- **`lifecycle` is refused over attach IPC** (`"lifecycle actions are not
-  supported over attach IPC"`), so `corb attach` can never stop the session.
-  `corb kill`'s existing signal-based approach stays the right one.
-- **Budget against the 64-exec session-wide ceiling.** Not a practical limit
-  for a human opening a shell or two, but it is shared, and a future feature
-  that fans out execs would compete with attach sessions for it.
-- **No way to kill an attach exec from the host.** §3's "no exec timeout and
-  no kill" applies here too: an abandoned attach shell (client killed with
-  the pty still open) holds a slot until `vm.close()`. Worth a thought in
-  M8.7's design, not a blocker.
+- **Explain the command's behaviour clearly.** The user gets a fresh shell beside the agent.
+  It does not rejoin the agent's terminal.
+  If the command keeps the name `attach`, its help and first-run output must explain this.
+  `corb shell` describes the behaviour more directly.
+- **Use `dropcap <uid> <gid>` and production's guest environment.** `session.ts` uses this wrapper.
+  Omitting it gives the attach user a root shell and breaks the R18 privilege boundary.
+  The test confirms uid and gid 1000 work.
+- **The session owner's server preserves host policy.** It executes attach requests with the same `httpHooks`, sentinel, and VFS providers.
+  The client supplies only argv and env.
+  It cannot access host hooks or the secret manager.
+- **Handle `server_shutdown`.** When `corb run` exits or its watchdog fires, `vm.close()` rejects every live exec.
+  The error is `error server_shutdown:
+  server is shutting down`, and the attach socket closes.
+  Render this as "session ended" rather than a crash.
+  The failed attempt below shows the consequence of ignoring it.
+- **Attach IPC refuses `lifecycle`.** It returns `"lifecycle actions are not
+  supported over attach IPC"`.
+  `corb attach` therefore cannot stop the session.
+  `corb kill` keeps its signal-based approach.
+- **Account for the 64-exec session limit.** A few human shells fit within the limit.
+  Future features that start many execs must share those slots with attach sessions.
+- **The host cannot kill an individual attach exec.** The limitation in §3 also applies here.
+  An abandoned pty shell retains a slot until `vm.close()`.
+  M8.7 must consider that behaviour, but it does not block attach.
 
 ### What surprised us / had to be routed around
 
-- **`VM.create()` returns before the guest exists, and that nearly produced
-  the exact wrong answer.** The first run of `same-process.mjs` used a 15s
-  per-step timeout and reported `long exec alive: false` for *both* shapes —
-  which reads exactly like "a long-lived exec is blocked". It was not: boot
-  is lazy and happens on the first exec, taking ~33s on this machine.
-  `VM.create()` had resolved in 86ms with `getHostPid()` still `null`. The
-  fix is the `BOOT` warm-up exec in `main()`. Kept as a runnable negative
-  control (`--no-warmup`,
-  `evidence-01-boot-warmup-trap-negative-control.log`), because
-  distinguishing "the second exec is blocked" from "the guest wasn't up yet"
-  is the single most dangerous confusion available in this spike:
+- **`VM.create()` resolves before guest boot.** The first `same-process.mjs` run used a 15-second timeout per step.
+  It reported `long exec alive: false` for both shapes.
+  That resembled exec serialisation, but the guest was still booting.
+  Boot starts lazily with the first exec and takes about 33 seconds on this machine.
+  `VM.create()` resolved in 86ms while `getHostPid()` still returned `null`.
+  The correction adds a `BOOT` warm-up exec in `main()`.
+  `--no-warmup` preserves the failed setup as a negative control.
+  Its evidence is `evidence-01-boot-warmup-trap-negative-control.log`.
+  The result distinguishes blocked exec admission from an unfinished guest boot:
 
   ```
   [15:20:38.866 t+    84ms] VM.create() returned, id=5d799965-61a5-4212-8c93-6e813818b01a hostPid=null
@@ -888,31 +828,23 @@ carry:
   [15:21:12.333 t+ 33551ms]   long exec alive: true
   ```
 
-  The `false` is shape A, timing out at its 20s budget while the guest is
-  still booting; the `true` is shape B, which succeeds only because by then
-  ~33s of wall clock has passed and the guest has finally come up.
+  Shape A returns `false` after its 20-second budget while the guest still boots.
+  Shape B later returns `true` because the guest becomes ready near 33 seconds.
 
-  That control has a second lesson in it. Shape A's abandoned exec is never
-  reaped — there is no kill — so it stays live for the rest of the process
-  and offsets every later `execPressure()` reading by one
-  (`execPressure(no execs running) = 1`) and makes `waitForExecIdle()` never
-  resolve even when the spike believes it is idle. Any future
-  `execPressure()`-based logic has to assume leaked execs are permanent.
+  Shape A's abandoned exec also stays live because there is no kill operation.
+  It offsets later pressure counts by one: `execPressure(no execs running) = 1`.
+  It prevents `waitForExecIdle()` from resolving even when the test expects idle.
+  Future pressure logic must treat leaked execs as permanent until VM closure.
 
-- **`execPressure()` and `waitForExecIdle()` are not on the `VM` public
-  surface at all.** §3 said "the types expose `waitForExecIdle()` and
-  `execPressure()`", which is true only of `SandboxServerOps`; `VM` holds it
-  in a `private server` field and never re-exposes either method
-  (`grep -c "execPressure\|waitForExecIdle" dist/src/vm/core.d.ts` gives `0`).
-  This spike reaches them via `vm.server` from `.mjs`, which works only
-  because TypeScript `private` is compile-time. Production code cannot use
-  them, so no Corb design may depend on either — including any future
-  "is the session busy?" check.
+- **`VM` exposes neither pressure method.** §3's earlier description applied only to `SandboxServerOps`.
+  `VM` holds that object in a `private server` field and provides no public forwarding methods.
+  `grep -c "execPressure\|waitForExecIdle" dist/src/vm/core.d.ts` returns `0`.
+  This `.mjs` spike reaches `vm.server` because TypeScript only enforces `private` at compile time.
+  Production code cannot depend on either method for a session busy check or other purpose.
 
-- **A `vm.exec()` promise with no rejection handler kills the host process on
-  `vm.close()`.** The first ceiling run produced its full, correct result and
-  *then* died (absolute paths abbreviated to `.../` here; the log has them in
-  full):
+- **Unhandled exec rejections can kill the host process during `vm.close()`.**
+  The first ceiling run produced its correct result, then died.
+  The excerpt abbreviates absolute paths to `.../`, but the evidence log keeps them in full:
 
   ```
   Error: error server_shutdown: server is shutting down
@@ -921,38 +853,33 @@ carry:
       at SandboxServer.closeInternal (.../dist/src/sandbox/server-ops.js:453:14)
   ```
 
-  `vm.close()` rejects every live exec; Node's default
-  `--unhandled-rejections=throw` turns an unhandled one into an uncaught
-  exception. `runSession()` is safe today because it always `await`s its one
-  exec — but any code that starts an exec it does not await (an attach
-  client's, a future background exec) must attach a handler.
-  `evidence-04-exec-ceiling-first-attempt-unhandled-rejection.log` is the
-  failing run, kept.
+  `vm.close()` rejects every live exec.
+  Node's default `--unhandled-rejections=throw` converts an unhandled rejection into an uncaught exception.
+  `runSession()` safely awaits its one exec today.
+  Any future code that starts an exec without awaiting it must attach a rejection handler.
+  This includes attach clients and background execs.
+  `evidence-04-exec-ceiling-first-attempt-unhandled-rejection.log` preserves the failed run.
 
-- **The session socket's permissions come from the process umask, and
-  Gondolin never chmods it.** Observed `srwxr-xr-x` in `/tmp/gsess`, i.e.
-  `0777 & ~umask` with the usual `0022`. Under the default umask no other
-  local user can `connect()` (that needs write permission), and in the
-  default `~/.cache/gondolin/sessions` location `~/.cache` is `drwx------`
-  anyway. But under a permissive umask the socket would be `0777` (verified
-  directly: a Node `listen()` with `umask(0)` yields mode `777`), and it is
-  an unauthenticated exec channel into the guest. Relevant because
-  `src/vm/sockpath.ts` actively recommends relocating the directory to
-  `/tmp/gondolin-sessions` when the path is too long — which removes the
-  `~/.cache` parent-directory protection and leaves only the umask. Worth a
-  mode check in whatever M8.7 builds; not chased further here.
+- **The process umask determines socket permissions.** Gondolin never calls chmod on the session socket.
+  The test saw `srwxr-xr-x` in `/tmp/gsess`, equal to `0777 & ~umask` for the usual `0022`.
+  Other local users cannot call `connect()` because they lack write permission.
+  The default directory is `~/.cache/gondolin/sessions`.
+  Its parent `~/.cache` also has mode `drwx------`.
+  A permissive umask instead gives mode `0777` and permits other users to connect to this unauthenticated guest exec channel.
+  A direct Node `listen()` under `umask(0)` confirmed mode `777`.
+  `src/vm/sockpath.ts` recommends `/tmp/gondolin-sessions` when the default path is too long.
+  That move removes the parent directory's protection and leaves only the umask.
+  M8.7 can check the mode.
+  This spike did not investigate further.
 
-- **The SDK's contradiction is resolved, but not symmetrically.** The
-  "independent command channel, no cross-talk" page is right about `exec`.
-  The "one command at a time" page is wrong about `exec` — yet
-  `waitForExecIdle()` exists precisely because the guest *does* serialise its
-  **file-transfer** channel against execs. The two pages appear to describe
-  two different subsystems and have been collapsed into one claim.
+- **The contradictory SDK pages describe different subsystems.** The independent-channel page correctly describes exec.
+  The single-command page incorrectly applies file-transfer serialisation to exec.
+  `waitForExecIdle()` serialises file transfers against execs, rather than execs against each other.
 
-- Left running: nothing. `vm.close()` in a `finally` on every script;
-  `run-cross-process.sh` ends with an explicit leak check, which for the
-  recorded run reported `(none)` for both `qemu-system` and `gondolin`, and
-  an empty `/tmp/gsess`.
+- No process stayed running.
+  Every script calls `vm.close()` in a `finally`.
+  `run-cross-process.sh` also checks for leaks.
+  The recorded run found `(none)` for both `qemu-system` and `gondolin`, with an empty `/tmp/gsess`.
 
 ### Evidence files
 
@@ -961,7 +888,7 @@ All under `spike/m0-4-exec-concurrency/`:
 | File | Contents |
 |---|---|
 | `evidence-01-boot-warmup-trap-negative-control.log` | `--no-warmup` negative control: without a boot warm-up the long exec looks dead for ~33s, which is the failure mode most likely to be misread as serialisation. Also shows an abandoned exec permanently skewing `execPressure()`/`waitForExecIdle()` |
-| `evidence-02-same-process.log` | Measurements 1, 1b, 3, 4, 5 in one VM boot, over both long-exec shapes (plain `/bin/sh`, and production's `dropcap 1000 1000 /bin/sh`) — the primary same-process record |
+| `evidence-02-same-process.log` | Measurements 1, 1b, 3, 4, 5 in one VM boot, over both long-exec shapes (plain `/bin/sh`, and production's `dropcap 1000 1000 /bin/sh`), the primary same-process record |
 | `evidence-03-cross-process-attach.log` | The `corb attach` leg: holder log and attach-client log for one run, wall-clock correlated. Contains the one-shot, interactive-pty and `dropcap`-pty attach execs, the id-hijack refusal, the holder's `execPressure()=2` overlap window, the cross-talk assertions, and the process/socket leak check |
 | `evidence-04-exec-ceiling-first-attempt-unhandled-rejection.log` | The ceiling run that produced a correct result and then died on an unhandled `server_shutdown` rejection at `vm.close()` |
 | `evidence-05-exec-ceiling.log` | The ceiling: 63 concurrent execs accepted alongside the long exec, then `queue_full` at `execPressure()` 64 |
@@ -969,23 +896,24 @@ All under `spike/m0-4-exec-concurrency/`:
 
 ---
 
-## M9.5 — `vm.checkpoint()`/`resume()`: does it actually skip any boot cost?
+## M9.5: `vm.checkpoint()`/`resume()`: does it actually skip any boot cost?
 
 **Date:** 2026-08-30
-**Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
-**Verdict: NO SPEEDUP — checkpoint/resume does not skip guest boot at all.**
-Reading `checkpoint.js` first: `vm.checkpoint(path)` stops the VM and writes a
-qcow2 disk (plus a JSON metadata trailer); `VmCheckpoint.resume(options)`
-starts a **fresh QEMU VM** from a new overlay backed by that disk, going
-through the exact same `createVm()` codepath a cold `VM.create()` uses — same
-kernel, same initramfs, same `/init` -> `sandboxd` -> `sandboxfs` ->
-`rootfsInitExtra` (bindfs re-export) sequence. `gondolin-notes.md` §2 already
-says "no memory snapshots"; this spike measures whether that has a real,
-timed consequence rather than trusting the sentence's implication.
 
-It does. Four boots against the real tagged `corb:0.1.0` image, each timed
-from `VM.create()`/`resume()` call to a successful first `vm.exec()` (`cat
-/etc/corb/image.json`, matching `session.ts`'s own `readGuestIdentity()`):
+**Gondolin version:** `@earendil-works/gondolin@0.12.0` (pinned exact, no caret)
+
+**Verdict: NO SPEEDUP.** Checkpoint and resume do not skip guest boot.
+`vm.checkpoint(path)` stops the VM and writes a qcow2 disk with a JSON trailer.
+`VmCheckpoint.resume(options)` creates a fresh QEMU VM with an overlay backed by that disk.
+It uses the same `createVm()` path as a cold `VM.create()`.
+
+Both paths start the kernel, initramfs, `/init`, `sandboxd`, `sandboxfs`, and `rootfsInitExtra` with the `bindfs` re-export.
+`gondolin-notes.md` §2 already states that checkpoints contain no memory snapshots.
+This spike measures the resulting boot cost.
+
+Four boots use the tagged `corb:0.1.0` image.
+Each measurement starts at `VM.create()` or `resume()` and ends after a successful first `vm.exec()`.
+That exec reads `cat /etc/corb/image.json`, as `session.ts`'s `readGuestIdentity()` does:
 
 | Boot | Time to first exec |
 |---|---|
@@ -994,14 +922,13 @@ from `VM.create()`/`resume()` call to a successful first `vm.exec()` (`cat
 | **Resumed from a checkpoint of Cold #1** | **33548ms** |
 | Cold #3 (after the resume, same run) | 33552ms |
 
-All four are the same figure within noise. The resumed VM is exactly as slow
-to become usable as a cold boot — checkpointing immediately after boot and
-resuming later saved nothing. This is independently corroborated by this
-project's own earlier finding: M0.4's `evidence-01-boot-warmup-trap-negative-
-control.log` recorded the same "~33s before a long exec looks alive" figure
-for a plain cold boot with no warm-up, months before this spike and for an
-unrelated reason (a starting warm-up trap, not a checkpoint comparison) — the
-two independent measurements agree on what guest boot actually costs.
+All four measurements agree within noise.
+A resumed VM takes as long as a cold VM to become usable.
+Checkpointing immediately after boot saves no startup time.
+M0.4 independently recorded the same roughly 33-second cost months earlier.
+Its `evidence-01-boot-warmup-trap-negative-
+control.log` measured a cold boot without warm-up for an unrelated exec test.
+The independent measurements agree on the guest's boot cost.
 
 ### Why: reading `checkpoint.js`'s `resume()`
 
@@ -1016,64 +943,49 @@ return await createVm(merged);
 
 Two things worth being explicit about, neither obvious from the `.d.ts` alone:
 
-- **`VmCheckpoint.load(path)` always sets `baseVmOptions` to `null`.** So for
-  the only realistic production shape (persist a checkpoint to disk, load it
-  back in a *different* `corb run` invocation/process), `base` is `{}` and
-  `resume(options)`'s `options` supplies *every* `VMOptions` field —
-  `vfs.mounts`, `httpHooks`, `env`, `ssh`, `dns`, `sessionLabel`, everything.
-  This is good news for a hypothetical warm-start design (a checkpoint could
-  in principle be resumed with a completely different session's real
-  workspace mounts, not just the exact options it was created with) — it just
-  turns out not to matter, because of the next point.
-- **`resume()` still calls `createVm()` — the same function `VM.create()`
-  calls.** There is no partial/fast-path boot for a resumed VM. The guest's
-  kernel, initramfs, `/init`, `sandboxd`, `sandboxfs`, and (for Corb's image
-  specifically) `rootfsInitExtra`'s `bindfs` re-export mounting all run in
-  full, every time, on a resumed VM exactly as on a cold one. The ~33.5s cost
-  measured above is that full sequence, and checkpoint/resume has no lever
-  over any part of it.
+- **`VmCheckpoint.load(path)` sets `baseVmOptions` to `null`.**
+  A later process loading that checkpoint therefore starts with `base` equal to `{}`.
+  `resume(options)` must get every `VMOptions` field through `options`.
+  These include `vfs.mounts`, `httpHooks`, `env`, `ssh`, `dns`, and `sessionLabel`.
+  A checkpoint can therefore resume with a new session's mounts and policies.
+  This does not reduce boot cost.
+- **`resume()` calls the same `createVm()` as `VM.create()`.** There is no partial boot path.
+  Every resume runs the kernel, initramfs, `/init`, `sandboxd`, `sandboxfs`, and `rootfsInitExtra` with bindfs.
+  The roughly 33.5-second measurement covers this full sequence.
+  Checkpoint and resume cannot skip any part.
 
-### Why this makes "warm starts" a dead end for Corb specifically, not just a missing feature
+### Why this makes "warm starts" a dead end for Corb specifically, not a missing feature
 
-Even setting aside the boot-time finding, Corb's own architecture leaves
-checkpoint/resume little left to usefully capture even as a *disk-state*
-fork (as opposed to a boot-time skip):
+Even apart from boot time, Corb's architecture leaves little session data for a disk checkpoint to capture:
 
-- Everything session-relevant already lives behind a VFS mount, not the
-  guest's own qcow2 disk: `/work/<name>` (workspace dirs), `/home/agent/.pi`
-  (`MemoryProvider`), `/home/agent/sessions` (`RealFSProvider`), `/run/corb`
-  (gate config) — `gondolin-notes.md` §2 already states VFS-backed data is
-  never captured in a checkpoint regardless.
-- What *is* on the persistent disk is almost entirely baked in at
-  `corb image build` time (`postBuild.copy`/`postBuild.commands` in
-  `image/corb-image.json`) — which the existing tagged-image mechanism
-  (`sandbox.imagePath: "corb:0.1.0"`) already reuses across every session with
-  zero extra machinery, making a checkpoint of "just-booted, nothing done
-  yet" redundant with what `corb image build` already provides.
-- The image deliberately removes `npm`/`npx`/`apk`/`su`/`sudo`/`doas` and
-  routes nothing persistent-disk-writing through a normal session (`docs/design.md`
-  §2's "supporting measures in the image"), so there is no realistic
-  in-session action left that would write something worth checkpointing to
-  the one place (the qcow2 disk, outside `/root`/`/tmp`/`/var/tmp`/
-  `/var/cache`/`/var/log`, which are tmpfs and excluded anyway) a checkpoint
-  could actually preserve.
+- Session data already lives behind VFS mounts.
+  These include `/work/<name>`, `/home/agent/.pi` through `MemoryProvider`, and `/home/agent/sessions` through `RealFSProvider`.
+  `/run/corb` holds the mounted gate config.
+  As `gondolin-notes.md` §2 states, checkpoints never capture VFS data.
+- Persistent disk content mostly comes from `corb image build`.
+  `postBuild.copy` and `postBuild.commands` in `image/corb-image.json` supply it.
+  The tagged image selector `sandbox.imagePath: "corb:0.1.0"` already reuses that content across sessions.
+  A checkpoint of a freshly booted, unused VM adds no useful state.
+- The image removes `npm`, `npx`, `apk`, `su`, `sudo`, and `doas`.
+  A normal session therefore has no intended action that creates useful persistent disk state to checkpoint.
+  See the supporting image measures in `docs/design.md` §2.
+  `/root`, `/tmp`, `/var/tmp`, `/var/cache`, and `/var/log` use tmpfs and cannot contribute checkpoint content.
 
 ### What was built
 
-`spike/m9-5-checkpoint/run-spike.mjs` — boots the real, already-tagged
-`corb:<pkgVersion>` image directly via `sandbox.imagePath` (matching M0.4's
-own precedent of measuring what Corb actually ships, not a throwaway
-image), times four boots end-to-end to first successful `vm.exec()`: two
-cold baselines, one `vm.checkpoint()` immediately after the first cold
-boot followed by `VmCheckpoint.load().resume()` with fresh `VMOptions`
-(different `sessionLabel`, its own `httpHooks`), and a third cold boot
-afterward for a same-run comparison. `deny-all` `createHttpHooks` (no real
-egress needed for this check). Every VM closed in sequence; the checkpoint
-file removed at the end.
+`spike/m9-5-checkpoint/run-spike.mjs` boots the tagged `corb:<pkgVersion>` image through `sandbox.imagePath`.
+Like M0.4, it measures Corb's shipped image rather than a separate test image.
+It times four boots through the first successful `vm.exec()`.
+Two cold boots establish baselines.
+The first VM then checkpoints, and `VmCheckpoint.load().resume()` uses fresh `VMOptions` with a different `sessionLabel` and `httpHooks`.
+A third cold boot follows for comparison within the same run.
+
+The `deny-all` `createHttpHooks` configuration blocks egress because the check needs none.
+The script closes every VM in sequence and removes the checkpoint file.
 
 ### Evidence files
 
-`spike/m9-5-checkpoint/evidence-01-boot-timing-comparison.log` — the four
+`spike/m9-5-checkpoint/evidence-01-boot-timing-comparison.log`, the four
 timed boots verbatim, plus the checkpoint's own JSON metadata trailer
 (`guestAssetBuildId`, `compatibleVmm: ["qemu","krun"]`, `snapshotKind:
 "disk"`).
