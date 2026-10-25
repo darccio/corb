@@ -132,10 +132,18 @@ async function negative(kind) {
     const baseline = layer.base.buildId === base.buildId ? "protected-base" : "protected-fixed-base";
     const protectedMatch = hashes === read(baseline).hashes;
     const result = { kind, gates, apkStaticAbsent: !manager.stdout.trim(), protectedMatch };
+    result.sevenNameRemovals = {
+      ok: gates.find(gate => gate.name === "removals").ok && result.apkStaticAbsent,
+      names: ["npm", "npx", "su", "sudo", "doas", "apk", "apk.static"],
+    };
     result.accepted = gates.every(gate => gate.ok) && result.apkStaticAbsent && protectedMatch;
+    const suid = gates.find(gate => gate.name === "suid");
+    result.targetDetected = kind === "suid" ? !suid.ok
+      : kind === "apk" ? !result.sevenNameRemovals.ok && !result.apkStaticAbsent
+      : !protectedMatch;
     log(name + "-verdict", result);
     save(name + "-verification", result);
-    if (result.accepted) throw new Error("Negative layer was accepted");
+    if (result.accepted || !result.targetDetected) throw new Error("Negative layer mutation was not detected by its target check");
   } finally {
     await checked.close();
   }
