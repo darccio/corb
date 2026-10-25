@@ -1,0 +1,403 @@
+Building guest assets for x86_64 (alpine)
+Rootfs source: Alpine minirootfs
+Output directory: /tmp/corb-alpha2-dar-15/spike/dar-15-layers/runtime/image-fixed
+Using container runtime: docker
+Container image: alpine:3.23
+Running: docker run --rm --privileged -v /tmp/corb-alpha2-dar-15/spike/dar-15-layers/runtime/image-fixed:/output -v /tmp/gondolin-build-z2Tfmj:/work -v /home/dario/Code/corb/node_modules/@earendil-works/gondolin:/host-pkg:ro alpine:3.23 /bin/sh /work/build-in-container.sh
+( 1/26) Installing ncurses-terminfo-base (6.5_p20251123-r0)
+( 2/26) Installing libncursesw (6.5_p20251123-r0)
+( 3/26) Installing readline (8.3.1-r0)
+( 4/26) Installing bash (5.3.3-r1)
+  Executing bash-5.3.3-r1.post-install
+( 5/26) Installing ca-certificates (20261020-r0)
+( 6/26) Installing cpio (2.15-r0)
+( 7/26) Installing libeconf (0.8.3-r0)
+( 8/26) Installing libblkid (2.41.6-r1)
+( 9/26) Installing libcom_err (1.47.3-r0)
+(10/26) Installing e2fsprogs-libs (1.47.3-r0)
+(11/26) Installing libuuid (2.41.6-r1)
+(12/26) Installing e2fsprogs (1.47.3-r0)
+(13/26) Installing lz4 (1.10.0-r0)
+(14/26) Installing libgcc (15.2.0-r2)
+(15/26) Installing libstdc++ (15.2.0-r2)
+(16/26) Installing ada-libs (3.3.0-r0)
+(17/26) Installing brotli-libs (1.2.1-r0)
+(18/26) Installing c-ares (1.34.9-r0)
+(19/26) Installing icu-data-en (76.1-r1)
+  Executing icu-data-en-76.1-r1.post-install
+  *
+  * If you need ICU with non-English locales and legacy charset support, install
+  * package icu-data-full.
+  *
+(20/26) Installing icu-libs (76.1-r1)
+(21/26) Installing nghttp2-libs (1.69.0-r0)
+(22/26) Installing simdjson (3.12.0-r0)
+(23/26) Installing simdutf (7.5.0-r1)
+(24/26) Installing sqlite-libs (3.53.4-r0)
+(25/26) Installing zstd-libs (1.5.7-r2)
+(26/26) Installing nodejs (24.22.1-r0)
+Executing busybox-1.37.0-r30.trigger
+Executing ca-certificates-20261020-r0.trigger
+OK: 76.9 MiB in 42 packages
+Building guest assets for x86_64 (alpine)
+Rootfs source: Alpine minirootfs
+Output directory: /output
+Work directory: /tmp/gondolin-build-KAEnHF
+Building guest images...
+Downloading https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.0-x86_64.tar.gz
+Extracting Alpine minirootfs for rootfs...
+Extracting Alpine minirootfs for initramfs...
+Installing rootfs packages: linux-virt bash ca-certificates curl git openssh-client ripgrep fd jq less nodejs npm github-cli tzdata
+[postBuild.copy] (1/4) /work/postbuild-copy-0/dropcap -> /usr/local/bin/dropcap
+[postBuild.copy] (2/4) /work/postbuild-copy-1/policygate -> /usr/local/libexec/policygate
+[postBuild.copy] (3/4) /work/postbuild-copy-2/suid-allowlist.txt -> /etc/corb/suid-allowlist.txt
+[postBuild.copy] (4/4) /work/postbuild-copy-3/image.json -> /etc/corb/image.json
+[postBuild] (1/14) apk add --no-cache bash ca-certificates curl git openssh-client ripgrep fd jq less nodejs npm github-cli tzdata
+( 1/40) Installing ncurses-terminfo-base (6.5_p20251123-r0)
+( 2/40) Installing libncursesw (6.5_p20251123-r0)
+( 3/40) Installing readline (8.3.1-r0)
+( 4/40) Installing bash (5.3.3-r1)
+  Executing bash-5.3.3-r1.post-install
+( 5/40) Installing ca-certificates (20261020-r0)
+( 6/40) Installing brotli-libs (1.2.1-r0)
+( 7/40) Installing c-ares (1.34.9-r0)
+( 8/40) Installing libunistring (1.4.1-r0)
+( 9/40) Installing libidn2 (2.3.8-r0)
+(10/40) Installing nghttp2-libs (1.69.0-r0)
+(11/40) Installing libpsl (0.21.5-r3)
+(12/40) Installing zstd-libs (1.5.7-r2)
+(13/40) Installing libcurl (8.23.0-r0)
+(14/40) Installing curl (8.23.0-r0)
+(15/40) Installing libgcc (15.2.0-r2)
+(16/40) Installing libstdc++ (15.2.0-r2)
+(17/40) Installing jemalloc (5.3.0-r6)
+(18/40) Installing fd (10.2.0-r3)
+(19/40) Installing libexpat (2.9.0-r0)
+(20/40) Installing pcre2 (10.49-r0)
+(21/40) Installing git (2.52.0-r0)
+(22/40) Installing git-init-template (2.52.0-r0)
+(23/40) Installing github-cli (2.83.0-r6)
+(24/40) Installing oniguruma (6.9.10-r0)
+(25/40) Installing jq (1.8.2-r0)
+(26/40) Installing less (685-r0)
+(27/40) Installing ada-libs (3.3.0-r0)
+(28/40) Installing icu-data-en (76.1-r1)
+  Executing icu-data-en-76.1-r1.post-install
+(29/40) Installing icu-libs (76.1-r1)
+(30/40) Installing simdjson (3.12.0-r0)
+(31/40) Installing simdutf (7.5.0-r1)
+(32/40) Installing sqlite-libs (3.53.4-r0)
+(33/40) Installing nodejs (24.22.1-r0)
+(34/40) Installing npm (11.11.0-r0)
+(35/40) Installing openssh-keygen (10.2_p1-r0)
+(36/40) Installing libedit (20251016.3.1-r0)
+(37/40) Installing openssh-client-common (10.2_p1-r0)
+(38/40) Installing openssh-client-default (10.2_p1-r0)
+(39/40) Installing ripgrep (15.1.0-r0)
+(40/40) Installing tzdata (2026e-r0)
+Executing busybox-1.37.0-r29.trigger
+Executing ca-certificates-20261020-r0.trigger
+OK: 163.1 MiB in 56 packages
+[postBuild] (2/14) apk add --no-cache build-base linux-headers fuse3-dev fuse3-libs libstdc++ libgcc zstd-libs
+( 1/23) Upgrading musl (1.2.5-r21 -> 1.2.5-r24)
+( 2/23) Installing jansson (2.14.1-r0)
+( 3/23) Installing binutils (2.45.1-r0)
+( 4/23) Installing libmagic (5.46-r2)
+( 5/23) Installing file (5.46-r2)
+( 6/23) Installing libgomp (15.2.0-r2)
+( 7/23) Installing libatomic (15.2.0-r2)
+( 8/23) Installing gmp (6.3.0-r4)
+( 9/23) Installing isl26 (0.26-r1)
+(10/23) Installing mpfr4 (4.2.2-r0)
+(11/23) Installing mpc1 (1.3.1-r1)
+(12/23) Installing gcc (15.2.0-r2)
+(13/23) Installing libstdc++-dev (15.2.0-r2)
+(14/23) Installing musl-dev (1.2.5-r24)
+(15/23) Installing g++ (15.2.0-r2)
+(16/23) Installing make (4.4.1-r3)
+(17/23) Installing fortify-headers (1.1-r5)
+(18/23) Installing patch (2.8-r0)
+(19/23) Installing build-base (0.5-r3)
+(20/23) Installing fuse3-libs (3.18.3-r0)
+(21/23) Installing pkgconf (2.5.1-r0)
+(22/23) Installing fuse3-dev (3.18.3-r0)
+(23/23) Installing linux-headers (6.16.12-r0)
+Executing busybox-1.37.0-r29.trigger
+OK: 433.2 MiB in 78 packages
+[postBuild] (3/14) cd /tmp && curl -fsSL -o bindfs.tar.gz https://bindfs.org/downloads/bindfs-1.18.4.tar.gz && echo '1fedfcd082980180ccdd684478cc5308f4ea3fa541af12b5aef0b75fb0ec5b285009c4b783fc3cd5550505a83baf015e243f88eb322540d0f82e1952babc799a  bindfs.tar.gz' | sha512sum -c - && tar xzf bindfs.tar.gz
+bindfs.tar.gz: OK
+[postBuild] (4/14) cd /tmp/bindfs-1.18.4 && ./configure --prefix=/usr --sysconfdir=/etc --mandir=/usr/share/man --localstatedir=/var && make && make install
+checking for a BSD-compatible install... /usr/bin/install -c
+checking whether build environment is sane... yes
+checking for a race-free mkdir -p... ./install-sh -c -d
+checking for gawk... no
+checking for mawk... no
+checking for nawk... no
+checking for awk... awk
+checking whether make sets $(MAKE)... yes
+checking whether make supports nested variables... yes
+checking for gcc... gcc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables...
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to enable C11 features... none needed
+checking whether gcc understands -c and -o together... yes
+checking whether make supports the include directive... yes (GNU style)
+checking dependency style of gcc... gcc3
+checking build system type... x86_64-pc-linux-musl
+checking host system type... x86_64-pc-linux-musl
+checking how to print strings... printf
+checking for a sed that does not truncate output... /bin/sed
+checking for grep that handles long lines and -e... /bin/grep
+checking for egrep... /bin/grep -E
+checking for fgrep... /bin/grep -F
+checking for ld used by gcc... /usr/x86_64-alpine-linux-musl/bin/ld
+checking if the linker (/usr/x86_64-alpine-linux-musl/bin/ld) is GNU ld... yes
+checking for BSD- or MS-compatible name lister (nm)... /usr/bin/nm
+checking the name lister (/usr/bin/nm) interface... BSD nm
+checking whether ln -s works... yes
+checking the maximum length of command line arguments... 98304
+checking how to convert x86_64-pc-linux-musl file names to x86_64-pc-linux-musl format... func_convert_file_noop
+checking how to convert x86_64-pc-linux-musl file names to toolchain format... func_convert_file_noop
+checking for /usr/x86_64-alpine-linux-musl/bin/ld option to reload object files... -r
+checking for file... file
+checking for objdump... objdump
+checking how to recognize dependent libraries... pass_all
+checking for dlltool... no
+checking how to associate runtime and link libraries... printf %s\n
+checking for ar... ar
+checking for archiver @FILE support... @
+checking for strip... strip
+checking for ranlib... ranlib
+checking command to parse /usr/bin/nm output from gcc object... ok
+checking for sysroot... no
+checking for a working dd... /bin/dd
+checking how to truncate binary pipes... /bin/dd bs=4096 count=1
+checking for mt... no
+checking if : is a manifest tool... no
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for dlfcn.h... yes
+checking for objdir... .libs
+checking if gcc supports -fno-rtti -fno-exceptions... no
+checking for gcc option to produce PIC... -fPIC -DPIC
+checking if gcc PIC flag -fPIC -DPIC works... yes
+checking if gcc static flag -static works... yes
+checking if gcc supports -c -o file.o... yes
+checking if gcc supports -c -o file.o... (cached) yes
+checking whether the gcc linker (/usr/x86_64-alpine-linux-musl/bin/ld -m elf_x86_64) supports shared libraries... yes
+checking whether -lc should be explicitly linked in... no
+checking dynamic linker characteristics... GNU/Linux ld.so
+checking how to hardcode library paths into programs... immediate
+checking whether stripping libraries is possible... yes
+checking if libtool supports shared libraries... yes
+checking whether to build shared libraries... yes
+checking whether to build static libraries... yes
+checking for sys/file.h... yes
+checking for lutimes... yes
+checking for utimensat... yes
+checking for setxattr... yes
+checking for getxattr... yes
+checking for listxattr... yes
+checking for removexattr... yes
+checking for lsetxattr... yes
+checking for lgetxattr... yes
+checking for llistxattr... yes
+checking for lremovexattr... yes
+checking for pkg-config... /usr/bin/pkg-config
+checking pkg-config is at least version 0.9.0... yes
+checking for fuse3 >= 3.4.0... yes
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating src/Makefile
+config.status: creating tests/Makefile
+config.status: creating tests/internals/Makefile
+config.status: creating config.h
+config.status: executing depfiles commands
+config.status: executing libtool commands
+make  all-recursive
+make[1]: Entering directory '/tmp/bindfs-1.18.4'
+Making all in src
+make[2]: Entering directory '/tmp/bindfs-1.18.4/src'
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT bindfs.o -MD -MP -MF .deps/bindfs.Tpo -c -o bindfs.o bindfs.c
+mv -f .deps/bindfs.Tpo .deps/bindfs.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT debug.o -MD -MP -MF .deps/debug.Tpo -c -o debug.o debug.c
+mv -f .deps/debug.Tpo .deps/debug.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT permchain.o -MD -MP -MF .deps/permchain.Tpo -c -o permchain.o permchain.c
+mv -f .deps/permchain.Tpo .deps/permchain.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT userinfo.o -MD -MP -MF .deps/userinfo.Tpo -c -o userinfo.o userinfo.c
+mv -f .deps/userinfo.Tpo .deps/userinfo.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT arena.o -MD -MP -MF .deps/arena.Tpo -c -o arena.o arena.c
+mv -f .deps/arena.Tpo .deps/arena.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT misc.o -MD -MP -MF .deps/misc.Tpo -c -o misc.o misc.c
+mv -f .deps/misc.Tpo .deps/misc.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT usermap.o -MD -MP -MF .deps/usermap.Tpo -c -o usermap.o usermap.c
+mv -f .deps/usermap.Tpo .deps/usermap.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3   -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT rate_limiter.o -MD -MP -MF .deps/rate_limiter.Tpo -c -o rate_limiter.o rate_limiter.c
+mv -f .deps/rate_limiter.Tpo .deps/rate_limiter.Po
+/bin/sh ../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o bindfs bindfs.o debug.o permchain.o userinfo.o arena.o misc.o usermap.o rate_limiter.o  -lfuse3 -lpthread  -pthread
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o bindfs bindfs.o debug.o permchain.o userinfo.o arena.o misc.o usermap.o rate_limiter.o  -lfuse3 -lpthread -pthread
+make[2]: Leaving directory '/tmp/bindfs-1.18.4/src'
+Making all in tests
+make[2]: Entering directory '/tmp/bindfs-1.18.4/tests'
+Making all in internals
+make[3]: Entering directory '/tmp/bindfs-1.18.4/tests/internals'
+gcc -DHAVE_CONFIG_H -I. -I../..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3 -I. -I../../src  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_internals-test_internals.o -MD -MP -MF .deps/test_internals-test_internals.Tpo -c -o test_internals-test_internals.o `test -f 'test_internals.c' || echo './'`test_internals.c
+mv -f .deps/test_internals-test_internals.Tpo .deps/test_internals-test_internals.Po
+gcc -DHAVE_CONFIG_H -I. -I../..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3 -I. -I../../src  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_internals-test_common.o -MD -MP -MF .deps/test_internals-test_common.Tpo -c -o test_internals-test_common.o `test -f 'test_common.c' || echo './'`test_common.c
+mv -f .deps/test_internals-test_common.Tpo .deps/test_internals-test_common.Po
+gcc -DHAVE_CONFIG_H -I. -I../..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3 -I. -I../../src  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_internals-misc.o -MD -MP -MF .deps/test_internals-misc.Tpo -c -o test_internals-misc.o `test -f '../../src/misc.c' || echo './'`../../src/misc.c
+mv -f .deps/test_internals-misc.Tpo .deps/test_internals-misc.Po
+gcc -DHAVE_CONFIG_H -I. -I../..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3 -I. -I../../src  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_internals-arena.o -MD -MP -MF .deps/test_internals-arena.Tpo -c -o test_internals-arena.o `test -f '../../src/arena.c' || echo './'`../../src/arena.c
+mv -f .deps/test_internals-arena.Tpo .deps/test_internals-arena.Po
+/bin/sh ../../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o test_internals test_internals-test_internals.o test_internals-test_common.o test_internals-misc.o test_internals-arena.o -pthread
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o test_internals test_internals-test_internals.o test_internals-test_common.o test_internals-misc.o test_internals-arena.o  -pthread
+gcc -DHAVE_CONFIG_H -I. -I../..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3 -I. -I../../src  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_rate_limiter-test_rate_limiter.o -MD -MP -MF .deps/test_rate_limiter-test_rate_limiter.Tpo -c -o test_rate_limiter-test_rate_limiter.o `test -f 'test_rate_limiter.c' || echo './'`test_rate_limiter.c
+mv -f .deps/test_rate_limiter-test_rate_limiter.Tpo .deps/test_rate_limiter-test_rate_limiter.Po
+gcc -DHAVE_CONFIG_H -I. -I../..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3 -I. -I../../src  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_rate_limiter-test_common.o -MD -MP -MF .deps/test_rate_limiter-test_common.Tpo -c -o test_rate_limiter-test_common.o `test -f 'test_common.c' || echo './'`test_common.c
+mv -f .deps/test_rate_limiter-test_common.Tpo .deps/test_rate_limiter-test_common.Po
+gcc -DHAVE_CONFIG_H -I. -I../..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -I/usr/include/fuse3 -I. -I../../src  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_rate_limiter-rate_limiter.o -MD -MP -MF .deps/test_rate_limiter-rate_limiter.Tpo -c -o test_rate_limiter-rate_limiter.o `test -f '../../src/rate_limiter.c' || echo './'`../../src/rate_limiter.c
+mv -f .deps/test_rate_limiter-rate_limiter.Tpo .deps/test_rate_limiter-rate_limiter.Po
+/bin/sh ../../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o test_rate_limiter test_rate_limiter-test_rate_limiter.o test_rate_limiter-test_common.o test_rate_limiter-rate_limiter.o -pthread
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o test_rate_limiter test_rate_limiter-test_rate_limiter.o test_rate_limiter-test_common.o test_rate_limiter-rate_limiter.o  -pthread
+make[3]: Leaving directory '/tmp/bindfs-1.18.4/tests/internals'
+make[3]: Entering directory '/tmp/bindfs-1.18.4/tests'
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT readdir_inode.o -MD -MP -MF .deps/readdir_inode.Tpo -c -o readdir_inode.o readdir_inode.c
+mv -f .deps/readdir_inode.Tpo .deps/readdir_inode.Po
+/bin/sh ../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o readdir_inode readdir_inode.o
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o readdir_inode readdir_inode.o
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT utimens_nofollow.o -MD -MP -MF .deps/utimens_nofollow.Tpo -c -o utimens_nofollow.o utimens_nofollow.c
+mv -f .deps/utimens_nofollow.Tpo .deps/utimens_nofollow.Po
+/bin/sh ../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o utimens_nofollow utimens_nofollow.o
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o utimens_nofollow utimens_nofollow.o
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT fcntl_locker.o -MD -MP -MF .deps/fcntl_locker.Tpo -c -o fcntl_locker.o fcntl_locker.c
+mv -f .deps/fcntl_locker.Tpo .deps/fcntl_locker.Po
+/bin/sh ../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o fcntl_locker fcntl_locker.o
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o fcntl_locker fcntl_locker.o
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT odirect_read.o -MD -MP -MF .deps/odirect_read.Tpo -c -o odirect_read.o odirect_read.c
+mv -f .deps/odirect_read.Tpo .deps/odirect_read.Po
+/bin/sh ../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o odirect_read odirect_read.o
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o odirect_read odirect_read.o
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT odirect_write.o -MD -MP -MF .deps/odirect_write.Tpo -c -o odirect_write.o odirect_write.c
+mv -f .deps/odirect_write.Tpo .deps/odirect_write.Po
+/bin/sh ../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o odirect_write odirect_write.o
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o odirect_write odirect_write.o
+gcc -DHAVE_CONFIG_H -I. -I..  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -D_XOPEN_SOURCE=700 -D__BSD_VISIBLE=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE -D_DARWIN_BETTER_REALPATH -D_DARWIN_C_SOURCE  -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -MT test_dir_rewind.o -MD -MP -MF .deps/test_dir_rewind.Tpo -c -o test_dir_rewind.o test_dir_rewind.c
+mv -f .deps/test_dir_rewind.Tpo .deps/test_dir_rewind.Po
+/bin/sh ../libtool  --tag=CC   --mode=link gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2   -o test_dir_rewind test_dir_rewind.o
+libtool: link: gcc -std=gnu11 -Wall -Wextra -Wpedantic -fno-common -g -O2 -o test_dir_rewind test_dir_rewind.o
+make[3]: Leaving directory '/tmp/bindfs-1.18.4/tests'
+make[2]: Leaving directory '/tmp/bindfs-1.18.4/tests'
+make[2]: Entering directory '/tmp/bindfs-1.18.4'
+make[2]: Leaving directory '/tmp/bindfs-1.18.4'
+make[1]: Leaving directory '/tmp/bindfs-1.18.4'
+Making install in src
+make[1]: Entering directory '/tmp/bindfs-1.18.4/src'
+make[2]: Entering directory '/tmp/bindfs-1.18.4/src'
+ .././install-sh -c -d '/usr/bin'
+  /bin/sh ../libtool   --mode=install /usr/bin/install -c bindfs '/usr/bin'
+libtool: install: /usr/bin/install -c bindfs /usr/bin/bindfs
+make  install-exec-hook
+make[3]: Entering directory '/tmp/bindfs-1.18.4/src'
+make[3]: Nothing to be done for 'install-exec-hook'.
+make[3]: Leaving directory '/tmp/bindfs-1.18.4/src'
+ .././install-sh -c -d '/usr/share/man/man1'
+ /usr/bin/install -c -m 644 bindfs.1 '/usr/share/man/man1'
+make[2]: Leaving directory '/tmp/bindfs-1.18.4/src'
+make[1]: Leaving directory '/tmp/bindfs-1.18.4/src'
+Making install in tests
+make[1]: Entering directory '/tmp/bindfs-1.18.4/tests'
+Making install in internals
+make[2]: Entering directory '/tmp/bindfs-1.18.4/tests/internals'
+make[3]: Entering directory '/tmp/bindfs-1.18.4/tests/internals'
+make[3]: Nothing to be done for 'install-exec-am'.
+make[3]: Nothing to be done for 'install-data-am'.
+make[3]: Leaving directory '/tmp/bindfs-1.18.4/tests/internals'
+make[2]: Leaving directory '/tmp/bindfs-1.18.4/tests/internals'
+make[2]: Entering directory '/tmp/bindfs-1.18.4/tests'
+make[3]: Entering directory '/tmp/bindfs-1.18.4/tests'
+make[3]: Nothing to be done for 'install-exec-am'.
+make[3]: Nothing to be done for 'install-data-am'.
+make[3]: Leaving directory '/tmp/bindfs-1.18.4/tests'
+make[2]: Leaving directory '/tmp/bindfs-1.18.4/tests'
+make[1]: Leaving directory '/tmp/bindfs-1.18.4/tests'
+make[1]: Entering directory '/tmp/bindfs-1.18.4'
+make[2]: Entering directory '/tmp/bindfs-1.18.4'
+make[2]: Nothing to be done for 'install-exec-am'.
+make[2]: Nothing to be done for 'install-data-am'.
+make[2]: Leaving directory '/tmp/bindfs-1.18.4'
+make[1]: Leaving directory '/tmp/bindfs-1.18.4'
+[postBuild] (5/14) rm -rf /tmp/bindfs.tar.gz /tmp/bindfs-1.18.4
+[postBuild] (6/14) apk del build-base linux-headers fuse3-dev
+( 1/21) Purging build-base (0.5-r3)
+( 2/21) Purging file (5.46-r2)
+( 3/21) Purging g++ (15.2.0-r2)
+( 4/21) Purging libstdc++-dev (15.2.0-r2)
+( 5/21) Purging gcc (15.2.0-r2)
+( 6/21) Purging binutils (2.45.1-r0)
+( 7/21) Purging libatomic (15.2.0-r2)
+( 8/21) Purging libgomp (15.2.0-r2)
+( 9/21) Purging make (4.4.1-r3)
+(10/21) Purging fortify-headers (1.1-r5)
+(11/21) Purging patch (2.8-r0)
+(12/21) Purging fuse3-dev (3.18.3-r0)
+(13/21) Purging isl26 (0.26-r1)
+(14/21) Purging jansson (2.14.1-r0)
+(15/21) Purging libmagic (5.46-r2)
+(16/21) Purging linux-headers (6.16.12-r0)
+(17/21) Purging mpc1 (1.3.1-r1)
+(18/21) Purging mpfr4 (4.2.2-r0)
+(19/21) Purging musl-dev (1.2.5-r24)
+(20/21) Purging pkgconf (2.5.1-r0)
+(21/21) Purging gmp (6.3.0-r4)
+Executing busybox-1.37.0-r29.trigger
+OK: 163.4 MiB in 57 packages
+[postBuild] (7/14) npm i -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@1.4.0
+
+added 119 packages in 8s
+
+9 packages are looking for funding
+  run `npm fund` for details
+[postBuild] (8/14) addgroup -g 1000 agent && adduser -D -u 1000 -G agent -h /home/agent -s /bin/sh agent
+[postBuild] (9/14) mkdir -p /work /home/agent/sessions && chown -R 1000:1000 /home/agent /work
+[postBuild] (10/14) apk del apk-tools
+(1/2) Purging apk-tools (3.0.1-r1)
+(2/2) Purging libapk (3.0.1-r1)
+Executing busybox-1.37.0-r29.trigger
+OK: 163.0 MiB in 55 packages
+[postBuild] (11/14) rm -f /usr/bin/npm /usr/bin/npx /bin/su /usr/bin/su /usr/bin/sudo /usr/bin/doas
+[postBuild] (12/14) mv /usr/bin/git /usr/local/libexec/real-git && ln -s /usr/local/libexec/policygate /usr/local/bin/git
+[postBuild] (13/14) if [ -x /usr/bin/gh ]; then mv /usr/bin/gh /usr/local/libexec/real-gh && ln -s /usr/local/libexec/policygate /usr/local/bin/gh; fi
+[postBuild] (14/14) chmod 0755 /usr/local/bin/dropcap /usr/local/libexec/policygate
+Copying kernel modules for 6.18.58-0-virt into initramfs
+Creating rootfs ext4 image...
+Creating initramfs...
+Rootfs image written to /tmp/gondolin-build-KAEnHF/rootfs.ext4
+Initramfs written to /tmp/gondolin-build-KAEnHF/initramfs.cpio.lz4
+Fetching kernel...
+Fetching linux-virt from Alpine v3.23 (x86_64)
+Found linux-virt version: 6.18.58-r0
+Fetching libkrunfw-compatible kernel...
+Downloading https://github.com/containers/libkrunfw/releases/download/v5.2.1/libkrunfw-prebuilt-x86_64.tgz
+No prebuilt libkrunfw archive for x86_64 (v5.2.1); falling back to shared archive
+Downloading https://github.com/containers/libkrunfw/releases/download/v5.2.1/libkrunfw-x86_64.tgz
+Extracting kernel from libkrunfw shared archive
+Cached libkrunfw kernel 8da419440ed6...
+Copying assets to output directory...
+Generating manifest...
+Build complete! Assets written to /output
+Build complete! Assets written to /tmp/corb-alpha2-dar-15/spike/dar-15-layers/runtime/image-fixed
+{"label":"build-result","variant":"fixed","buildMs":86295.262348,"buildId":"e8292a0a-0a1a-52d5-959b-9ed372068d54","assetDir":"/tmp/corb-alpha2-dar-15/spike/dar-15-layers/runtime/image-fixed","tag":{"reference":"corb-spike:dar-15-fixed","targets":{"x86_64":"e8292a0a-0a1a-52d5-959b-9ed372068d54"},"updatedAt":"2026-10-25T16:02:45.169Z"},"rootfsBytes":3221225472,"rootfsAllocatedBytes":3221225472}
+{"label":"runtime-tag-unchanged","before":"2747a805-7a7e-5798-84ca-077fb5086311","after":"2747a805-7a7e-5798-84ca-077fb5086311"}

@@ -27,8 +27,9 @@ const built = await buildAssets(config, { outputDir: path.join(runtime, "image-"
 const buildMs = performance.now() - start;
 const imported = importImageFromDirectory(built.outputDir);
 const tag = tagImage(imported.buildId, "corb-spike:dar-15-" + variant, config.arch);
+const resolved = resolveImageSelector(tag.reference, config.arch);
 const result = {
-  variant, buildMs, buildId: imported.buildId, assetDir: built.outputDir, tag,
+  variant, buildMs, buildId: imported.buildId, outputDir: built.outputDir, assetDir: resolved.assetDir, tag,
   rootfsBytes: fs.statSync(path.join(built.outputDir, "rootfs.ext4")).size,
   rootfsAllocatedBytes: fs.statSync(path.join(built.outputDir, "rootfs.ext4")).blocks * 512,
 };

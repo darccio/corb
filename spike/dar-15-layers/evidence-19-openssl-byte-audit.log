@@ -1,0 +1,13 @@
+Verified OK
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/libcrypto3-3.5.9-r0.apk", "bytes": 1980193}
+Verified OK
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "stock", "buildId": "2747a805-7a7e-5798-84ca-077fb5086311", "file": "/usr/lib/libcrypto.so.3", "signedPackage": {"name": "libcrypto3", "version": "3.5.9-r0", "checksum": "Q1Ubt/ZmhM+YWFhgwtitzD8qoPZ3I="}, "signedPayloadFileSha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d", "actualFileSha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d", "matches": true}
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "fixed", "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54", "file": "/usr/lib/libcrypto.so.3", "signedPackage": {"name": "libcrypto3", "version": "3.5.9-r0", "checksum": "Q1Ubt/ZmhM+YWFhgwtitzD8qoPZ3I="}, "signedPayloadFileSha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d", "actualFileSha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d", "matches": true}
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/libssl3-3.5.9-r0.apk", "bytes": 381864}
+Verified OK
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "stock", "buildId": "2747a805-7a7e-5798-84ca-077fb5086311", "file": "/usr/lib/libssl.so.3", "signedPackage": {"name": "libssl3", "version": "3.5.9-r0", "checksum": "Q170vxHAYRS4o+qEErxLLXW0A7BuU="}, "signedPayloadFileSha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6", "actualFileSha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6", "matches": true}
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "fixed", "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54", "file": "/usr/lib/libssl.so.3", "signedPackage": {"name": "libssl3", "version": "3.5.9-r0", "checksum": "Q170vxHAYRS4o+qEErxLLXW0A7BuU="}, "signedPayloadFileSha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6", "actualFileSha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6", "matches": true}
