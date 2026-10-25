@@ -85,24 +85,28 @@ Both run the same code.
 |---|---|
 | `corb run [DIR] [flags] [-- PI_ARGS...]` | Boots a session and runs Pi interactively in the foreground. `DIR` defaults to the current directory. |
 | `corb explain [DIR] [flags] [--json]` | Prints the effective merged config and trust verdict for `DIR` without booting anything. |
+| `corb workspace ls [--json]` | Lists workspace sources, own mounts, trust status and orphan records. Read-only. |
+| `corb workspace show <name> [--json]` | Shows a workspace's current config and its full personal acceptance snapshots. Read-only. |
 | `corb ls [--json]` | Lists known sessions through a join of Gondolin's registry and Corb's sidecars. Read-only. |
 | `corb attach <session>` | Opens a new interactive shell inside a running session. It does not rejoin Pi's TUI. See `src/vm/attach.ts`. |
 | `corb kill <session>` | Sends `SIGTERM` to a session's host process so it tears down cleanly (closes the VM, removes its sidecar, flushes its audit log). No `--force`/`SIGKILL` path, by design. |
 | `corb gc [--older-than DURATION] [--dry-run\|-n]` | Prunes Gondolin's own stale registry entries and Corb's orphaned session sidecars. Never prunes a sidecar whose recorded host pid is still alive. |
 | `corb login [PROVIDER] [--device-code]` / `corb logout PROVIDER` | Logs in to a subscription provider on the host and keeps the tokens there. `openai-codex` for ChatGPT Plus/Pro is the only one so far. The guest gets a stand-in. With no provider, lists login status. See [Subscription logins](docs/configuration.md#subscription-logins). |
-| `corb doctor [--verify-secrets]` | Reports on KVM, QEMU, Docker, Node/Go versions, e2fsprogs, cgroup delegation, secrets, workspace sources and Gondolin-specific environment traps. `--verify-secrets` makes a real HTTP request per `[secrets.NAME.verify]` entry to detect invalid credentials. This option is off by default because it uses real secret values. |
+| `corb doctor [--verify-secrets]` | Checks host dependencies, secrets, workspace sources, trust and subscription logins. It also checks Gondolin-specific environment traps. `--verify-secrets` sends the configured credential checks with real secrets. This option is off by default. |
 | `corb image build [--config FILE] [--tag REF] [--arch x86_64\|aarch64]` | Builds, verifies, and tags the guest VM image. |
 
 `corb run` and `corb explain` share the same flags:
 
 | Flag | |
 |---|---|
+| `--workspace NAME` | Select a workspace definition. Without DIR, no cwd mount is added. |
 | `--dir NAME=HOST[:ro\|:rw]` (repeatable) | Add or override a workspace directory. |
-| `--primary NAME` | Which directory becomes Pi's working directory (defaults to the positional `DIR`). |
+| `--primary NAME` | Select Pi's starting mount. The default follows workspace and positional-directory selection. |
 | `--trust-config` | (`corb run` only) Accept a `requires-confirmation` verdict. Required on the first run and whenever persistent policy widens. |
 | `--dry-run` | (`corb run` only) Print the effective config and trust verdict without booting a VM or requiring bound secrets. |
 | `--expose PORT` | (`corb run` only) Expose a guest loopback port to the host via Gondolin's ingress reverse proxy. The resulting URL is printed to stderr and recorded in the session sidecar (`corb ls`). One port, not repeatable. |
-| `--json` | (`corb explain`/`corb ls` only) Machine-readable output. |
+| `--trusted` | (`corb explain` only) Include the full accepted snapshot for the selected trust key. |
+| `--json` | Machine-readable output for `explain`, `ls`, `workspace ls` and `workspace show`. |
 | `-- PI_ARGS...` | (`corb run` only) Everything after a literal `--` is forwarded to `pi` unmodified. |
 
 A few things worth being explicit about, since the design docs describe a
@@ -240,6 +244,11 @@ It structurally compares that snapshot with the current effective config.
 Any widening requires `--trust-config` before a real run proceeds.
 Examples include new allowed hosts, writable mounts, push permission and removed rules.
 Narrowing changes apply silently. Unknown fields require confirmation too, so new settings fail safe without a classification rule.
+
+After a shared update, review it with `corb workspace show <name>` or `corb explain --workspace <name> --trusted`.
+Both show the full accepted snapshot. Implied-host labels appear only on current settings because snapshots do not record their sources.
+`corb workspace ls` lists status and orphan records without deleting them.
+After a narrowing change, Corb keeps the old snapshot until the next run with `--trust-config`.
 
 Each record stores `acceptedConfig` and its sha256 `configHash`.
 Corb recomputes the hash on read. If it differs, Corb rejects the record.

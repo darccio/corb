@@ -168,6 +168,9 @@ repositories and a submodule's own `.git` file remain outside this protection.
 ```bash
 corb explain ~/Code/packet-loss
 corb run ~/Code/packet-loss --dry-run
+corb workspace ls
+corb workspace show packet-loss
+corb explain --workspace packet-loss --trusted
 ```
 
 Corb keeps personal acceptance records in `~/.config/corb/trusted.json`.
@@ -194,6 +197,29 @@ and its JSON output includes `builtin-rules` on each directory.
 
 CLI overrides are treated as explicit user choices. They affect the running
 session but are excluded from the stored trust snapshot.
+
+After `git pull` updates shared definitions, use `corb workspace ls` to find changed settings.
+Review one workspace with `corb workspace show <name>`.
+Use `corb explain --workspace <name> DIR --trusted` to review a specific extra mount.
+Both print the full accepted snapshot alongside current settings and the trust comparison.
+Accept a widening change with `corb run --workspace <name> --trust-config`.
+
+`narrowed` means the current config removes access and can run without confirmation.
+Removing an allowed host narrows access.
+Changing `rw` to `ro` also narrows an unprotected mount.
+Protected mode changes still require confirmation, as described above.
+The old snapshot stays until a run uses `--trust-config` again.
+An order-only difference is shown separately and does not affect trust.
+
+Implied hosts are marked in current config only.
+Accepted snapshots include the allowed hosts but no source metadata, so the snapshot carries a note instead.
+Secret names and host metadata are visible. Secret values are never printed.
+
+`workspace ls` lists records for missing workspace names after its table.
+These orphan records stay in the personal trust store. Listing never deletes them.
+An extra-mount record for a deleted directory shows `cannot compare` in `show`.
+A workspace without own hosted mounts still shows its details and extra-mount records.
+Run that workspace with `--workspace <name> DIR`.
 
 ## Workspace sources
 

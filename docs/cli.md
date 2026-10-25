@@ -49,7 +49,7 @@ For persistent Pi transcripts and `--continue`, see the
 
 ```bash
 corb explain [DIR] [--workspace NAME] [--dir NAME=HOST[:ro|:rw]] \
-  [--primary NAME] [--json]
+  [--primary NAME] [--trusted] [--json]
 ```
 
 Print the merged configuration and trust verdict without starting a session. Use
@@ -59,6 +59,33 @@ and trust key. JSON uses `null` for DIR when an explicit workspace has no DIR.
 
 Selection, no-DIR behavior, and errors match `corb run`.
 See [Workspaces](workspaces.md#selection-and-primary-directory) for the matching rules.
+
+`--trusted` adds the complete accepted snapshot for the selected key.
+It works with the usual DIR, workspace and mount flags.
+With no record, text says so and JSON has `acceptedSnapshot: null`.
+Without this flag, output has no accepted snapshot.
+The snapshot contains secret names and host metadata, never secret values.
+
+## Workspaces
+
+```bash
+corb workspace ls [--json]
+corb workspace show <name> [--json]
+```
+
+`workspace ls` lists each workspace's source, own hosted mounts and worst trust status.
+The statuses are `none`, `trusted`, `narrowed`, `changed` and `error`.
+It also shows invalid names, replaced copies and orphan trust records.
+The command only reads. It never deletes records.
+
+`workspace show` displays one definition, its current config and full accepted snapshots.
+It compares host records together and extra-mount records against their saved DIR.
+A deleted extra-mount directory shows `cannot compare`.
+Implied-host labels appear on current config only. Accepted snapshots carry no source labels.
+
+`show` takes no DIR. Use `corb explain --workspace <name> DIR --trusted` to inspect a particular folder.
+If a workspace has no own hosted mount, `show` still lists its details and extra-mount records.
+Run it with `corb run --workspace <name> DIR`.
 
 ## Login
 
@@ -115,6 +142,14 @@ Check the host environment, dependencies, cgroup delegation, and required
 credential variables. When `[agent].provider` uses a subscription login, it also
 checks that the login exists and reports the API hosts Corb allows automatically.
 `--verify-secrets` additionally sends the configured credential-verification requests.
+
+The `workspace-trust` line counts trusted, changed and never-trusted workspaces.
+Narrowed settings count as trusted. Pending `--trust-config` changes are normal and do not cause a warning.
+An unreadable workspace causes a warning. A corrupt `trusted.json` causes a failure.
+
+Doctor also checks providers set only in workspace files. This includes files without own mounts.
+A missing workspace-only login produces a warning. A missing global login remains a failure.
+Workspace-only login details show a workspace count and do not list workspace names.
 
 ## Image build
 
