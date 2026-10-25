@@ -73,11 +73,26 @@ export function options(label, { image = base.assetDir, build = false, workspace
       },
     })
     : buildEgressConfig({ allow: hosts, "block-internal-ranges": true, websockets: false }, undefined, {}, audit, label);
+  if (!build && workspace) {
+    const original = egress.httpHooks.onRequest;
+    egress.httpHooks.onRequest = async request => {
+      if (new URL(request.url).hostname !== "dar15-model.invalid") return await original(request);
+      log("synthetic-pi-model", { method: request.method, host: "dar15-model.invalid" });
+      const chunk = (delta, finish_reason = null) => ({
+        id: "dar15", object: "chat.completion.chunk", created: 0, model: "dar15",
+        choices: [{ index: 0, delta, finish_reason }],
+      });
+      const events = [chunk({ role: "assistant", content: "" }), chunk({ content: "ready" }), chunk({}, "stop")];
+      const body = events.map(event => "data: " + JSON.stringify(event) + "\n\n").join("") + "data: [DONE]\n\n";
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    };
+  }
   const mounts = { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() };
   if (build) mounts["/opt/corb-build"] = new ReadonlyProvider(new RealFSProvider(bootstrap.binaryDir));
   if (workspace) {
     const dir = path.join(runtime, "workspace");
     fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(path.join(dir, ".git"))) execFileSync("git", ["init", dir], { stdio: "ignore" });
     mounts["/mnt/corb-raw/work"] = new RealFSProvider(dir);
     mounts[GATE_CONFIG_RAW_ROOT] = buildGateConfigMount();
   }

@@ -33,10 +33,15 @@ async function baseline() {
 }
 
 async function sessionChecks(vm, label) {
-  await run(vm, label + "-agent-tools", "id; go version; psql --version; node --version; pi --version; git --version; bindfs --version", { agent: true });
+  await run(vm, label + "-agent-tools", "set -e; id; go version; psql --version; node --version; pi --version; /usr/local/libexec/real-git --version; cd /work/work; git -P status --short; bindfs --version", { agent: true });
   await run(vm, label + "-workspace", "printf layer-write > /work/work/from-layer; cat /work/work/from-layer; cat /run/corb/gate.json; test -z \"$(ls -A /opt/corb-build)\"", { agent: true });
   await run(vm, label + "-tls", "curl --max-time 30 -sSfI https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz; node -e 'fetch(\"https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz\").then(r=>console.log(r.status))'", { agent: true });
-  await run(vm, label + "-pi", "cd /work/work; timeout 20 pi --no-session --mode json -p 'Reply with the word ready'", { agent: true, required: false });
+  const models = JSON.stringify({ providers: { dar15: { baseUrl: "https://dar15-model.invalid/v1", api: "openai-completions", apiKey: "synthetic-test-value", models: [{ id: "dar15" }] } } });
+  const setup = `const fs = require("node:fs"); fs.mkdirSync("/home/agent/.pi/agent", { recursive: true }); fs.writeFileSync("/home/agent/.pi/agent/models.json", ${JSON.stringify(models)});`;
+  const setupResult = await vm.exec(["/usr/local/bin/dropcap", "1000", "1000", "/usr/bin/node", "-e", setup], { env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: "/home/agent" }, stdout: "buffer", stderr: "buffer" });
+  if (!setupResult.ok) throw new Error("Synthetic Pi model setup failed: " + setupResult.stderr);
+  const pi = await run(vm, label + "-pi", "cd /work/work; timeout 20 pi --provider dar15 --model dar15 --no-session --mode json -p 'Reply with the word ready'", { agent: true });
+  if (!pi.stdout.includes("ready")) throw new Error("Real Pi session did not emit the synthetic reply");
   log(label + "-host-write", { content: fs.readFileSync(path.join(runtime, "workspace/from-layer"), "utf8") });
 }
 
@@ -97,7 +102,7 @@ async function cleanRemovals(vm, label) {
 }
 
 async function negative(kind) {
-  const layer = read("fixed-layer");
+  const layer = read(process.argv[4] ?? "cleaned-original");
   const name = "negative-" + kind;
   const vm = await boot(name, options(name, { image: layer.base.assetDir, build: true }), layer.path);
   let bad;
@@ -124,7 +129,8 @@ async function negative(kind) {
     }
     const manager = await run(checked, name + "-static-manager", "command -v apk.static || true");
     const hashes = await protectedHashes(checked, name + "-protected");
-    const protectedMatch = hashes === read("protected-fixed-base").hashes;
+    const baseline = layer.base.buildId === base.buildId ? "protected-base" : "protected-fixed-base";
+    const protectedMatch = hashes === read(baseline).hashes;
     const result = { kind, gates, apkStaticAbsent: !manager.stdout.trim(), protectedMatch };
     result.accepted = gates.every(gate => gate.ok) && result.apkStaticAbsent && protectedMatch;
     log(name + "-verdict", result);
@@ -132,6 +138,19 @@ async function negative(kind) {
     if (result.accepted) throw new Error("Negative layer was accepted");
   } finally {
     await checked.close();
+  }
+}
+
+async function cleanOriginal() {
+  const layer = read("original-layer");
+  const vm = await boot("cleaned-original", options("cleaned-original", { build: true }), layer.path);
+  try {
+    await cleanRemovals(vm, "cleaned-original");
+    const hashes = await protectedHashes(vm, "cleaned-original-protected");
+    if (hashes !== read("protected-base").hashes) throw new Error("Cleanup changed a protected base file");
+    await checkpoint(vm, "cleaned-original", layer.base);
+  } finally {
+    await vm.close();
   }
 }
 
@@ -183,6 +202,23 @@ async function movedBase() {
   }
 }
 
+async function baseControl() {
+  const vm = await boot("base-control", options("base-control", { workspace: true, verify: true }));
+  try {
+    const gates = [];
+    for (const gate of GATES) {
+      const result = await gate(vm);
+      gates.push(result);
+      log("base-control-gate", result);
+    }
+    await run(vm, "base-git-http1", "/usr/local/libexec/real-git -c http.version=HTTP/1.1 ls-remote https://github.com/octocat/Hello-World.git", { required: false });
+    await run(vm, "base-git-trust-explicit", "/usr/local/libexec/real-git ls-remote https://github.com/octocat/Hello-World.git", { required: false, env: { GIT_SSL_CAINFO: "/run/gondolin/ca-certificates.crt" } });
+    save("base-control", { gates });
+  } finally {
+    await vm.close();
+  }
+}
+
 try {
   if (action === "baseline") await baseline();
   else if (action === "resume") await resume(process.argv[3] ?? "original-layer");
@@ -190,6 +226,8 @@ try {
   else if (action === "negative") await negative(process.argv[3]);
   else if (action === "stack") await stack();
   else if (action === "moved-base") await movedBase();
+  else if (action === "base-control") await baseControl();
+  else if (action === "clean-original") await cleanOriginal();
   else throw new Error("Unknown phase: " + action);
 } catch (err) {
   console.error(err.stack ?? String(err));
