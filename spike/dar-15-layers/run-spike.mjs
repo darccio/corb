@@ -1,0 +1,197 @@
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { base, bootstrap, runtime, log, run, save, read, options, boot, protectedHashes, checkpoint, sha256, diskInfo } from "./common.mjs";
+import { GATES } from "./verify-copy.ts";
+
+const action = process.argv[2];
+
+async function baseline() {
+  log("baseline", { base, bootstrap });
+  const vm = await boot("base-install", options("base-install", { build: true }));
+  try {
+    save("protected-base", { hashes: await protectedHashes(vm, "protected-base") });
+    await run(vm, "base-db", "cat /etc/alpine-release; cat /etc/apk/repositories; cat /etc/apk/world; cat /lib/apk/db/installed");
+    await run(vm, "apk-version", "/opt/corb-build/apk.static --version");
+    const update = await run(vm, "apk-update-https", "/opt/corb-build/apk.static update", { required: false });
+    if (!update.ok) {
+      if (!/certificate|TLS|SSL/i.test(update.stderr + update.stdout)) throw new Error("apk update failed without a TLS trust error");
+      await run(vm, "apk-http-fallback", "sed -i 's@https://@http://@g' /etc/apk/repositories; /opt/corb-build/apk.static update");
+    }
+    await run(vm, "apk-simulate", "/opt/corb-build/apk.static add --simulate go postgresql16-client");
+    await run(vm, "tools-before", "node --version; pi --version; /usr/local/libexec/real-git --version; bindfs --version");
+    const start = performance.now();
+    await run(vm, "apk-add", "/opt/corb-build/apk.static --no-cache add go postgresql16-client");
+    save("base-install-time", { ms: performance.now() - start });
+    await run(vm, "tools-after", "node --version; pi --version; /usr/local/libexec/real-git --version; bindfs --version; go version; psql --version; for c in npm npx su sudo doas apk apk.static; do command -v \"$c\" || true; done", { required: false });
+    save("protected-after-install", { hashes: await protectedHashes(vm, "protected-after-install") });
+    await run(vm, "installed-after", "cat /lib/apk/db/installed");
+    await checkpoint(vm, "original-layer");
+  } finally {
+    await vm.close();
+  }
+}
+
+async function sessionChecks(vm, label) {
+  await run(vm, label + "-agent-tools", "id; go version; psql --version; node --version; pi --version; git --version; bindfs --version", { agent: true });
+  await run(vm, label + "-workspace", "printf layer-write > /work/work/from-layer; cat /work/work/from-layer; cat /run/corb/gate.json; test -z \"$(ls -A /opt/corb-build)\"", { agent: true });
+  await run(vm, label + "-tls", "curl --max-time 30 -sSfI https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz; node -e 'fetch(\"https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz\").then(r=>console.log(r.status))'", { agent: true });
+  await run(vm, label + "-pi", "cd /work/work; timeout 20 pi --no-session --mode json -p 'Reply with the word ready'", { agent: true, required: false });
+  log(label + "-host-write", { content: fs.readFileSync(path.join(runtime, "workspace/from-layer"), "utf8") });
+}
+
+async function resume(name) {
+  const layer = read(name);
+  const before = sha256(layer.path);
+  const image = layer.base.assetDir;
+  const vm = await boot(name + "-resume", options(name + "-resume", { image, workspace: true, verify: true }), layer.path);
+  try {
+    log("resume-file-sha256", { before, after: sha256(layer.path), same: before === sha256(layer.path) });
+    await sessionChecks(vm, name);
+    const gates = [];
+    for (const gate of GATES) {
+      const result = await gate(vm);
+      gates.push(result);
+      log("verify-gate", result);
+    }
+    const managers = await run(vm, "apk-static-path", "command -v apk.static || true");
+    const hashes = await protectedHashes(vm, "protected-resume");
+    const baselineHashes = read(name === "original-layer" ? "protected-base" : "protected-fixed-base").hashes;
+    log("protected-comparison", { same: hashes === baselineHashes, before: baselineHashes, after: hashes });
+    save(name + "-verification", { gates, apkStaticAbsent: !managers.stdout.trim(), protectedMatch: hashes === baselineHashes });
+  } finally {
+    await vm.close();
+  }
+  log("checkpoint-disk-info", diskInfo(layer.path));
+}
+
+async function fixedInstall(name, packages) {
+  const image = read("image-fixed");
+  const vm = await boot(name, options(name, { image: image.assetDir, build: true }));
+  try {
+    const before = await protectedHashes(vm, name + "-protected-before");
+    save("protected-fixed-base", { hashes: before });
+    await run(vm, name + "-base-db", "cat /lib/apk/db/installed");
+    const start = performance.now();
+    await run(vm, name + "-simulate", "/opt/corb-build/apk.static add --simulate " + packages);
+    await run(vm, name + "-install", "/opt/corb-build/apk.static --no-cache add " + packages);
+    save(name + "-install-time", { ms: performance.now() - start });
+    const after = await protectedHashes(vm, name + "-protected-after");
+    log(name + "-protected-comparison", { same: before === after });
+    await run(vm, name + "-tools", "node --version; pi --version; /usr/local/libexec/real-git --version; bindfs --version; go version; psql --version; for c in npm npx su sudo doas apk apk.static; do command -v \"$c\" || true; done", { required: false });
+    await run(vm, name + "-db-after", "cat /lib/apk/db/installed");
+    await cleanRemovals(vm, name);
+    await checkpoint(vm, name, image);
+  } finally {
+    await vm.close();
+  }
+}
+
+async function cleanRemovals(vm, label) {
+  const gate = GATES.find(candidate => candidate.name === "gateRemovals");
+  log(label + "-removals-before-cleanup", await gate(vm));
+  await run(vm, label + "-remove-restored-tools", "rm -f /usr/bin/npm /usr/bin/npx /bin/su /usr/bin/su /usr/bin/sudo /usr/bin/doas /sbin/apk");
+  const result = await gate(vm);
+  log(label + "-removals-after-cleanup", result);
+  if (!result.ok) throw new Error("Removals gate still fails after cleanup");
+}
+
+async function negative(kind) {
+  const layer = read("fixed-layer");
+  const name = "negative-" + kind;
+  const vm = await boot(name, options(name, { image: layer.base.assetDir, build: true }), layer.path);
+  let bad;
+  try {
+    const mutations = {
+      suid: "cp /bin/busybox /usr/local/bin/dar15-suid; chmod 4755 /usr/local/bin/dar15-suid",
+      apk: "cp /opt/corb-build/apk.static /usr/local/bin/apk.static; chmod 755 /usr/local/bin/apk.static",
+      allowlist: "cp /bin/busybox /usr/local/bin/dar15-suid; chmod 4755 /usr/local/bin/dar15-suid; printf '\\n/usr/local/bin/dar15-suid\\n' >> /etc/corb/suid-allowlist.txt",
+      dropcap: "printf 'DAR15' >> /usr/local/bin/dropcap",
+    };
+    if (!mutations[kind]) throw new Error("Unknown negative case " + kind);
+    await run(vm, name + "-mutation", mutations[kind]);
+    bad = await checkpoint(vm, name, layer.base);
+  } finally {
+    await vm.close();
+  }
+  const checked = await boot(name + "-check", options(name + "-check", { image: layer.base.assetDir, workspace: true, verify: true }), bad.path);
+  try {
+    const gates = [];
+    for (const gate of GATES) {
+      const result = await gate(checked);
+      gates.push(result);
+      log(name + "-gate", result);
+    }
+    const manager = await run(checked, name + "-static-manager", "command -v apk.static || true");
+    const hashes = await protectedHashes(checked, name + "-protected");
+    const protectedMatch = hashes === read("protected-fixed-base").hashes;
+    const result = { kind, gates, apkStaticAbsent: !manager.stdout.trim(), protectedMatch };
+    result.accepted = gates.every(gate => gate.ok) && result.apkStaticAbsent && protectedMatch;
+    log(name + "-verdict", result);
+    save(name + "-verification", result);
+    if (result.accepted) throw new Error("Negative layer was accepted");
+  } finally {
+    await checked.close();
+  }
+}
+
+async function stack() {
+  const first = read("go-only");
+  const vm = await boot("stack", options("stack", { image: first.base.assetDir, build: true }), first.path);
+  let second;
+  try {
+    await run(vm, "stack-install", "/opt/corb-build/apk.static --no-cache add postgresql16-client");
+    await cleanRemovals(vm, "stack");
+    second = await checkpoint(vm, "stacked-layer", first.base);
+  } finally {
+    await vm.close();
+  }
+  const info = diskInfo(second.path);
+  log("stack-disk-info", info);
+  const hidden = first.path + ".hidden";
+  fs.renameSync(first.path, hidden);
+  let checked;
+  try {
+    checked = await boot("stack-without-first", options("stack-without-first", { image: first.base.assetDir, workspace: true }), second.path);
+    await sessionChecks(checked, "stack-without-first");
+  } finally {
+    if (checked) await checked.close();
+    fs.renameSync(hidden, first.path);
+  }
+  log("stack-size-comparison", { stacked: second.bytes, single: read("fixed-layer").bytes });
+}
+
+async function movedBase() {
+  const layer = read("fixed-layer");
+  const relocated = path.join(runtime, "relocated-base");
+  fs.mkdirSync(relocated, { recursive: true });
+  for (const name of fs.readdirSync(layer.base.assetDir)) {
+    const from = path.join(layer.base.assetDir, name);
+    const to = path.join(relocated, name);
+    if (!fs.statSync(from).isFile()) continue;
+    if (!fs.existsSync(to)) fs.copyFileSync(from, to, fs.constants.COPYFILE_FICLONE);
+  }
+  const copied = path.join(runtime, "relocated-layer.qcow2");
+  fs.copyFileSync(layer.path, copied);
+  const before = sha256(copied);
+  const vm = await boot("moved-base", options("moved-base", { image: relocated, workspace: true }), copied);
+  try {
+    await sessionChecks(vm, "moved-base");
+    log("moved-base-hash", { before, after: sha256(copied), changed: before !== sha256(copied), info: diskInfo(copied) });
+  } finally {
+    await vm.close();
+  }
+}
+
+try {
+  if (action === "baseline") await baseline();
+  else if (action === "resume") await resume(process.argv[3] ?? "original-layer");
+  else if (action === "fixed-install") await fixedInstall(process.argv[3] ?? "fixed-layer", process.argv[4] ?? "go postgresql16-client");
+  else if (action === "negative") await negative(process.argv[3]);
+  else if (action === "stack") await stack();
+  else if (action === "moved-base") await movedBase();
+  else throw new Error("Unknown phase: " + action);
+} catch (err) {
+  console.error(err.stack ?? String(err));
+  process.exitCode = 1;
+}
