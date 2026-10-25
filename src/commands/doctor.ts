@@ -189,7 +189,21 @@ function checkQemu(pathDirs: readonly string[]): DoctorCheckResult {
 // Docker
 // ---------------------------------------------------------------------------
 
-function checkDocker(pathDirs: readonly string[]): DoctorCheckResult {
+/**
+ * Runs an external command for a check and returns its stdout. Throws when
+ * the command fails, exits non-zero, or takes longer than
+ * `COMMAND_TIMEOUT_MS`. Injectable through `RunDoctorChecksOptions.runCommand`
+ * so a test of `runDoctorChecks()` does not depend on how quickly the host's
+ * real `docker` daemon or `go` toolchain answers.
+ */
+export type CommandRunner = (command: string, args: readonly string[]) => string;
+
+const COMMAND_TIMEOUT_MS = 5000;
+
+const runCommandForReal: CommandRunner = (command, args) =>
+  execFileSync(command, [...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: COMMAND_TIMEOUT_MS });
+
+export function checkDocker(pathDirs: readonly string[], runCommand: CommandRunner = runCommandForReal): DoctorCheckResult {
   const location = locateTool("docker", pathDirs);
   if (location === "missing") {
     return fail(
@@ -199,7 +213,7 @@ function checkDocker(pathDirs: readonly string[]): DoctorCheckResult {
     );
   }
   try {
-    execFileSync("docker", ["info"], { stdio: "ignore", timeout: 5000 });
+    runCommand("docker", ["info"]);
   } catch (err) {
     return fail(
       "docker",
@@ -863,14 +877,17 @@ export interface RunDoctorChecksOptions {
   verifySecrets?: boolean;
   /** Forwarded to `checkVerifySecrets` verbatim; defaults to the real global `fetch`. Exists so this orchestration function can itself be unit-tested without a real network call. */
   fetchImpl?: typeof fetch;
+  /** Runs `docker info` and `go version`; defaults to the real commands. See `CommandRunner`. */
+  runCommand?: CommandRunner;
 }
 
 export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Promise<DoctorReport> {
   const pathDirs = splitPath(process.env.PATH);
   const configPath = configTomlPath(corbConfigDir());
   const configResult = loadDoctorConfigLayer(configPath);
+  const runCommand = options.runCommand ?? runCommandForReal;
 
-  const checks: DoctorCheckResult[] = [checkKvm(), checkQemu(pathDirs), checkDocker(pathDirs)];
+  const checks: DoctorCheckResult[] = [checkKvm(), checkQemu(pathDirs), checkDocker(pathDirs, runCommand)];
 
   checks.push(classifyNodeVersion(process.version, readEnginesNodeFloor()));
 
@@ -881,7 +898,7 @@ export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Pro
     } else {
       let installed: MinorVersion | undefined;
       try {
-        installed = parseGoVersionOutput(execFileSync("go", ["version"], { encoding: "utf8", timeout: 5000 }));
+        installed = parseGoVersionOutput(runCommand("go", ["version"]));
       } catch {
         installed = undefined;
       }

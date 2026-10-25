@@ -3,19 +3,23 @@
 // daemon, a subprocess version query, a cgroup file), so most of what's
 // meaningfully unit-testable here is the *classification* logic each check
 // reduces to, against a fabricated input — not the real filesystem or a
-// real subprocess. Genuinely OS-dependent checks (`/dev/kvm`, `docker
-// info`, `qemu-system-*` on PATH, the real Go/Node toolchain, the real
-// e2fsprogs layout) are exercised for real via `runDoctorChecks()` only in
-// one end-to-end smoke test below, and otherwise verified by hand against
-// this machine's real environment (see the M3.5 report) — not re-mocked
-// here, which would prove nothing beyond "the mock returns what it was
-// told to return".
+// real subprocess. Genuinely OS-dependent checks (`/dev/kvm`,
+// `qemu-system-*` on PATH, the real Node toolchain, the real e2fsprogs
+// layout) are exercised for real via `runDoctorChecks()` only in one
+// end-to-end smoke test below, and otherwise verified by hand against this
+// machine's real environment (see the M3.5 report) — not re-mocked here,
+// which would prove nothing beyond "the mock returns what it was told to
+// return". The one exception is the two subprocesses (`docker info`, `go
+// version`): the smoke test answers them with a stub `runCommand`, because
+// their latency belongs to the host, not to corb. A slow Docker daemon on a
+// CI runner used to push that test past its timeout.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildDoctorReport,
+  checkDocker,
   checkRequiredSecrets,
   checkBrokeredLogin,
   checkSecretsConfigured,
@@ -35,6 +39,7 @@ import {
   qemuBinaryName,
   runDoctorChecks,
   splitPath,
+  type CommandRunner,
   type DoctorCheckResult,
   type DoctorConfigLoad,
 } from "../../../src/commands/doctor.ts";
@@ -555,15 +560,18 @@ describe("commands/doctor: checkVerifySecrets (opt-in, --verify-secrets only)", 
 });
 
 describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () => {
-  // Not mocked: this is the one place the real OS is exercised in this
-  // suite, matching the module comment's own honesty about what's
-  // meaningfully unit-testable versus what's only verified for real. Kept
+  // Not mocked, except for the two subprocesses (see the module comment):
+  // this is the one place the real OS is exercised in this suite, matching
+  // the module comment's own honesty about what's meaningfully
+  // unit-testable versus what's only verified for real. Kept
   // to structural assertions (every check present, ok reflects fail
   // status) rather than asserting exact statuses, since those are
   // legitimately machine-dependent — see the M3.5 report for this
   // machine's real `corb doctor` output.
   let previousConfigDir: string | undefined;
   let configDir: string;
+  // Answers instantly, like a reachable Docker daemon and a current Go toolchain.
+  const runCommand: CommandRunner = (command) => (command === "go" ? "go version go1.24.0 linux/amd64\n" : "");
 
   beforeEach(() => {
     configDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-doctor-config-"));
@@ -581,7 +589,7 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
   });
 
   it("returns one result per check, with unique names, and ok matching the fail count", async () => {
-    const report = await runDoctorChecks();
+    const report = await runDoctorChecks({ runCommand });
     const names = report.checks.map((c) => c.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual(
@@ -612,11 +620,11 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
     );
     process.env.FOO = "some-value";
     try {
-      const withoutVerify = await runDoctorChecks();
+      const withoutVerify = await runDoctorChecks({ runCommand });
       expect(withoutVerify.checks.map((c) => c.name)).not.toContain("verify-secret:FOO");
 
       const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 200 })) as unknown as typeof fetch;
-      const withVerify = await runDoctorChecks({ verifySecrets: true, fetchImpl });
+      const withVerify = await runDoctorChecks({ verifySecrets: true, fetchImpl, runCommand });
       expect(withVerify.checks.map((c) => c.name)).toContain("verify-secret:FOO");
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     } finally {
@@ -675,5 +683,45 @@ describe("commands/doctor: checkBrokeredLogin", () => {
 
   it("stops checkSecretsConfigured from asking for an API key", () => {
     expect(checkSecretsConfigured(codexLayer(["chatgpt.com"])).status).toBe("ok");
+  });
+});
+
+describe("commands/doctor: checkDocker", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-doctor-docker-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function installFakeDocker(): void {
+    const bin = path.join(dir, "docker");
+    fs.writeFileSync(bin, "");
+    fs.chmodSync(bin, 0o755);
+  }
+
+  it("fails without running anything when docker is not on PATH", () => {
+    const runCommand = vi.fn<CommandRunner>();
+    expect(checkDocker([dir], runCommand).status).toBe("fail");
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("is ok when 'docker info' succeeds", () => {
+    installFakeDocker();
+    const runCommand = vi.fn<CommandRunner>(() => "");
+    expect(checkDocker([dir], runCommand).status).toBe("ok");
+    expect(runCommand).toHaveBeenCalledWith("docker", ["info"]);
+  });
+
+  it("fails, quoting the error, when 'docker info' fails or times out", () => {
+    installFakeDocker();
+    const result = checkDocker([dir], () => {
+      throw new Error("spawnSync docker ETIMEDOUT");
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("ETIMEDOUT");
   });
 });
