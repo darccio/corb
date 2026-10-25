@@ -1,0 +1,101 @@
+{
+  "go": "go1.27.3",
+  "metadataUrl": "https://go.dev/dl/?mode=json&include=all",
+  "sourceUrl": "https://go.dev/dl/go1.27.3.linux-amd64.tar.gz",
+  "release": {
+    "filename": "go1.27.3.linux-amd64.tar.gz",
+    "os": "linux",
+    "arch": "amd64",
+    "version": "go1.27.3",
+    "sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+    "size": 70588678,
+    "kind": "archive"
+  },
+  "actualArchiveSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+  "treeSha256": "dcbf86ee66b1f6f03677befc8440855d4b3d172dc3b9c9536a8ca34ab4a8e33d",
+  "filesSha256": "76036a593e7660afbb422fc6f0d9446a37c39bdeeab7cc9b32458feed83db75b",
+  "treeEntries": 17373,
+  "fileCount": 15657,
+  "elf": [
+    {
+      "path": "go/bin/go",
+      "sha256": "5f5eb6d0b2fb6aa0bb5d5f8c5f1c944e0de955c925f0111af92a9d8f79680b5b",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/bin/gofmt",
+      "sha256": "fd464d1c9098a6714d06bd3fcd2a1fedcdd291e710241160ebb663bf99adf2f8",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/asm",
+      "sha256": "fdcf20e7e2d9a602979b96ced85e6ba6529551ae23a38edcd80181df4566b7a9",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/cgo",
+      "sha256": "9f67e42d7910067eb5857e5321e1d04aaaa2d22b8ff6d8e1c63bb4365b651049",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/compile",
+      "sha256": "c331d8fc6c4ae9dbe20e8198435db0455f2a5ca55d2d02fc6d7337c906be8283",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/cover",
+      "sha256": "02d4e5525baf6f7ab661430549dc1137321fc9e27b6ba71797123c305355b46d",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/fix",
+      "sha256": "ae0e0eafb4e2e03ff53947e4aae5b1985b197bd196fc7bb75022620c9bb629ad",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/link",
+      "sha256": "c9990b939ed48a77ca9a29b33d408d44b56fc4950a28e3d3533025a8dc08b2fe",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/preprofile",
+      "sha256": "75cf4cecf37908adab3c352779bbd4b23fb85b352918711e8cf8fba95ca6d969",
+      "interpreter": null,
+      "needed": []
+    },
+    {
+      "path": "go/pkg/tool/linux_amd64/vet",
+      "sha256": "4c459358f5fc720f74fc53dd0fc032655e038e2461d8230f1667d0931661ff6c",
+      "interpreter": null,
+      "needed": []
+    }
+  ],
+  "nonToolElfFixtureCount": 58,
+  "oras": {
+    "version": "Version:        1.3.5\nGo version:     go1.26.9\nOS/Arch:        linux/amd64\nGit commit:     d6e7b583b9afc7fa3798de77181c53c94418d727\nGit tree state: clean\n",
+    "sourceUrl": "https://github.com/oras-project/oras/releases/download/v1.3.5/oras_1.3.5_linux_amd64.tar.gz",
+    "expectedArchiveSha256": "f48a73ea6d026a862c3919fc773da9a8c86fc259c2c737d5baed3b8b9614ad22",
+    "actualArchiveSha256": "f48a73ea6d026a862c3919fc773da9a8c86fc259c2c737d5baed3b8b9614ad22"
+  },
+  "oci": {
+    "manifestDigest": "sha256:fc05a8b6beae66ab326502203fdab003ec16c3916f7b8a82eed4447e67ed56a6",
+    "roundtripArchiveSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+    "baseBuildIdPresent": false,
+    "remoteRegistryTested": false,
+    "copyOutput": "Exists  fc05a8b6beae application/vnd.oci.image.manifest.v1+json\nCopied [oci-layout] /home/dario/Code/corb/image/build/dar-16-portable-go/oci-source:go-sdk => [oci-layout] /home/dario/Code/corb/image/build/dar-16-portable-go/oci-roundtrip:go-sdk\nDigest: sha256:fc05a8b6beae66ab326502203fdab003ec16c3916f7b8a82eed4447e67ed56a6\n"
+  },
+  "negative": {
+    "tamperedArchiveSha256": "87c5f3b2cba9e9a932180359bfc39dd9360f68fee16e086e545969aa4440b348",
+    "expectedSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+    "verifierError": "SDK archive checksum or size mismatch",
+    "rejectedBeforeVm": true
+  }
+}

@@ -1,0 +1,292 @@
+{
+  "base": "stock",
+  "identity": {
+    "version": 1,
+    "policy": "portable-go-copy-v1",
+    "baseBuildId": "2747a805-7a7e-5798-84ca-077fb5086311",
+    "baseManifestSha256": "75160d7a2ebf9b112ec097f9cf1cc4ba041685268c19733f663aa1d81f64a9b1",
+    "baseAssetChecksums": {
+      "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+      "initramfs": "734d8c75317fdde937bb91d20a6d82bab2b1f844fe6312b0b8759a2210eec38e",
+      "rootfs": "66dcee4cc7bcc04b67f1567a806bc16e8d0c00e0b09763593f72b4841533b5cf",
+      "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+      "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "goArchiveSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+    "goTreeSha256": "dcbf86ee66b1f6f03677befc8440855d4b3d172dc3b9c9536a8ca34ab4a8e33d"
+  },
+  "compositionSha256": "1c71e89b3f0f0a82e600b3be8929f887683f3416eb000b93e4e1a6dd7a9ab418",
+  "checkpoint": {
+    "version": 1,
+    "name": "stock-composed",
+    "createdAt": "2026-10-25T20:41:14.486Z",
+    "diskFile": "stock-composed.qcow2",
+    "guestAssetBuildId": "2747a805-7a7e-5798-84ca-077fb5086311",
+    "snapshotKind": "disk",
+    "createdWithVmm": "qemu",
+    "compatibleVmm": [
+      "qemu",
+      "krun"
+    ]
+  },
+  "checkpointSha256": "57bf26fb0fab30e29da1b1d0e8ce646649745668cd4afcbbefe5e4621811b93e",
+  "baselineGates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+    },
+    {
+      "name": "ca-trust",
+      "ok": false,
+      "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "candidateGates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+    },
+    {
+      "name": "ca-trust",
+      "ok": false,
+      "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "protectedUnchanged": true,
+  "packageDatabaseUnchanged": true,
+  "database": {
+    "sha256": "9d4b040c7a4572dcb1f225398f532cfa7d0a4bca7ad8d5086cc22784b24bd96e",
+    "identities": [
+      {
+        "P": "alpine-baselayout",
+        "V": "3.7.1-r8",
+        "A": "x86_64"
+      },
+      {
+        "P": "alpine-baselayout-data",
+        "V": "3.7.1-r8",
+        "A": "x86_64"
+      },
+      {
+        "P": "alpine-keys",
+        "V": "2.6-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "alpine-release",
+        "V": "3.23.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "apk-tools",
+        "V": "3.0.1-r1",
+        "A": "x86_64"
+      },
+      {
+        "P": "busybox",
+        "V": "1.37.0-r29",
+        "A": "x86_64"
+      },
+      {
+        "P": "busybox-binsh",
+        "V": "1.37.0-r29",
+        "A": "x86_64"
+      },
+      {
+        "P": "ca-certificates-bundle",
+        "V": "20251003-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "fuse3-libs",
+        "V": "3.18.3-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libapk",
+        "V": "3.0.1-r1",
+        "A": "x86_64"
+      },
+      {
+        "P": "libcrypto3",
+        "V": "3.5.4-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libgcc",
+        "V": "15.2.0-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "libssl3",
+        "V": "3.5.4-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libstdc++",
+        "V": "15.2.0-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "musl",
+        "V": "1.2.5-r24",
+        "A": "x86_64"
+      },
+      {
+        "P": "musl-utils",
+        "V": "1.2.5-r21",
+        "A": "x86_64"
+      },
+      {
+        "P": "scanelf",
+        "V": "1.3.8-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "ssl_client",
+        "V": "1.37.0-r29",
+        "A": "x86_64"
+      },
+      {
+        "P": "zlib",
+        "V": "1.3.1-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "zstd-libs",
+        "V": "1.5.7-r2",
+        "A": "x86_64"
+      }
+    ]
+  },
+  "agent": {
+    "pureGoHttpRequests": 0,
+    "sdkFilesSha256": "76036a593e7660afbb422fc6f0d9446a37c39bdeeab7cc9b32458feed83db75b",
+    "report": [
+      {
+        "name": "alpha",
+        "count": 4,
+        "total": 10,
+        "digest": "f6bd10506e9a4daed7c03eda2f2fde54be3bd58eee49dab471c18a888ffbdb6f"
+      },
+      {
+        "name": "beta",
+        "count": 3,
+        "total": 21,
+        "digest": "fbdcaf9b0945f045fa0ffd665f74d3cca10c6d79f394a691da4d1ecf5dac7bde"
+      }
+    ]
+  },
+  "guestIdentity": "3.23.0\nLinux (none) 6.18.58-0-virt #1-Alpine SMP PREEMPT_DYNAMIC 2026-10-21 13:45:15 x86_64 Linux\ngit version 2.52.0\n{\n  \"user\": \"agent\",\n  \"uid\": 1000,\n  \"gid\": 1000,\n  \"piVersion\": \"1.4.0\",\n  \"paths\": {\n    \"dropcapPath\": \"/usr/local/bin/dropcap\",\n    \"home\": \"/home/agent\",\n    \"sessionsDir\": \"/home/agent/sessions\"\n  }\n}\n",
+  "resume": {
+    "agent": {
+      "pureGoHttpRequests": 0,
+      "sdkFilesSha256": "76036a593e7660afbb422fc6f0d9446a37c39bdeeab7cc9b32458feed83db75b",
+      "report": [
+        {
+          "name": "alpha",
+          "count": 4,
+          "total": 10,
+          "digest": "f6bd10506e9a4daed7c03eda2f2fde54be3bd58eee49dab471c18a888ffbdb6f"
+        },
+        {
+          "name": "beta",
+          "count": 3,
+          "total": 21,
+          "digest": "fbdcaf9b0945f045fa0ffd665f74d3cca10c6d79f394a691da4d1ecf5dac7bde"
+        }
+      ]
+    },
+    "protectedUnchanged": true,
+    "packageDatabaseUnchanged": true,
+    "gates": [
+      {
+        "name": "user",
+        "ok": true,
+        "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+      },
+      {
+        "name": "privilege-drop",
+        "ok": true,
+        "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+      },
+      {
+        "name": "suid",
+        "ok": true,
+        "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+      },
+      {
+        "name": "removals",
+        "ok": true,
+        "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+      },
+      {
+        "name": "ca-trust",
+        "ok": false,
+        "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+      },
+      {
+        "name": "git-gh-shimmed",
+        "ok": true,
+        "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+      },
+      {
+        "name": "pi",
+        "ok": true,
+        "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+      }
+    ]
+  }
+}

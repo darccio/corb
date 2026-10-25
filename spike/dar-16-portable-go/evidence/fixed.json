@@ -1,0 +1,467 @@
+{
+  "base": "fixed",
+  "identity": {
+    "version": 1,
+    "policy": "portable-go-copy-v1",
+    "baseBuildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+    "baseManifestSha256": "61be6c61156222dc618c8146b7aac481ccbb67311d4104aaf033d879e253bd5a",
+    "baseAssetChecksums": {
+      "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+      "initramfs": "017572642b872439da8f5b5ca12783a3a3abdc4f7b12272b92dac6e0dd7bcdb5",
+      "rootfs": "de13c9757a2aaef4aecbc331bbb54416940e8f0dca4367ffbd7b766e9716cec7",
+      "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+      "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "goArchiveSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+    "goTreeSha256": "dcbf86ee66b1f6f03677befc8440855d4b3d172dc3b9c9536a8ca34ab4a8e33d"
+  },
+  "compositionSha256": "839b9de2e2fb96e6748417d401d15b4da898d6915044748792275837fd91cae5",
+  "checkpoint": {
+    "version": 1,
+    "name": "fixed-composed",
+    "createdAt": "2026-10-25T20:42:28.210Z",
+    "diskFile": "fixed-composed.qcow2",
+    "guestAssetBuildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+    "snapshotKind": "disk",
+    "createdWithVmm": "qemu",
+    "compatibleVmm": [
+      "qemu",
+      "krun"
+    ]
+  },
+  "checkpointSha256": "829b44947a0a76e905cb0db6dce494ed62d26be007a9fbb8c981a54ef7008b7d",
+  "baselineGates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+    },
+    {
+      "name": "ca-trust",
+      "ok": false,
+      "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "candidateGates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+    },
+    {
+      "name": "ca-trust",
+      "ok": false,
+      "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "protectedUnchanged": true,
+  "packageDatabaseUnchanged": true,
+  "database": {
+    "sha256": "dfecb486abbffdcf7aa393474705db782d35c5cea9a5f8d0a5ca437dfa38f8d0",
+    "identities": [
+      {
+        "P": "ada-libs",
+        "V": "3.3.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "alpine-baselayout",
+        "V": "3.7.1-r8",
+        "A": "x86_64"
+      },
+      {
+        "P": "alpine-baselayout-data",
+        "V": "3.7.1-r8",
+        "A": "x86_64"
+      },
+      {
+        "P": "alpine-keys",
+        "V": "2.6-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "alpine-release",
+        "V": "3.23.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "bash",
+        "V": "5.3.3-r1",
+        "A": "x86_64"
+      },
+      {
+        "P": "brotli-libs",
+        "V": "1.2.1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "busybox",
+        "V": "1.37.0-r29",
+        "A": "x86_64"
+      },
+      {
+        "P": "busybox-binsh",
+        "V": "1.37.0-r29",
+        "A": "x86_64"
+      },
+      {
+        "P": "c-ares",
+        "V": "1.34.9-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "ca-certificates",
+        "V": "20261020-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "ca-certificates-bundle",
+        "V": "20251003-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "curl",
+        "V": "8.23.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "fd",
+        "V": "10.2.0-r3",
+        "A": "x86_64"
+      },
+      {
+        "P": "fuse3-libs",
+        "V": "3.18.3-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "git",
+        "V": "2.52.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "git-init-template",
+        "V": "2.52.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "github-cli",
+        "V": "2.83.0-r6",
+        "A": "x86_64"
+      },
+      {
+        "P": "icu-data-en",
+        "V": "76.1-r1",
+        "A": "x86_64"
+      },
+      {
+        "P": "icu-libs",
+        "V": "76.1-r1",
+        "A": "x86_64"
+      },
+      {
+        "P": "jemalloc",
+        "V": "5.3.0-r6",
+        "A": "x86_64"
+      },
+      {
+        "P": "jq",
+        "V": "1.8.2-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "less",
+        "V": "685-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libcrypto3",
+        "V": "3.5.4-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libcurl",
+        "V": "8.23.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libedit",
+        "V": "20251016.3.1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libexpat",
+        "V": "2.9.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libgcc",
+        "V": "15.2.0-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "libidn2",
+        "V": "2.3.8-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libncursesw",
+        "V": "6.5_p20251123-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libpsl",
+        "V": "0.21.5-r3",
+        "A": "x86_64"
+      },
+      {
+        "P": "libssl3",
+        "V": "3.5.4-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "libstdc++",
+        "V": "15.2.0-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "libunistring",
+        "V": "1.4.1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "musl",
+        "V": "1.2.5-r24",
+        "A": "x86_64"
+      },
+      {
+        "P": "musl-utils",
+        "V": "1.2.5-r21",
+        "A": "x86_64"
+      },
+      {
+        "P": "ncurses-terminfo-base",
+        "V": "6.5_p20251123-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "nghttp2-libs",
+        "V": "1.69.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "nodejs",
+        "V": "24.22.1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "npm",
+        "V": "11.11.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "oniguruma",
+        "V": "6.9.10-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "openssh-client-common",
+        "V": "10.2_p1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "openssh-client-default",
+        "V": "10.2_p1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "openssh-keygen",
+        "V": "10.2_p1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "pcre2",
+        "V": "10.49-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "readline",
+        "V": "8.3.1-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "ripgrep",
+        "V": "15.1.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "scanelf",
+        "V": "1.3.8-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "simdjson",
+        "V": "3.12.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "simdutf",
+        "V": "7.5.0-r1",
+        "A": "x86_64"
+      },
+      {
+        "P": "sqlite-libs",
+        "V": "3.53.4-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "ssl_client",
+        "V": "1.37.0-r29",
+        "A": "x86_64"
+      },
+      {
+        "P": "tzdata",
+        "V": "2026e-r0",
+        "A": "x86_64"
+      },
+      {
+        "P": "zlib",
+        "V": "1.3.1-r2",
+        "A": "x86_64"
+      },
+      {
+        "P": "zstd-libs",
+        "V": "1.5.7-r2",
+        "A": "x86_64"
+      }
+    ]
+  },
+  "agent": {
+    "pureGoHttpRequests": 0,
+    "sdkFilesSha256": "76036a593e7660afbb422fc6f0d9446a37c39bdeeab7cc9b32458feed83db75b",
+    "report": [
+      {
+        "name": "alpha",
+        "count": 4,
+        "total": 10,
+        "digest": "f6bd10506e9a4daed7c03eda2f2fde54be3bd58eee49dab471c18a888ffbdb6f"
+      },
+      {
+        "name": "beta",
+        "count": 3,
+        "total": 21,
+        "digest": "fbdcaf9b0945f045fa0ffd665f74d3cca10c6d79f394a691da4d1ecf5dac7bde"
+      }
+    ]
+  },
+  "guestIdentity": "3.23.0\nLinux (none) 6.18.58-0-virt #1-Alpine SMP PREEMPT_DYNAMIC 2026-10-21 13:45:15 x86_64 Linux\ngit version 2.52.0\n{\n  \"user\": \"agent\",\n  \"uid\": 1000,\n  \"gid\": 1000,\n  \"piVersion\": \"1.4.0\",\n  \"paths\": {\n    \"dropcapPath\": \"/usr/local/bin/dropcap\",\n    \"home\": \"/home/agent\",\n    \"sessionsDir\": \"/home/agent/sessions\"\n  }\n}\n",
+  "resume": {
+    "agent": {
+      "pureGoHttpRequests": 0,
+      "sdkFilesSha256": "76036a593e7660afbb422fc6f0d9446a37c39bdeeab7cc9b32458feed83db75b",
+      "report": [
+        {
+          "name": "alpha",
+          "count": 4,
+          "total": 10,
+          "digest": "f6bd10506e9a4daed7c03eda2f2fde54be3bd58eee49dab471c18a888ffbdb6f"
+        },
+        {
+          "name": "beta",
+          "count": 3,
+          "total": 21,
+          "digest": "fbdcaf9b0945f045fa0ffd665f74d3cca10c6d79f394a691da4d1ecf5dac7bde"
+        }
+      ]
+    },
+    "protectedUnchanged": true,
+    "packageDatabaseUnchanged": true,
+    "gates": [
+      {
+        "name": "user",
+        "ok": true,
+        "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+      },
+      {
+        "name": "privilege-drop",
+        "ok": true,
+        "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+      },
+      {
+        "name": "suid",
+        "ok": true,
+        "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+      },
+      {
+        "name": "removals",
+        "ok": true,
+        "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+      },
+      {
+        "name": "ca-trust",
+        "ok": false,
+        "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+      },
+      {
+        "name": "git-gh-shimmed",
+        "ok": true,
+        "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+      },
+      {
+        "name": "pi",
+        "ok": true,
+        "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+      }
+    ]
+  }
+}

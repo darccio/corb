@@ -1,0 +1,47 @@
+{
+  "portability": "go-with-limits",
+  "payloadSha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+  "treeSha256": "dcbf86ee66b1f6f03677befc8440855d4b3d172dc3b9c9536a8ca34ab4a8e33d",
+  "summaryAudit": {
+    "reusedCompletedTrials": true,
+    "newVmBoots": 0,
+    "harnessSha256": "6f7f583d6f6bee300db67aec74d1e851ffe2c84084f44e39a592347cb3ba3d7d",
+    "gateSourceSha256": "d74d56031bc003dd4205010cd891e39b9c49d8d813d28de38fb989e9bfc0ba08",
+    "adapterSha256": "33e8bd797f3d5113612568246ddc72d6805d863f2b2b8611d48e7cebdb646d31"
+  },
+  "bases": [
+    {
+      "name": "stock",
+      "buildId": "2747a805-7a7e-5798-84ca-077fb5086311",
+      "rootfsSha256": "66dcee4cc7bcc04b67f1567a806bc16e8d0c00e0b09763593f72b4841533b5cf",
+      "compositionSha256": "1c71e89b3f0f0a82e600b3be8929f887683f3416eb000b93e4e1a6dd7a9ab418",
+      "checkpointSha256": "57bf26fb0fab30e29da1b1d0e8ce646649745668cd4afcbbefe5e4621811b93e",
+      "baselineGatePasses": 6,
+      "composedGatePasses": 6,
+      "resumedGatePasses": 6
+    },
+    {
+      "name": "fixed",
+      "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+      "rootfsSha256": "de13c9757a2aaef4aecbc331bbb54416940e8f0dca4367ffbd7b766e9716cec7",
+      "compositionSha256": "839b9de2e2fb96e6748417d401d15b4da898d6915044748792275837fd91cae5",
+      "checkpointSha256": "829b44947a0a76e905cb0db6dce494ed62d26be007a9fbb8c981a54ef7008b7d",
+      "baselineGatePasses": 6,
+      "composedGatePasses": 6,
+      "resumedGatePasses": 6
+    }
+  ],
+  "treeUnchanged": true,
+  "refsUnchanged": true,
+  "baseAssetsUnchanged": true,
+  "wrongBaseRejected": true,
+  "pureGoHttpRequests": 0,
+  "directSdkMountTested": false,
+  "copyingTested": true,
+  "checkpointCacheTested": true,
+  "imageGatesAllPassed": false,
+  "ownedPids": [],
+  "vmRegistryEmpty": true,
+  "cgoTested": false,
+  "registryTransportTested": false
+}

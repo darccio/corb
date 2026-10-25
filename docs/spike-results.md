@@ -1400,3 +1400,167 @@ All paths below are under `spike/dar-15-layers/`.
 | `evidence-36-moved-base.log` | Copied checkpoint rebase, hash change, readable trailer, real session checks |
 | `evidence-37-ingress-gc.log`, `evidence-38-concurrent-resume.log` | Isolated ingress/GC and two safe concurrent resumers |
 | `evidence-39-exact-pin-verification.log` | All 18 exact pins, signed packages and payloads, plus two rejection checks |
+
+## DAR-16: one portable Go SDK on two Corb bases
+
+### Verdict and scope
+
+Go with limits for a shared Go SDK payload.
+The same verified Go 1.27.3 archive works on two different existing Corb bases.
+It also works after each base's separate composed checkpoint resumes.
+No second Go download, build, APK installation or package transaction is needed.
+
+This is a validation spike, not a production DAR-16 implementation.
+It changes no public commands, configuration schema, package dependencies or image recipes.
+The pending production prompt remains unapproved.
+
+Image readiness remains blocked by the existing Git TLS failure.
+Each untouched base, composed candidate and resumed candidate passes six of seven image gates.
+The failed `ca-trust` gate reports Git's curl 35 TLS decrypt alert.
+It is not counted as a successful full gate pass.
+No new candidate gate failure appears.
+
+### Verified shared input
+
+The SDK comes from the [official Go release download](https://go.dev/dl/).
+Preparation checks the fixed archive against its official release metadata.
+Its expected and actual SHA-256 values match:
+
+```text
+go1.27.3.linux-amd64.tar.gz
+65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
+```
+
+The complete extracted tree contains 15,657 files and 17,373 total entries.
+The script derives its expected file bytes and read-only modes from the authenticated archive.
+It compares that manifest with the whole extracted tree.
+Later runs repeat this check.
+The tree manifest SHA-256 is:
+
+```text
+dcbf86ee66b1f6f03677befc8440855d4b3d172dc3b9c9536a8ca34ab4a8e33d
+```
+
+All 10 SDK tool executables lack an ELF interpreter and shared-library `NEEDED` entries.
+The SDK also contains 58 ELF test fixtures.
+Those are not runtime tools.
+The trial does not claim that every ELF file in Go's source tree is a static executable.
+
+The real ORAS 1.3.5 CLI copies the artifact between two local OCI layouts.
+Fetching the copied archive blob preserves its official digest.
+The OCI root manifest digest is:
+
+```text
+sha256:fc05a8b6beae66ab326502203fdab003ec16c3916f7b8a82eed4447e67ed56a6
+```
+
+That artifact contains the Go archive and version/platform metadata, with no base build ID.
+No remote registry or registry authentication flow ran.
+
+### Two distinct bases
+
+Both existing images pass host asset verification before and after the trials.
+They share Alpine 3.23.0 and a kernel, but have different rootfs and initramfs bytes.
+Their package databases contain 20 and 55 package records.
+
+| Base | Gondolin build ID | Rootfs SHA-256 |
+| --- | --- | --- |
+| Stock `corb:0.1.0` | `2747a805-7a7e-5798-84ca-077fb5086311` | `66dcee4cc7bcc04b67f1567a806bc16e8d0c00e0b09763593f72b4841533b5cf` |
+| DAR-15 fixed | `e8292a0a-0a1a-52d5-959b-9ed372068d54` | `de13c9757a2aaef4aecbc331bbb54416940e8f0dca4367ffbd7b766e9716cec7` |
+
+These are real existing bases, not renamed copies.
+There is no invented Corb 0.2.0 release in this trial.
+The comparison does not prove compatibility with another Alpine release or every future base.
+
+### Composition and resume
+
+Four VM runs execute serially, with 1 GiB and two CPUs each.
+Each fresh VM receives the same read-only host SDK directory outside `/mnt/corb-raw`.
+Root copies only that SDK into `/opt/corb/go`, makes it root-owned, and removes write permissions.
+No protected Corb path is overwritten.
+
+Uid 1000 runs through production `dropcap` with `GOTOOLCHAIN=local` and `CGO_ENABLED=0`.
+The program sorts and hashes independent JSON inputs through concurrent workers.
+It writes a checked report to the mounted test workspace.
+Three Go tests pass in each composition and each resume: 12 test executions in total.
+The pure Go phase makes zero outbound HTTP requests.
+Build, module and installation caches are writable outside the SDK.
+
+All 15,657 SDK file hashes match the shared payload in all four runs.
+The agent's attempted SDK write is denied.
+All seven forbidden names remain absent from `PATH`.
+The complete protected path/hash set and each base's APK database bytes stay unchanged.
+
+Copying takes 29.7 seconds on stock and 27.9 seconds on the fixed base.
+First compile and test take about 13.8 seconds on each.
+Resume compile and test take about 0.65 seconds with the fixture's warm build cache.
+These timings do not establish a general startup performance claim.
+
+Each composed checkpoint records its own exact base identity, SDK digest and composition policy.
+The two composition identities and checkpoint hashes differ.
+Each resumes only against its own exact base.
+The SDK input mount is absent on resume, so the copied SDK is captured in the checkpoint.
+The canonical checkpoints remain unchanged after resume and the wrong-base rejection.
+Global image refs and both bases' original assets stay unchanged too.
+
+### Rejection checks and gate results
+
+A one-byte archive change fails the same checksum verifier used for the accepted SDK.
+A protected destination fails the bounded-prefix check before VM composition.
+Resuming the stock checkpoint against the fixed base rejects the wrong build ID before boot.
+No cross-base disk rebase is attempted.
+
+The spike adapts the current image gates without editing production code.
+It records the verifier and adapter source hashes.
+All seven gates run on both untouched bases, both compositions and both resumes.
+Each report has the same six passes and one Git TLS failure.
+Host tests verify that an unrelated baseline failure or any new candidate failure rejects the verdict.
+A truly clean seven-gate baseline is allowed.
+
+### Trial corrections and limits
+
+The first preparation attempt treats Go's debug ELF fixtures as tool executables.
+The corrected check examines executable tools under `bin` and `pkg/tool` and counts the fixtures separately.
+A manifest-ordering correction makes both tree checks use relative-path order.
+Both checks then match every authenticated file and normalized mode.
+
+The first VM run completes all four trials, then its final audit fails because it does not await `listSessions()`.
+The corrected audit reuses the saved completed results and boots no new VM.
+The summary labels this recovery.
+The script now awaits the SDK call and captures QEMU PIDs after lazy startup.
+Separate host monitoring finds no surviving VM processes.
+
+Copying and separate checkpoint caches are tested.
+Direct SDK execution through a read-only VFS mount is not tested.
+Other architectures, krun, cgo, native dependencies, arbitrary APKs and arbitrary install commands remain untested.
+No personal workspace, live provider credential or secret is supplied.
+
+The result supports sharing a bounded Go filesystem payload across these two compatible bases.
+A composed checkpoint remains a cache tied to one exact base.
+This does not make an arbitrary base-disk diff portable.
+
+### Reproduction and evidence
+
+The script and commands are in [the spike README](../spike/dar-16-portable-go/README.md).
+Use a fresh disk-backed runtime and one coordinator VM slot.
+`DAR16_EVIDENCE_DIR` keeps independent review output outside tracked evidence.
+
+All tracked evidence paths below are under `spike/dar-16-portable-go/evidence/`.
+
+| Files | Evidence |
+| --- | --- |
+| `preparation.json` | Official archive checksums, tool ELF checks, full-tree identity, OCI roundtrip and checksum negative |
+| `baseline.json` | Exact base manifests, prior refs and verifier/adapter hashes |
+| `stock.json`, `fixed.json` | Package identities, all gate reports, checked program outputs and per-base checkpoint identities |
+| `*-protected-*.sha256` | Complete protected-file path/hash sets before composition, after composition and after resume |
+| `events.jsonl` | Timed commands, Go test output and expected rejection results |
+| `result.json`, `cleanup.json` | Recovered final integrity audit, unchanged inputs and empty task registry |
+| `host-vm-lifecycle.json` | Separate monitor of three observed VM PIDs, serial execution and no surviving processes |
+| `checks.json` | Required repository checks and separate spike test counts |
+
+Typecheck and source lint pass.
+All 1,518 repository unit tests pass across 55 files.
+All 53 serial e2e tests pass across 10 files.
+Seven host tests cover the gate-report verdict rules.
+Both changed Markdown files pass `se lint`.
+The separate image-gate controls retain their six known Git TLS failures.

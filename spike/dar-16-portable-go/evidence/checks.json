@@ -1,0 +1,19 @@
+{
+  "typecheck": { "command": "npm run typecheck", "passed": true },
+  "lint": { "command": "npm run lint", "passed": true },
+  "unit": { "command": "npm test", "files": 55, "passed": 1518, "failed": 0 },
+  "gateReport": {
+    "command": "node --test --test-isolation=none spike/dar-16-portable-go/gate-report.test.mjs",
+    "passed": 7,
+    "failed": 0
+  },
+  "guestGo": { "testsPerRun": 3, "runs": 4, "passed": 12, "failed": 0 },
+  "imageGates": { "reports": 6, "gatesPerReport": 7, "passed": 36, "failed": 6, "failure": "baseline Git TLS decrypt alert" },
+  "e2e": { "command": "CORB_E2E=1 npm run test:e2e", "files": 10, "passed": 53, "failed": 0, "seconds": 266.13 },
+  "docs": {
+    "command": "se lint <file>",
+    "files": ["docs/spike-results.md", "spike/dar-16-portable-go/README.md"],
+    "passed": true
+  },
+  "environment": "The first sandboxed unit run failed 9 existing socket/signal cases. The complete rerun outside that restriction passed all 1518 tests."
+}
