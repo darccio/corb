@@ -1,0 +1,9 @@
+{"label":"misc-first-exec","exitCode":0,"ms":2748.537903,"stdout":"{\n  \"user\": \"agent\",\n  \"uid\": 1000,\n  \"gid\": 1000,\n  \"piVersion\": \"1.4.0\",\n  \"paths\": {\n    \"dropcapPath\": \"/usr/local/bin/dropcap\",\n    \"home\": \"/home/agent\",\n    \"sessionsDir\": \"/home/agent/sessions\"\n  }\n}\n","stderr":""}
+{"label":"misc-boot","ms":2887.614002,"tmpdir":"/tmp","tmpFsType":16914836,"tmpfs":true,"tmpAvailableBytes":8615096320,"temporaryOverlay":{"path":"/tmp/gondolin-disk-736a75f1.qcow2","bytes":655360,"allocatedBytes":593920}}
+{"label":"isolated-registry","expectedRegistry":"/tmp/d15-gc-isolated","entries":[{"id":"214fd4be-db69-4833-8d28-9d96f3fdc45e","pid":162416,"socketPath":"/tmp/d15-gc-isolated/214fd4be-db69-4833-8d28-9d96f3fdc45e.sock","createdAt":"2026-10-25T17:16:07.056Z","label":"dar-15-misc","alive":true}]}
+{"label":"layer-ingress","status":200,"body":"dar15-ingress"}
+corb gc: gondolin collected 0 stale registry entries.
+corb gc: examined 0 corb sidecars (no --older-than filter: every sidecar whose host pid is gone qualifies); pruned 0, kept 0.
+corb gc: nothing to collect: no stale gondolin entries and no corb sidecars. That is a clean state, not a failure.
+{"label":"layer-after-gc","exitCode":0,"ms":38.36138299999948,"stdout":"go version go1.25.10 linux/amd64\npsql (PostgreSQL) 16.15\n","stderr":""}
+{"label":"layer-gc","present":true,"unchanged":true,"isolatedSessionsDir":"/tmp/d15-gc-isolated"}

@@ -1,10 +1,12 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { VmCheckpoint } from "@earendil-works/gondolin";
-import { base, bootstrap, runtime, log, run, save, read, options, boot, protectedHashes, checkpoint, sha256, diskInfo } from "./common.mjs";
+import { VmCheckpoint, listSessions } from "@earendil-works/gondolin";
+import { base, bootstrap, runtime, log, run, save, read, options, boot, protectedHashes, checkpoint, sha256, diskInfo, temporaryOverlay } from "./common.mjs";
 import { GATES } from "./verify-copy.ts";
+import { runGcCommand } from "../../src/commands/gc.ts";
 
 const action = process.argv[2];
 
@@ -280,6 +282,74 @@ async function timingControl() {
   }
 }
 
+async function concurrent() {
+  const layer = read("fixed-layer");
+  const info = diskInfo(layer.path);
+  const canonical = path.join(layer.base.assetDir, "rootfs.ext4");
+  if (info["full-backing-filename"] !== canonical) throw new Error("Concurrent test requires a canonical backing path without rebase");
+  const available = Number(/^MemAvailable:\s+(\d+)/m.exec(fs.readFileSync("/proc/meminfo", "utf8"))?.[1]) * 1024;
+  const temp = fs.statfsSync(os.tmpdir());
+  if (available < 4 * 1024 ** 3 || temp.bavail * temp.bsize < 2 * 1024 ** 3) throw new Error("Insufficient host resources for two 1 GiB VMs");
+  const before = sha256(layer.path);
+  log("concurrent-preflight", { canonicalBacking: canonical, availableMemoryBytes: available, tmpAvailableBytes: temp.bavail * temp.bsize, vmMemory: "1G each", vmCpus: "2 each" });
+  const configurations = ["a", "b"].map(label => options("concurrent-" + label, { image: layer.base.assetDir, workspace: true, memory: "1G", cpus: 2 }));
+  log("concurrent-resource-options", { values: configurations.map(value => ({ memory: value.memory, cpus: value.cpus })) });
+  const results = await Promise.allSettled(configurations.map((opts, index) => boot("concurrent-" + index, opts, layer.path)));
+  const vms = results.filter(result => result.status === "fulfilled").map(result => result.value);
+  try {
+    const failed = results.find(result => result.status === "rejected");
+    if (failed) throw failed.reason;
+    const overlays = vms.map(vm => temporaryOverlay(vm));
+    log("concurrent-overlays", { overlays });
+    if (new Set(overlays.map(value => value?.path)).size !== 2) throw new Error("Concurrent resumes did not receive distinct temporary overlays");
+    await Promise.all(vms.map((vm, index) => run(vm, "concurrent-write-" + index, "printf '" + index + "' > /usr/local/share/dar15-session-marker")));
+    for (const [index, vm] of vms.entries()) {
+      const value = await run(vm, "concurrent-read-" + index, "cat /usr/local/share/dar15-session-marker; go version; psql --version");
+      if (!value.stdout.startsWith(String(index))) throw new Error("Root disk writes leaked between sessions");
+    }
+    log("concurrent-shared-layer", { before, after: sha256(layer.path), unchanged: before === sha256(layer.path) });
+    if (before !== sha256(layer.path)) throw new Error("Concurrent resume changed canonical layer bytes");
+  } finally {
+    await Promise.allSettled(vms.map(vm => vm.close()));
+  }
+}
+
+async function misc() {
+  const layer = read("fixed-layer");
+  const expectedRegistry = "/tmp/d15-gc-isolated";
+  if (process.env.CORB_STATE_DIR !== runtime || process.env.GONDOLIN_SESSIONS_DIR !== expectedRegistry) throw new Error("Launch misc with isolated state and registry paths before Node starts");
+  const vm = await boot("misc", options("misc", { image: layer.base.assetDir, workspace: true }), layer.path);
+  let ingress;
+  try {
+    const entries = await listSessions();
+    log("isolated-registry", { expectedRegistry, entries });
+    if (!entries.some(entry => entry.socketPath?.startsWith(expectedRegistry + "/"))) throw new Error("Gondolin registry did not use the isolated path");
+    const server = vm.exec(["/usr/local/bin/dropcap", "1000", "1000", "/usr/bin/node", "-e", "require('http').createServer((req,res)=>res.end('dar15-ingress')).listen(8099,'127.0.0.1')"], { stdout: "buffer", stderr: "buffer" });
+    server.catch(() => {});
+    ingress = await vm.enableIngress();
+    vm.setIngressRoutes([{ prefix: "/", port: 8099, stripPrefix: true }]);
+    let response;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      response = await fetch(ingress.url, { signal: AbortSignal.timeout(3_000) });
+      if (response.status === 200) break;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    const body = await response.text();
+    log("layer-ingress", { status: response.status, body });
+    if (response.status !== 200 || body !== "dar15-ingress") throw new Error("Layer ingress failed");
+    const before = sha256(layer.path);
+    await runGcCommand([]);
+    await run(vm, "layer-after-gc", "go version; psql --version");
+    log("layer-gc", { present: fs.existsSync(layer.path), unchanged: sha256(layer.path) === before, isolatedSessionsDir: process.env.GONDOLIN_SESSIONS_DIR });
+  } finally {
+    try {
+      if (ingress) await ingress.close();
+    } finally {
+      await vm.close();
+    }
+  }
+}
+
 try {
   if (action === "baseline") await baseline();
   else if (action === "resume") await resume(process.argv[3] ?? "original-layer");
@@ -290,6 +360,8 @@ try {
   else if (action === "base-control") await baseControl(process.argv[3]);
   else if (action === "clean-original") await cleanOriginal();
   else if (action === "timing-control") await timingControl();
+  else if (action === "concurrent") await concurrent();
+  else if (action === "misc") await misc();
   else throw new Error("Unknown phase: " + action);
 } catch (err) {
   console.error(err.stack ?? String(err));
