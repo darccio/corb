@@ -1,0 +1,7 @@
+{
+  "correction": "output-directory isolation only; VM/replay logic unchanged",
+  "measuredControlSourceSha256": "a25b1aab112db8680a6d305ccd82e8ac22d0232cb93ed0276512de9587ce182d",
+  "finalControlSourceSha256": "3459be27152711a749fff4f216d3719fa80c910153cbe0aca681ecb2bfd8a10f",
+  "rejectMatrixOutputBeforeImports": true,
+  "matrixEvidenceBytesUnchanged": true
+}

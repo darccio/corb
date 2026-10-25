@@ -1691,3 +1691,35 @@ Seven plan/preimage cases and seven reused gate-verdict cases pass.
 The final host process check finds no remaining VM or test process.
 All 11 recorded VM PIDs exited before the slot release.
 The isolated task registry is empty.
+
+### Conditional replay on a different base
+
+A separate positive control tests a different base whose affected state matches the producer.
+It copies every verified A asset to a fresh private directory.
+Before any write, it checks distinct inodes, one link per copied file and no symlinks.
+It adds one unrelated file under `/etc/corb` to that private rootfs.
+The original A assets remain unchanged.
+
+The script recomputes all asset checksums and the actual Gondolin content-derived build ID.
+It uses the SDK's private `computeAssetBuildId` helper for this experimental construction only.
+The helper first reproduces A's existing ID.
+C is imported without a tag as `7ec74d62-c2c5-50cc-b69b-324a549924a8`.
+Its rootfs SHA-256 is `6dc45aa6c80cdfe6a831b7cce46a658047f504b93a1ef685436dfed7e491c0da`.
+
+On C, all 66 producer preimages match twice before mutation.
+The script then applies the same complete delta tar and existing replay code with the caller's precondition guard enabled.
+All 66 postimages match.
+C's new protected config survives, and the package database matches the producer's installed result.
+No APK transaction or install script runs again on C.
+
+All three native workloads pass after replay and after C's own checkpoint resume.
+The seven forbidden names remain absent, and protected files and package records remain unchanged across resume.
+Baseline, candidate and resumed gate reports each pass six of seven checks, with only the known Git TLS failure.
+The checkpoint, A/C assets and global refs remain unchanged.
+This control uses two serial VMs and never rebases an old checkpoint.
+
+This establishes that these installed changes can cross a real base build ID when affected prior state matches.
+The B corruption counterexample still shows why the Alpine branch alone is insufficient.
+Matching written-path preimages alone does not capture arbitrary scripts' read-only inputs, kernel features, ABI or runtime initialization.
+Xattrs, file capabilities, package-aware merging and a production applier remain unproven.
+The [conditional-control procedure](../spike/dar-16-apk-portability/conditional-control.md) lists the exact commands and separate evidence directory.

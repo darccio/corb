@@ -1,0 +1,167 @@
+{
+  "name": "conditional",
+  "buildId": "7ec74d62-c2c5-50cc-b69b-324a549924a8",
+  "assetDir": "/home/dario/.cache/gondolin/images/objects/7ec74d62-c2c5-50cc-b69b-324a549924a8",
+  "manifest": {
+    "version": 1,
+    "buildId": "7ec74d62-c2c5-50cc-b69b-324a549924a8",
+    "config": {
+      "arch": "x86_64",
+      "distro": "alpine",
+      "alpine": {
+        "version": "3.23.0",
+        "kernelPackage": "linux-virt",
+        "rootfsPackages": [
+          "linux-virt",
+          "bash",
+          "ca-certificates",
+          "curl",
+          "git",
+          "openssh-client",
+          "ripgrep",
+          "fd",
+          "jq",
+          "less",
+          "nodejs",
+          "npm",
+          "github-cli",
+          "tzdata"
+        ]
+      },
+      "container": {
+        "force": false,
+        "runtime": "docker"
+      },
+      "rootfs": {
+        "label": "corb-root",
+        "sizeMb": 3072
+      },
+      "env": {
+        "LANG": "C.UTF-8",
+        "CORB_IMAGE_KIND": "default",
+        "PI_SKIP_VERSION_CHECK": "1",
+        "PI_TELEMETRY": "0"
+      },
+      "init": {
+        "rootfsInitExtra": "/work/rootfs-init-extra"
+      },
+      "postBuild": {
+        "copy": [
+          {
+            "src": "/work/postbuild-copy-0/dropcap",
+            "dest": "/usr/local/bin/dropcap"
+          },
+          {
+            "src": "/work/postbuild-copy-1/policygate",
+            "dest": "/usr/local/libexec/policygate"
+          },
+          {
+            "src": "/work/postbuild-copy-2/suid-allowlist.txt",
+            "dest": "/etc/corb/suid-allowlist.txt"
+          },
+          {
+            "src": "/work/postbuild-copy-3/image.json",
+            "dest": "/etc/corb/image.json"
+          }
+        ],
+        "commands": [
+          "apk add --no-cache bash ca-certificates curl git openssh-client ripgrep fd jq less nodejs npm github-cli tzdata",
+          "apk add --no-cache build-base linux-headers fuse3-dev fuse3-libs libstdc++ libgcc zstd-libs",
+          "cd /tmp && curl -fsSL -o bindfs.tar.gz https://bindfs.org/downloads/bindfs-1.18.4.tar.gz && echo '1fedfcd082980180ccdd684478cc5308f4ea3fa541af12b5aef0b75fb0ec5b285009c4b783fc3cd5550505a83baf015e243f88eb322540d0f82e1952babc799a  bindfs.tar.gz' | sha512sum -c - && tar xzf bindfs.tar.gz",
+          "cd /tmp/bindfs-1.18.4 && ./configure --prefix=/usr --sysconfdir=/etc --mandir=/usr/share/man --localstatedir=/var && make && make install",
+          "rm -rf /tmp/bindfs.tar.gz /tmp/bindfs-1.18.4",
+          "apk del build-base linux-headers fuse3-dev",
+          "npm i -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@1.4.0",
+          "addgroup -g 1000 agent && adduser -D -u 1000 -G agent -h /home/agent -s /bin/sh agent",
+          "mkdir -p /work /home/agent/sessions && chown -R 1000:1000 /home/agent /work",
+          "apk del apk-tools",
+          "rm -f /usr/bin/npm /usr/bin/npx /bin/su /usr/bin/su /usr/bin/sudo /usr/bin/doas",
+          "mv /usr/bin/git /usr/local/libexec/real-git && ln -s /usr/local/libexec/policygate /usr/local/bin/git",
+          "if [ -x /usr/bin/gh ]; then mv /usr/bin/gh /usr/local/libexec/real-gh && ln -s /usr/local/libexec/policygate /usr/local/bin/gh; fi",
+          "chmod 0755 /usr/local/bin/dropcap /usr/local/libexec/policygate"
+        ]
+      },
+      "sandboxdPath": "/work/sandboxd",
+      "sandboxfsPath": "/work/sandboxfs",
+      "sandboxsshPath": "/work/sandboxssh",
+      "sandboxingressPath": "/work/sandboxingress"
+    },
+    "buildTime": "2026-10-25T16:02:11.758Z",
+    "assets": {
+      "kernel": "vmlinuz-virt",
+      "initramfs": "initramfs.cpio.lz4",
+      "rootfs": "rootfs.ext4",
+      "krunKernel": "krun-kernel",
+      "krunInitrd": "krun-empty-initrd"
+    },
+    "checksums": {
+      "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+      "initramfs": "017572642b872439da8f5b5ca12783a3a3abdc4f7b12272b92dac6e0dd7bcdb5",
+      "rootfs": "6dc45aa6c80cdfe6a831b7cce46a658047f504b93a1ef685436dfed7e491c0da",
+      "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+      "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "sourceBuildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+  "sourceManifestSha256": "61be6c61156222dc618c8146b7aac481ccbb67311d4104aaf033d879e253bd5a",
+  "manifestSha256": "d9222e0d16ff40d673819e170cf295d7b21ebf2dcbb939273e80f3eaa058de42",
+  "marker": "/etc/corb/apk-portability-control.txt",
+  "markerSha256": "affa54923ed45c57cf8403493fe3cbfe2daea9c56dac61347a7aa29f2c51bd84",
+  "copies": [
+    {
+      "filename": "vmlinuz-virt",
+      "sourceInode": 27980879,
+      "sourceDevice": 48,
+      "privateInode": 28045759,
+      "privateDevice": 48,
+      "privateNlink": 1,
+      "beforeSha256": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9"
+    },
+    {
+      "filename": "initramfs.cpio.lz4",
+      "sourceInode": 27980880,
+      "sourceDevice": 48,
+      "privateInode": 28045760,
+      "privateDevice": 48,
+      "privateNlink": 1,
+      "beforeSha256": "017572642b872439da8f5b5ca12783a3a3abdc4f7b12272b92dac6e0dd7bcdb5"
+    },
+    {
+      "filename": "rootfs.ext4",
+      "sourceInode": 27980881,
+      "sourceDevice": 48,
+      "privateInode": 28045761,
+      "privateDevice": 48,
+      "privateNlink": 1,
+      "beforeSha256": "de13c9757a2aaef4aecbc331bbb54416940e8f0dca4367ffbd7b766e9716cec7"
+    },
+    {
+      "filename": "krun-kernel",
+      "sourceInode": 27980927,
+      "sourceDevice": 48,
+      "privateInode": 28045762,
+      "privateDevice": 48,
+      "privateNlink": 1,
+      "beforeSha256": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef"
+    },
+    {
+      "filename": "krun-empty-initrd",
+      "sourceInode": 27980928,
+      "sourceDevice": 48,
+      "privateInode": 28045763,
+      "privateDevice": 48,
+      "privateNlink": 1,
+      "beforeSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "helper": {
+    "path": "/home/dario/Code/corb/node_modules/@earendil-works/gondolin/dist/src/assets.js",
+    "sourceSha256": "140cf09ba41fde4d74930840a2327f0b7c954197b8da946840388797e0246939",
+    "sourceLines": "assets.js:219-234",
+    "privateExperimentalUseOnly": true
+  },
+  "createdRef": false,
+  "producerDeltaSha256": "27e2913287440c1d07b4fb1b7d7073d8093da56bb987273db4622621ba75a29c",
+  "deltaTarSha256": "6e92e41e18f9e2ef6f968d7813466a49c8174579981707c5039d7b7036c8fe2f",
+  "debugfsWrite": "Allocated inode: 22983\n"
+}

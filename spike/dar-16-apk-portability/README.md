@@ -18,6 +18,10 @@ The installed tools still work, and the image gates do not detect that consumer-
 A preimage check rejects this replay before it changes the consumer.
 This does not rule out a conditional delta when every changed or deleted path has the expected prior state.
 
+A [separate conditional control](conditional-control.md) demonstrates that case on a different base build ID.
+It changes an unrelated protected config file, then safely applies the same delta with all producer preconditions enabled.
+This does not establish arbitrary scripts' read-only dependencies or a production applier.
+
 Both bases retain stale OpenSSL package records.
 Their records say `3.5.4-r0`, but their library bytes match authenticated `3.5.9-r0` APKs.
 The positive result applies to these measured binaries and transactions.

@@ -1,0 +1,44 @@
+{"label":"conditional-base-ready","buildId":"7ec74d62-c2c5-50cc-b69b-324a549924a8","rootfsSha256":"6dc45aa6c80cdfe6a831b7cce46a658047f504b93a1ef685436dfed7e491c0da","vmBoots":0}
+{"label":"vm-start","base":"conditional","phase":"conditional-replay","resumed":false}
+{"label":"owned-vm","pid":245387}
+{"label":"conditional-protected-before","exitCode":0,"ms":3376,"stdoutSha256":"68284355ee7f8f868f6470898fc3d3248e853be63686bfe9d0b22d1f184a03b3","stdoutBytes":1208,"stderr":""}
+{"label":"conditional-before","exitCode":0,"ms":4990,"stdoutSha256":"01d92bf2b3bdab13b3394b27a8a8829d865a4322a1243f47617857a776adb0e7","stdoutBytes":4983009,"stderr":""}
+{"label":"conditional-preimages-match","count":66,"allMatch":true,"replayNotYetStarted":true}
+{"label":"conditional-before-db","exitCode":0,"ms":14,"stdoutSha256":"dfecb486abbffdcf7aa393474705db782d35c5cea9a5f8d0a5ca437dfa38f8d0","stdoutBytes":174299,"stderr":""}
+{"label":"conditional-baseline-gate","name":"user","ok":true,"detail":"id -u agent = 1000; /home/agent owned by 1000:1000"}
+{"label":"conditional-baseline-gate","name":"privilege-drop","ok":true,"detail":"dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"}
+{"label":"conditional-baseline-gate","name":"suid","ok":true,"detail":"live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"}
+{"label":"conditional-baseline-gate","name":"removals","ok":true,"detail":"absent from PATH: npm, npx, su, sudo, doas, apk"}
+{"label":"conditional-baseline-gate","name":"ca-trust","ok":false,"detail":"git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"}
+{"label":"conditional-baseline-gate","name":"git-gh-shimmed","ok":true,"detail":"git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"}
+{"label":"conditional-baseline-gate","name":"pi","ok":true,"detail":"pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"}
+{"label":"conditional-before-apply","exitCode":0,"ms":1340,"stdoutSha256":"01d92bf2b3bdab13b3394b27a8a8829d865a4322a1243f47617857a776adb0e7","stdoutBytes":4983009,"stderr":""}
+{"label":"conditional-guarded-full-delta-replay","exitCode":0,"ms":213,"stdout":"{\"appliedPaths\":66,\"deletedPaths\":0,\"unsafeUnconditionalReplay\":true}\n","stderr":""}
+{"label":"conditional-after","exitCode":0,"ms":1295,"stdoutSha256":"25ca6438d2a95e937b5ede9424816aa09ef37313b4e1e7fcac315d3271d8dffb","stdoutBytes":4990981,"stderr":""}
+{"label":"conditional-installed-native","exitCode":0,"ms":251,"stdout":"{\"uid\":1000,\"tests\":3,\"tree\":true,\"postgresqlLoopbackQuery\":\"42\",\"redis\":\"PING/SET/GET\",\"loaders\":[{\"filename\":\"/usr/bin/tree\",\"libraries\":\"\\t/lib/ld-musl-x86_64.so.1 (0x7f57c8441000)\\n\\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f57c8441000)\\n\"},{\"filename\":\"/usr/libexec/postgresql16/psql\",\"libraries\":\"\\t/lib/ld-musl-x86_64.so.1 (0x7f2368df1000)\\n\\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7f2368ce5000)\\n\\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7f2368c9b000)\\n\\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f2368df1000)\\n\\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7f2368bcc000)\\n\\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7f2368600000)\\n\\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7f2368b77000)\\n\"},{\"filename\":\"/usr/bin/redis-server\",\"libraries\":\"\\t/lib/ld-musl-x86_64.so.1 (0x7fdd88131000)\\n\\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7fdd87800000)\\n\\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7fdd8805a000)\\n\\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7fdd87200000)\\n\\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7fdd88131000)\\n\\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7fdd8802e000)\\n\"}]}\n","stderr":""}
+{"label":"conditional-installed-seven-removals","exitCode":0,"ms":6,"stdout":"ALL_SEVEN_ABSENT\n","stderr":""}
+{"label":"conditional-protected-installed","exitCode":0,"ms":376,"stdoutSha256":"68284355ee7f8f868f6470898fc3d3248e853be63686bfe9d0b22d1f184a03b3","stdoutBytes":1208,"stderr":""}
+{"label":"conditional-marker","exitCode":0,"ms":4,"stdout":"affa54923ed45c57cf8403493fe3cbfe2daea9c56dac61347a7aa29f2c51bd84  /etc/corb/apk-portability-control.txt\n","stderr":""}
+{"label":"conditional-after-db","exitCode":0,"ms":12,"stdoutSha256":"aae45c8d6806d293367d01456eda2e8dd0e14013a2596c7dc0d3cd03037c3795","stdoutBytes":179053,"stderr":""}
+{"label":"conditional-candidate-gate","name":"user","ok":true,"detail":"id -u agent = 1000; /home/agent owned by 1000:1000"}
+{"label":"conditional-candidate-gate","name":"privilege-drop","ok":true,"detail":"dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"}
+{"label":"conditional-candidate-gate","name":"suid","ok":true,"detail":"live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"}
+{"label":"conditional-candidate-gate","name":"removals","ok":true,"detail":"absent from PATH: npm, npx, su, sudo, doas, apk"}
+{"label":"conditional-candidate-gate","name":"ca-trust","ok":false,"detail":"git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"}
+{"label":"conditional-candidate-gate","name":"git-gh-shimmed","ok":true,"detail":"git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"}
+{"label":"conditional-candidate-gate","name":"pi","ok":true,"detail":"pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"}
+{"label":"vm-closed","base":"conditional","phase":"conditional-replay"}
+{"label":"vm-start","base":"conditional","phase":"conditional-resume","resumed":true}
+{"label":"owned-vm","pid":245611}
+{"label":"conditional-resumed-native","exitCode":0,"ms":3137,"stdout":"{\"uid\":1000,\"tests\":3,\"tree\":true,\"postgresqlLoopbackQuery\":\"42\",\"redis\":\"PING/SET/GET\",\"loaders\":[{\"filename\":\"/usr/bin/tree\",\"libraries\":\"\\t/lib/ld-musl-x86_64.so.1 (0x7f296084f000)\\n\\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f296084f000)\\n\"},{\"filename\":\"/usr/libexec/postgresql16/psql\",\"libraries\":\"\\t/lib/ld-musl-x86_64.so.1 (0x7febb8c1a000)\\n\\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7febb8b0e000)\\n\\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7febb8ac4000)\\n\\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7febb8c1a000)\\n\\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7febb89f5000)\\n\\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7febb8400000)\\n\\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7febb89a0000)\\n\"},{\"filename\":\"/usr/bin/redis-server\",\"libraries\":\"\\t/lib/ld-musl-x86_64.so.1 (0x7ff6e034e000)\\n\\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7ff6dfc00000)\\n\\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7ff6dff31000)\\n\\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7ff6df600000)\\n\\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7ff6e034e000)\\n\\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7ff6dff05000)\\n\"}]}\n","stderr":""}
+{"label":"conditional-resumed-seven-removals","exitCode":0,"ms":7,"stdout":"ALL_SEVEN_ABSENT\n","stderr":""}
+{"label":"conditional-protected-resumed","exitCode":0,"ms":428,"stdoutSha256":"68284355ee7f8f868f6470898fc3d3248e853be63686bfe9d0b22d1f184a03b3","stdoutBytes":1208,"stderr":""}
+{"label":"conditional-resumed-db","exitCode":0,"ms":12,"stdoutSha256":"aae45c8d6806d293367d01456eda2e8dd0e14013a2596c7dc0d3cd03037c3795","stdoutBytes":179053,"stderr":""}
+{"label":"conditional-resumed-gate","name":"user","ok":true,"detail":"id -u agent = 1000; /home/agent owned by 1000:1000"}
+{"label":"conditional-resumed-gate","name":"privilege-drop","ok":true,"detail":"dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"}
+{"label":"conditional-resumed-gate","name":"suid","ok":true,"detail":"live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"}
+{"label":"conditional-resumed-gate","name":"removals","ok":true,"detail":"absent from PATH: npm, npx, su, sudo, doas, apk"}
+{"label":"conditional-resumed-gate","name":"ca-trust","ok":false,"detail":"git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"}
+{"label":"conditional-resumed-gate","name":"git-gh-shimmed","ok":true,"detail":"git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"}
+{"label":"conditional-resumed-gate","name":"pi","ok":true,"detail":"pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"}
+{"label":"vm-closed","base":"conditional","phase":"conditional-resume"}

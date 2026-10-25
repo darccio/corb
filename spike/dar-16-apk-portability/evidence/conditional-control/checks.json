@@ -1,0 +1,44 @@
+{
+  "typecheckPassed": true,
+  "lintPassed": true,
+  "unit": {
+    "passed": 1518,
+    "files": 55,
+    "durationSeconds": 2.57
+  },
+  "e2e": {
+    "passed": 53,
+    "files": 10,
+    "durationSeconds": 265.7,
+    "serial": true
+  },
+  "control": {
+    "vms": 2,
+    "nativeCasesPassed": 6,
+    "matchedPreimages": 66,
+    "matchedPostimages": 66,
+    "gateReports": 3,
+    "gatePassesEach": 6,
+    "knownGitTlsFailures": 3,
+    "protectedMarkerPreserved": true,
+    "ownBaseCheckpointResumed": true
+  },
+  "outputIsolationRejectingCase": {
+    "passed": true,
+    "matrixBytesUnchanged": true
+  },
+  "docs": [
+    "docs/spike-results.md",
+    "spike/dar-16-apk-portability/README.md",
+    "spike/dar-16-apk-portability/conditional-control.md"
+  ],
+  "docLintPassed": true,
+  "sourceHashes": {
+    "correction": "output-directory isolation only; VM/replay logic unchanged",
+    "measuredControlSourceSha256": "a25b1aab112db8680a6d305ccd82e8ac22d0232cb93ed0276512de9587ce182d",
+    "finalControlSourceSha256": "3459be27152711a749fff4f216d3719fa80c910153cbe0aca681ecb2bfd8a10f",
+    "rejectMatrixOutputBeforeImports": true,
+    "matrixEvidenceBytesUnchanged": true
+  },
+  "oldMatrixEvidenceAndExecutablesUnchanged": true
+}

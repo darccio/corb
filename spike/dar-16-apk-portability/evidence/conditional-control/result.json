@@ -1,0 +1,195 @@
+{
+  "verdict": "conditional-replay-works-for-this-matching-touched-state-control",
+  "baseBuildId": "7ec74d62-c2c5-50cc-b69b-324a549924a8",
+  "producerBaseBuildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+  "sourceIdentity": {
+    "gateSourceSha256": "d74d56031bc003dd4205010cd891e39b9c49d8d813d28de38fb989e9bfc0ba08",
+    "gateAdapterSha256": "33e8bd797f3d5113612568246ddc72d6805d863f2b2b8611d48e7cebdb646d31"
+  },
+  "controlSourceSha256": "a25b1aab112db8680a6d305ccd82e8ac22d0232cb93ed0276512de9587ce182d",
+  "producerDeltaSha256": "27e2913287440c1d07b4fb1b7d7073d8093da56bb987273db4622621ba75a29c",
+  "deltaTarSha256": "6e92e41e18f9e2ef6f968d7813466a49c8174579981707c5039d7b7036c8fe2f",
+  "preimagesChecked": 66,
+  "preconditionsEnabled": true,
+  "allPostimagesMatch": true,
+  "baselineGates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+    },
+    {
+      "name": "ca-trust",
+      "ok": false,
+      "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "candidateGates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+    },
+    {
+      "name": "ca-trust",
+      "ok": false,
+      "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "agent": {
+    "uid": 1000,
+    "tests": 3,
+    "tree": true,
+    "postgresqlLoopbackQuery": "42",
+    "redis": "PING/SET/GET",
+    "loaders": [
+      {
+        "filename": "/usr/bin/tree",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f57c8441000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f57c8441000)\n"
+      },
+      {
+        "filename": "/usr/libexec/postgresql16/psql",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f2368df1000)\n\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7f2368ce5000)\n\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7f2368c9b000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f2368df1000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7f2368bcc000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7f2368600000)\n\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7f2368b77000)\n"
+      },
+      {
+        "filename": "/usr/bin/redis-server",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7fdd88131000)\n\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7fdd87800000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7fdd8805a000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7fdd87200000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7fdd88131000)\n\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7fdd8802e000)\n"
+      }
+    ]
+  },
+  "protectedBefore": "12f899e55a7691225603d6fb3324940fc51cd7f133e7ead788663c2b7eecb00c  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-5261cecb.rsa.pub\n207e4696d3c05f7cb05966aee557307151f1f00217af4143c1bcaf33b8df733f  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub\n20adc060758865899012c328fa679aa01538b453cfd551e609c4542ee73a73f2  /usr/bin/bindfs\n213d3c950f91d425337cd1768e88dc59c0ad77a0c2108e5afab60c164e7ee6f5  /init\n24e937e0de40640bc45573cc7a775f60636b87750409e4fc66b342995f67afc8  /usr/local/libexec/real-git\n4740e913fcffa646991162e48dc82232e1525aa6c9e8575b0bbc0e21f155a0b5  /usr/local/libexec/real-gh\n8e01867c5909b5996d1f41ff0462dd6cf8f363034a7e10e360b9413a19ccc010  /etc/corb/image.json\n9c102bcc376af1498d549b77bdbfa815ae86faa1d2d82f040e616b18ef2df2d4  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub\naffa54923ed45c57cf8403493fe3cbfe2daea9c56dac61347a7aa29f2c51bd84  /etc/corb/apk-portability-control.txt\ne2d9d346e2030725380e81837753e360bbff2732fa7493d503c5625a1dedcc26  /usr/local/libexec/policygate\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /etc/corb/suid-allowlist.txt\nf9b3cfa013a9d0c3d483eb2b4ae41104d6c941632cd5d968ea771ca6351bda2e  /usr/local/bin/dropcap\n",
+  "databaseBeforeSha256": "dfecb486abbffdcf7aa393474705db782d35c5cea9a5f8d0a5ca437dfa38f8d0",
+  "databaseAfterSha256": "aae45c8d6806d293367d01456eda2e8dd0e14013a2596c7dc0d3cd03037c3795",
+  "markerPreserved": true,
+  "checkpoint": {
+    "version": 1,
+    "name": "conditional-apk",
+    "createdAt": "2026-10-25T21:56:59.846Z",
+    "diskFile": "conditional-apk.qcow2",
+    "guestAssetBuildId": "7ec74d62-c2c5-50cc-b69b-324a549924a8",
+    "snapshotKind": "disk",
+    "createdWithVmm": "qemu",
+    "compatibleVmm": [
+      "qemu",
+      "krun"
+    ]
+  },
+  "checkpointSha256": "fee933cf7163fb74cd0b0c40873c0ab006c44b1c4c68c6ff0820505e41478cd8",
+  "resume": {
+    "agent": {
+      "uid": 1000,
+      "tests": 3,
+      "tree": true,
+      "postgresqlLoopbackQuery": "42",
+      "redis": "PING/SET/GET",
+      "loaders": [
+        {
+          "filename": "/usr/bin/tree",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f296084f000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f296084f000)\n"
+        },
+        {
+          "filename": "/usr/libexec/postgresql16/psql",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7febb8c1a000)\n\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7febb8b0e000)\n\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7febb8ac4000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7febb8c1a000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7febb89f5000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7febb8400000)\n\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7febb89a0000)\n"
+        },
+        {
+          "filename": "/usr/bin/redis-server",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7ff6e034e000)\n\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7ff6dfc00000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7ff6dff31000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7ff6df600000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7ff6e034e000)\n\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7ff6dff05000)\n"
+        }
+      ]
+    },
+    "gates": [
+      {
+        "name": "user",
+        "ok": true,
+        "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+      },
+      {
+        "name": "privilege-drop",
+        "ok": true,
+        "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+      },
+      {
+        "name": "suid",
+        "ok": true,
+        "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+      },
+      {
+        "name": "removals",
+        "ok": true,
+        "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+      },
+      {
+        "name": "ca-trust",
+        "ok": false,
+        "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+      },
+      {
+        "name": "git-gh-shimmed",
+        "ok": true,
+        "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+      },
+      {
+        "name": "pi",
+        "ok": true,
+        "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+      }
+    ],
+    "protectedUnchanged": true,
+    "databaseUnchanged": true
+  },
+  "nativeCases": 6,
+  "refsUnchanged": true,
+  "canonicalAssetsUnchanged": true,
+  "xattrsTested": false,
+  "productionApplierImplemented": false
+}

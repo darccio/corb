@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-10-25T22:03:34.766929+00:00",
+  "context": "host require_escalated",
+  "ownedPids": [
+    245387,
+    245611
+  ],
+  "survivingOwnedPids": [],
+  "matchingHostProcesses": [],
+  "isolatedTaskSessions": [],
+  "vmBootsInEvents": 2
+}
