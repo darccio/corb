@@ -668,10 +668,10 @@ describe("commands/doctor: checkBrokeredLogin", () => {
     expect(result?.detail).toContain("not valid JSON");
   });
 
-  it("warns when the API host is not in egress.allow", () => {
+  it("is ok when Corb allows the API host automatically", () => {
     const result = checkBrokeredLogin(codexLayer(["pi.dev"]), () => login);
-    expect(result?.status).toBe("warn");
-    expect(result?.detail).toContain('"chatgpt.com"');
+    expect(result?.status).toBe("ok");
+    expect(result?.detail).toContain("allows chatgpt.com automatically");
   });
 
   it("is ok when logged in with the API host allowed, and never prints a token", () => {

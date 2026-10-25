@@ -22,7 +22,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { corbConfigDir, configTomlPath, credentialsStateDir } from "../config/paths.ts";
-import { findBrokeredProvider, unreachableApiHosts, type BrokeredProvider } from "../auth/provider.ts";
+import { findBrokeredProvider, type BrokeredProvider } from "../auth/provider.ts";
 import { readStoredCredential, type StoredCredential } from "../auth/store.ts";
 import { ConfigParseError, parseConfigLayer, type ConfigLayer, type PartialSecretConfig } from "../config/schema.ts";
 import { ImageNotFoundError, resolveRuntimeImage } from "../vm/image.ts";
@@ -546,8 +546,8 @@ export function checkSecretsConfigured(configResult: DoctorConfigLoad): DoctorCh
 /**
  * `undefined` when `[agent].provider` is not a brokered provider (the check
  * is then left out of the report). Otherwise fails without a usable stored
- * login, warns when the provider's API host is not in `egress.allow`, and is
- * ok when both hold. `read` is injectable for tests.
+ * login. Corb adds the provider's API hosts to `egress.allow` automatically.
+ * `read` is injectable for tests.
  */
 export function checkBrokeredLogin(
   configResult: DoctorConfigLoad,
@@ -569,14 +569,7 @@ export function checkBrokeredLogin(
   if (credential === undefined) {
     return fail("brokered-login", `[agent] provider = "${provider.id}", but there is no stored login. Run 'corb login ${provider.id}'.`);
   }
-  const unreachable = unreachableApiHosts(provider, configResult.layer.egress?.allow);
-  if (unreachable.length > 0) {
-    return warn(
-      "brokered-login",
-      `logged in to ${provider.displayName}, but egress.allow does not include ${unreachable.map((h) => `"${h}"`).join(", ")}; Pi's requests will be blocked.`,
-    );
-  }
-  return ok("brokered-login", `logged in to ${provider.displayName}${credential.accountId !== undefined ? ` (account ${credential.accountId})` : ""}.`);
+  return ok("brokered-login", `logged in to ${provider.displayName}${credential.accountId !== undefined ? ` (account ${credential.accountId})` : ""}. Corb allows ${provider.apiHosts.join(", ")} automatically.`);
 }
 
 // ---------------------------------------------------------------------------

@@ -67,7 +67,7 @@ import { renderText, renderTrust } from "../config/render.ts";
 import { credentialsStateDir, defaultAuditPath } from "../config/paths.ts";
 import { createAuditWriter } from "../policy/audit.ts";
 import { startBrokeredSession, type BrokeredSession } from "../auth/broker.ts";
-import { findBrokeredProvider, unreachableApiHosts } from "../auth/provider.ts";
+import { findBrokeredProvider } from "../auth/provider.ts";
 import type { ConfigLayer, DirMode, PartialAgentConfig, PartialDirConfig } from "../config/schema.ts";
 import type { DirConfig, EffectiveConfig } from "../config/load.ts";
 
@@ -455,13 +455,6 @@ export async function runRunCommand(argv: string[]): Promise<void> {
   let brokered: BrokeredSession | undefined;
   const brokeredProvider = findBrokeredProvider(resolved.fullConfig.agent?.provider);
   if (brokeredProvider !== undefined) {
-    const unreachable = unreachableApiHosts(brokeredProvider, resolved.fullConfig.egress.allow);
-    if (unreachable.length > 0) {
-      console.error(
-        `corb: [agent] provider = "${brokeredProvider.id}" needs ${unreachable.map((h) => `"${h}"`).join(", ")} in egress.allow; ` +
-          "Pi's requests to it will be blocked until you add it.",
-      );
-    }
     try {
       brokered = await startBrokeredSession(brokeredProvider, {
         dir: credentialsStateDir(),

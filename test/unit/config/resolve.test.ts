@@ -178,6 +178,80 @@ describe("config/resolve: resolveWorkspace", () => {
     }
   });
 
+  describe("implied provider hosts", () => {
+    function writeConfig(provider: string, allow: string[] = []): void {
+      fs.writeFileSync(path.join(configDir, "config.toml"), [
+        "[agent]", `provider = ${JSON.stringify(provider)}`, "[egress]", `allow = ${JSON.stringify(allow)}`,
+      ].join("\n"));
+    }
+
+    it("adds the host before trust and includes it in both configs", () => {
+      writeConfig("openai-codex", ["pi.dev"]);
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      expect(resolved.persistentConfig.egress.allow).toEqual(["pi.dev", "chatgpt.com"]);
+      expect(resolved.fullConfig.egress.allow).toEqual(["pi.dev", "chatgpt.com"]);
+      expect(resolved.impliedHosts).toEqual([{
+        host: "chatgpt.com",
+        source: { kind: "agent-provider", provider: "openai-codex", layer: "global" },
+      }]);
+    });
+
+    it("does not duplicate or mark an explicitly allowed host as implied", () => {
+      writeConfig("openai-codex", ["chatgpt.com"]);
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      expect(resolved.persistentConfig.egress.allow).toEqual(["chatgpt.com"]);
+      expect(resolved.fullConfig.egress.allow).toEqual(["chatgpt.com"]);
+      expect(resolved.impliedHosts).toEqual([]);
+    });
+
+    it("reports both a provider change and its newly allowed host as widening", () => {
+      writeConfig("anthropic");
+      const previous = resolveWorkspace(workDir, {}, { configDir });
+      acceptWorkspace(previous.trustKey, previous.persistentConfig, 1000, { configDir });
+      writeConfig("openai-codex");
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      expect(resolved.trustEvaluation.verdict).toBe("requires-confirmation");
+      expect(resolved.trustEvaluation.widened).toEqual(expect.arrayContaining([
+        expect.objectContaining({ field: "agent.provider" }),
+        { field: "egress.allow", description: "egress.allow gained 'chatgpt.com'" },
+      ]));
+    });
+
+    it("keeps a prior codex record trusted when it already allowed the host", () => {
+      writeConfig("openai-codex", ["chatgpt.com"]);
+      const previous = resolveWorkspace(workDir, {}, { configDir });
+      acceptWorkspace(previous.trustKey, previous.persistentConfig, 1000, { configDir });
+      writeConfig("openai-codex");
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      expect(resolved.trustEvaluation.verdict).toBe("trusted");
+      expect(resolved.trustEvaluation.widened).toEqual([]);
+    });
+
+    it("stores implied hosts in accepted config without storing source metadata", () => {
+      writeConfig("openai-codex");
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      acceptWorkspace(resolved.trustKey, resolved.persistentConfig, 1000, { configDir });
+      const stored = JSON.parse(fs.readFileSync(path.join(configDir, "trusted.json"), "utf8"))[resolved.trustKey];
+      expect(stored.acceptedConfig.egress.allow).toEqual(["chatgpt.com"]);
+      expect(stored.acceptedConfig).not.toHaveProperty("impliedHosts");
+      expect(resolveWorkspace(workDir, {}, { configDir }).trustEvaluation.verdict).toBe("trusted");
+    });
+
+    it("requires acceptance once for an old codex record that never allowed the host", () => {
+      writeConfig("openai-codex");
+      const resolved = resolveWorkspace(workDir, {}, { configDir });
+      const oldConfig = structuredClone(resolved.persistentConfig);
+      oldConfig.egress.allow = [];
+      acceptWorkspace(resolved.trustKey, oldConfig, 1000, { configDir });
+      const widened = resolveWorkspace(workDir, {}, { configDir });
+      expect(widened.trustEvaluation.widened).toEqual([
+        { field: "egress.allow", description: "egress.allow gained 'chatgpt.com'" },
+      ]);
+      acceptWorkspace(widened.trustKey, widened.persistentConfig, 2000, { configDir });
+      expect(resolveWorkspace(workDir, {}, { configDir }).trustEvaluation.verdict).toBe("trusted");
+    });
+  });
+
   describe("persistent vs. full config", () => {
     it("cliLayer: {} produces fullConfig structurally equal to persistentConfig", () => {
       fs.writeFileSync(path.join(configDir, "config.toml"), 'name = "corb-dev"\n');

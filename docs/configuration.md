@@ -74,7 +74,7 @@ provider = "openai-codex"
 model = "gpt-6.1-sol"
 
 [egress]
-allow = ["chatgpt.com", "pi.dev"]
+allow = ["pi.dev"]
 ```
 
 Log in once with `corb login openai-codex`. Corb stores the login in
@@ -82,9 +82,11 @@ Log in once with `corb login openai-codex`. Corb stores the login in
 file is readable only by you. Every Corb session on the host uses the same
 login, and Corb refreshes it when it is close to expiry.
 
-No `[secrets.*]` entry is needed. `chatgpt.com` must be in `egress.allow`. The
-login does not grant network access. `auth.openai.com` is not needed in the
-guest, because the login and every refresh happen on the host.
+No `[secrets.*]` entry is needed. Corb adds the provider's API hosts to
+`egress.allow` automatically. `corb explain` shows each host as implied and
+names its source. If an earlier trusted run did not allow the host, the next
+`corb run` asks for `--trust-config` once. `auth.openai.com` is not needed in
+the guest, because the login and every refresh happen on the host.
 
 `corb run` stops before it boots the VM if there is no stored login. Pick a
 model from Pi's `/model` list for the provider.
@@ -122,6 +124,7 @@ deny-paths = ["**/actions/secrets/**"]
 
 `egress.allow` lists permitted hosts for outbound requests from any guest
 process. Configure the destinations required by your workflow explicitly.
+Corb adds brokered providers' API hosts automatically and shows their source in `corb explain`.
 
 The optional GitHub API table adds HTTP method and path restrictions for that
 API. It does not enable its host on its own. With the table absent, this

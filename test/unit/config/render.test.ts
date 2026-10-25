@@ -35,6 +35,7 @@ function noChangeWorkspace(): ResolvedWorkspace {
     fullConfig: config,
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
+    impliedHosts: [],
     trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
   };
 }
@@ -49,6 +50,7 @@ function wideningWorkspace(): ResolvedWorkspace {
     fullConfig,
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
+    impliedHosts: [],
     trustEvaluation: {
       verdict: "requires-confirmation",
       widened: [{ field: "egress.allow", description: "egress.allow gained 'example.com'" }],
@@ -68,6 +70,7 @@ function cliAddedDirWorkspace(): ResolvedWorkspace {
     fullConfig,
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
+    impliedHosts: [],
     trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
   };
 }
@@ -111,7 +114,17 @@ describe("config/render: renderText", () => {
     const workspace = noChangeWorkspace();
     const config: EffectiveConfig = { ...workspace.fullConfig, agent: { provider: "openai-codex" } };
     const text = renderText({ ...workspace, persistentConfig: config, fullConfig: config });
-    expect(text).toContain("  login: host-brokered, see 'corb login openai-codex' (needs chatgpt.com in egress.allow)");
+    expect(text).toContain("  login: host-brokered, see 'corb login openai-codex' (allows chatgpt.com automatically)");
+  });
+
+  it("shows implied hosts and their source directly after allow", () => {
+    const workspace = noChangeWorkspace();
+    workspace.fullConfig.egress.allow = ["api.anthropic.com", "chatgpt.com"];
+    workspace.impliedHosts = [{ host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "global" } }];
+    expect(renderText(workspace)).toContain(
+      '  allow: [api.anthropic.com, chatgpt.com]\n  implied:\n    - chatgpt.com (implied by [agent] provider = "openai-codex")\n  allow-internal:',
+    );
+    expect(renderText(noChangeWorkspace())).not.toContain("  implied:");
   });
 
   it("never prints a secret value, only the secret's name and host-binding metadata", () => {
@@ -139,6 +152,7 @@ describe("config/render: renderText", () => {
       fullConfig: config,
       trustKey: "/home/user/myproj",
       priorRecord: undefined,
+      impliedHosts: [],
       trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
     };
     const text = renderText(workspace);
@@ -159,6 +173,7 @@ describe("config/render: renderText", () => {
       fullConfig: config,
       trustKey: "/home/user/myproj",
       priorRecord: undefined,
+      impliedHosts: [],
       trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
     };
     const text = renderText(workspace);
@@ -242,8 +257,19 @@ describe("config/render: renderJson", () => {
       dir: resolved.dir,
       trustKey: resolved.trustKey,
       config: resolved.fullConfig,
+      impliedHosts: [],
       trust: resolved.trustEvaluation,
     });
+  });
+
+  it("includes implied-host source metadata beside the effective config", () => {
+    const resolved = noChangeWorkspace();
+    resolved.fullConfig.egress.allow = ["chatgpt.com"];
+    resolved.impliedHosts = [{ host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "global" } }];
+    const parsed = JSON.parse(renderJson(resolved));
+    expect(parsed.impliedHosts).toEqual(resolved.impliedHosts);
+    expect(parsed.config.egress.allow).toEqual(["chatgpt.com"]);
+    expect(parsed.config).not.toHaveProperty("impliedHosts");
   });
 
   it("is pretty-printed (indented), not minified", () => {
