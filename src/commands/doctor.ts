@@ -1,11 +1,8 @@
 // `corb doctor` — M3.5: host-side environment inspection. No VM is ever
 // booted here; every check below is a file-existence test, a PATH/fallback
 // binary lookup, a cheap subprocess version query, or a cgroup file read.
-// `corb doctor` also takes no directory/workspace argument — see
-// `src/config/paths.ts`'s own note that named-workspace-file resolution is
-// a later milestone; this item only ever reads the single global
-// `~/.config/corb/config.toml`, if present, the same way `corbConfigDir()`/
-// `configTomlPath()` already default.
+// Doctor has no directory argument. It reads the global config and checks workspace sources.
+// Workspace selection and layering belong to later commands.
 //
 // Structured as a list of independent checks (`DoctorCheckResult`) rather
 // than one large imperative function, so each check's classification logic
@@ -25,6 +22,7 @@ import { corbConfigDir, configTomlPath, credentialsStateDir } from "../config/pa
 import { findBrokeredProvider, type BrokeredProvider } from "../auth/provider.ts";
 import { readStoredCredential, type StoredCredential } from "../auth/store.ts";
 import { ConfigParseError, parseConfigLayer, type ConfigLayer, type PartialSecretConfig } from "../config/schema.ts";
+import { listWorkspaces, workspaceSourcePaths, type WorkspaceListing } from "../config/workspaces.ts";
 import { ImageNotFoundError, resolveRuntimeImage } from "../vm/image.ts";
 import { readCgroupControllersText } from "../vm/cgroup.ts";
 import {
@@ -460,6 +458,36 @@ function loadDoctorConfigLayer(configPath: string): DoctorConfigLoad {
   }
 }
 
+export type WorkspaceSourcesCheckInput =
+  | { kind: "listed"; listing: WorkspaceListing; explicit: boolean; invalidConfigs: number }
+  | { kind: "listing-error"; error: unknown }
+  | { kind: "config-error"; error: ConfigParseError };
+
+/** Classify source checks without reading files or global state. */
+export function classifyWorkspaceSources(input: WorkspaceSourcesCheckInput): DoctorCheckResult {
+  if (input.kind === "config-error") {
+    return warn("workspace-sources", "config.toml could not be parsed. See the required-secrets check.");
+  }
+  if (input.kind === "listing-error") {
+    return fail("workspace-sources", errorMessage(input.error));
+  }
+  const { listing } = input;
+  const summary = `${listing.sources.length} source(s), ${listing.workspaces.length} workspace(s)`;
+  const warnings: string[] = [];
+  if (input.explicit && listing.sources.some((source) => !source.exists)) {
+    warnings.push("configured sources missing");
+  }
+  if (listing.allWorkspaces.some((workspace) => !workspace.valid)) {
+    warnings.push("invalid workspace names");
+  }
+  if (input.invalidConfigs > 0) {
+    warnings.push("invalid workspace configurations");
+  }
+  return warnings.length === 0
+    ? ok("workspace-sources", summary)
+    : warn("workspace-sources", `${summary}. ${warnings.join(", ")}. Run 'corb explain' for source details.`);
+}
+
 // ---------------------------------------------------------------------------
 // Required secret env vars (config.toml says a secret is required; is the
 // env var actually set?)
@@ -876,7 +904,8 @@ export interface RunDoctorChecksOptions {
 
 export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Promise<DoctorReport> {
   const pathDirs = splitPath(process.env.PATH);
-  const configPath = configTomlPath(corbConfigDir());
+  const configDir = corbConfigDir();
+  const configPath = configTomlPath(configDir);
   const configResult = loadDoctorConfigLayer(configPath);
   const runCommand = options.runCommand ?? runCommandForReal;
 
@@ -916,6 +945,28 @@ export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Pro
 
   checks.push(checkRequiredSecrets(configResult, process.env));
   checks.push(checkSecretsConfigured(configResult));
+  if (configResult.kind === "parse-error") {
+    checks.push(classifyWorkspaceSources({ kind: "config-error", error: configResult.error }));
+  } else {
+    try {
+      const layer = configResult.kind === "parsed" ? configResult.layer : {};
+      const listing = listWorkspaces(workspaceSourcePaths(layer, configDir), configDir);
+      let invalidConfigs = 0;
+      for (const entry of listing.allWorkspaces) {
+        try {
+          parseConfigLayer(fs.readFileSync(entry.corbToml, "utf8"), entry.corbToml, { scope: "workspace" });
+        } catch (err) {
+          if (!(err instanceof ConfigParseError)) {
+            throw err;
+          }
+          invalidConfigs++;
+        }
+      }
+      checks.push(classifyWorkspaceSources({ kind: "listed", listing, explicit: layer.workspaces?.paths !== undefined, invalidConfigs }));
+    } catch (err) {
+      checks.push(classifyWorkspaceSources({ kind: "listing-error", error: err }));
+    }
+  }
   {
     const credentialsDir = credentialsStateDir();
     const brokered = checkBrokeredLogin(configResult, (provider) => readStoredCredential(credentialsDir, provider.id));

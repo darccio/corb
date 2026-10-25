@@ -351,6 +351,10 @@ describe("config/load", () => {
     expect(() => mergeConfigLayers([{ dir: [{ host: "~/x" }] }])).toThrow(ConfigMergeError);
   });
 
+  it("excludes personal workspace source settings from the effective config", () => {
+    expect(mergeConfigLayers([{ workspaces: { paths: ["/shared"] } }])).toEqual(mergeConfigLayers([]));
+  });
+
   it("propagates GuestPathError from guestpaths validation rather than silently dropping an invalid dir", () => {
     expect(() => mergeConfigLayers([{ dir: [{ name: "..", host: "~/x" }] }])).toThrow(GuestPathError);
   });

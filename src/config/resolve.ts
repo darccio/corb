@@ -67,6 +67,10 @@ import {
 import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath } from "./paths.ts";
 import { writeFileSecure } from "../util/secure-write.ts";
 import { applyImpliedHosts, type ImpliedHost } from "./implied.ts";
+import { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
+import { listWorkspaces, workspaceSourcePaths, type WorkspaceListing } from "./workspaces.ts";
+
+export { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
 
 /** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
 export class WorkspaceDirectoryError extends Error {
@@ -89,14 +93,17 @@ export class WorkspaceDirectoryError extends Error {
  * inside a mount: the guest could truncate or rewrite the one record of its
  * own denials.
  */
+type ForbiddenMountKind = "config" | "state" | "audit" | "workspace-source" | "workspace" | "workspace-file";
+
 export class ForbiddenMountError extends Error {
-  constructor(hostPath: string, corbDir: string, corbDirKind: "config" | "state" | "audit") {
-    // `audit.path` names a file, not a directory — "overlaps Corb's own
-    // audit directory" would read oddly, so this case gets its own noun
-    // instead of reusing the `${corbDirKind} directory` template.
-    const noun = corbDirKind === "audit" ? "audit log file" : `${corbDirKind} directory`;
+  constructor(hostPath: string, corbDir: string, corbDirKind: ForbiddenMountKind) {
+    const nouns: Record<ForbiddenMountKind, string> = {
+      config: "config directory", state: "state directory", audit: "audit log file",
+      "workspace-source": "workspace source directory", workspace: "workspace directory", "workspace-file": "workspace file",
+    };
+    const noun = nouns[corbDirKind];
     super(
-      `corb config: mount host path '${hostPath}' overlaps Corb's own ${noun} '${corbDir}' — refusing to mount it (see docs/adr/0006-workspace-config-outside-every-mount.md)`,
+      `corb config: mount host path '${hostPath}' overlaps Corb's own ${noun} '${corbDir}' — refusing to mount it (see docs/adr/0006-workspace-config-outside-every-mount.md and docs/adr/0013-workspaces-as-directories-shared-like-dotfiles.md)`,
     );
     this.name = "ForbiddenMountError";
   }
@@ -158,79 +165,31 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// Resolves `rawPath` through symlinks as far as an existing ancestor allows,
-// so a symlinked ancestor is canonicalized even when the leaf path itself
-// doesn't exist yet — e.g. a `create: true` dir that hasn't been `mkdir`'d,
-// or Corb's own config/state dir on a first run. Falls back to a lexical
-// `path.resolve` only if no ancestor at all exists, which in practice means
-// the filesystem root itself is unreachable.
-function realpathOrResolve(rawPath: string): string {
-  const resolved = path.resolve(rawPath);
-  try {
-    return fs.realpathSync(resolved);
-  } catch {
-    // fall through to the ancestor walk below
-  }
-  const remainder: string[] = [];
-  let ancestor = resolved;
-  for (;;) {
-    const parent = path.dirname(ancestor);
-    if (parent === ancestor) {
-      return resolved;
-    }
-    remainder.unshift(path.basename(ancestor));
-    ancestor = parent;
-    try {
-      return path.join(fs.realpathSync(ancestor), ...remainder);
-    } catch {
-      // keep walking up
-    }
-  }
-}
-
-/** True when `target` is `base` itself, or lives anywhere under it. */
-function isSameOrDescendant(base: string, target: string): boolean {
-  if (base === target) {
-    return true;
-  }
-  const rel = path.relative(base, target);
-  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
-}
-
 /**
- * Refuses any `dir.host` that is, or overlaps, `configDir`, `corbStateDir()`,
- * or (when given) `auditPath` — see `ForbiddenMountError`. Checked against
- * `fullConfig.dir`, so it covers both `config.toml` `[[dir]]` entries and
- * `--dir` CLI flags (`fullConfig` is `persistentConfig` merged with
- * `cliLayer`, and `mergeDirEntry`/`mergeDirList` fold CLI overrides into the
- * same name-keyed list rather than appending separately), and it covers
- * `corb explain`/`--dry-run`, not just a real `corb run` — this function
- * runs inside `resolveWorkspace`, before any VM boots and before
- * `src/vm/session.ts`'s `create: true` `mkdir` for a dir that doesn't exist
- * yet.
- *
- * `auditPath` should be `fullConfig.audit?.path` — pass `undefined` (the
- * default case) when the caller has no explicit `[audit] path` set. The
- * default (`defaultAuditPath()`, unset here) already lives inside
- * `corbStateDir()`, itself always forbidden, so it needs no separate check;
- * only an *explicit* override needs one, since that's the only way an audit
- * path could land inside a workspace's own mounted tree instead.
- *
- * Both overlap directions are checked: a mount that *contains* a corb
- * directory (e.g. `corb run ~`, which contains `~/.config/corb`) hands the
- * guest read-write access to `config.toml`/`trusted.json`/`audit.jsonl`; a
- * mount that is *inside* a corb directory (e.g. `--dir
- * x=~/.config/corb/workspaces:rw`) hands over a slice of the same thing
- * directly. Both paths are resolved through `realpathOrResolve` first, so a
- * symlink pointing at either directory is caught, not just a lexical match.
+ * Refuse mounts that overlap personal config, state, audit, sources, or workspace files.
+ * The check covers both overlap directions after resolving symlinks.
+ * Sources include missing paths and all workspace copies, even replaced or invalid ones.
+ * Workspace files can point outside their directories, so their real paths need separate protection.
+ * The final directory list covers positional mounts, global entries, and CLI overrides.
+ * This runs before VM startup, including explain and dry-run commands.
  */
-function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: string, auditPath?: string): void {
-  const forbidden: Array<{ resolved: string; label: string; kind: "config" | "state" | "audit" }> = [
+function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: string, workspaces: WorkspaceListing, auditPath?: string): void {
+  const forbidden: Array<{ resolved: string; label: string; kind: ForbiddenMountKind }> = [
     { resolved: realpathOrResolve(configDir), label: configDir, kind: "config" },
     { resolved: realpathOrResolve(corbStateDir()), label: corbStateDir(), kind: "state" },
   ];
   if (auditPath !== undefined) {
     forbidden.push({ resolved: realpathOrResolve(auditPath), label: auditPath, kind: "audit" });
+  }
+  for (const source of workspaces.sources) {
+    forbidden.push({ resolved: source.realPath, label: source.path, kind: "workspace-source" });
+  }
+  for (const entry of workspaces.allWorkspaces) {
+    forbidden.push({ resolved: entry.realPath, label: entry.dir, kind: "workspace" });
+    forbidden.push({ resolved: entry.corbToml, label: entry.corbToml, kind: "workspace-file" });
+    if (entry.corbSum !== undefined) {
+      forbidden.push({ resolved: entry.corbSum, label: entry.corbSum, kind: "workspace-file" });
+    }
   }
   for (const entry of dirs) {
     if (entry.host === undefined) {
@@ -335,6 +294,8 @@ export interface ResolvedWorkspace {
   trustKey: string;
   /** The trust record `trustEvaluation` was compared against, if one existed for `trustKey`; `undefined` for "never run before". */
   priorRecord: TrustedWorkspaceRecord | undefined;
+  /** Source metadata stays outside the effective config and its trust hash. */
+  workspaces: WorkspaceListing;
 }
 
 /**
@@ -361,6 +322,7 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
   const configDir = opts.configDir ?? corbConfigDir();
 
   const configTomlLayer = readConfigTomlLayer(configDir);
+  const workspaces = listWorkspaces(workspaceSourcePaths(configTomlLayer, configDir), configDir);
   const dirLayer: ConfigLayer = {
     dir: [{ name: path.basename(resolvedDir), host: resolvedDir, mode: "rw" }],
   };
@@ -372,9 +334,9 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
   const trustEvaluation = evaluateTrust(priorRecord?.acceptedConfig, persistentConfig);
 
   const fullConfig = mergeConfigLayers([persistentConfig, cliLayer]);
-  assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir, fullConfig.audit?.path);
+  assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir, workspaces, fullConfig.audit?.path);
 
-  return { dir: resolvedDir, persistentConfig, fullConfig, impliedHosts, trustEvaluation, trustKey, priorRecord };
+  return { dir: resolvedDir, persistentConfig, fullConfig, impliedHosts, trustEvaluation, trustKey, priorRecord, workspaces };
 }
 
 /**

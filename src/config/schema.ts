@@ -1,12 +1,12 @@
 // `src/config/schema.ts` — M2.1: the data shape of one `corb.toml` document
-// (`~/.config/corb/config.toml`, or one `~/.config/corb/workspaces/<name>.toml`)
+// (`~/.config/corb/config.toml`, or one `<source>/<name>/corb.toml`)
 // and a parser for it. Nothing here merges layers or resolves defaults — that
 // is M2.2 (`src/config/load.ts`). Nothing here reads a path off disk or knows
 // about trust — that is also M2.2/M2.3. This module answers exactly one
 // question: given the text of a single TOML document, is it well-formed
 // against Corb's config schema, and if so what does it say?
 //
-// Corb layers config as: built-in defaults < config.toml < workspace file <
+// Corb layers config as: built-in defaults < config.toml < workspace corb.toml <
 // CLI-flags-as-a-pseudo-layer. Any single document in that stack is
 // legitimately partial (a workspace file might set only `[[dir]]` entries and
 // inherit everything else), so every field below is optional — the exception
@@ -14,7 +14,9 @@
 // that has a `[vm]` section is a `PartialVmConfig`, never `undefined`), which
 // falls out of TOML's own nesting rather than being a schema choice.
 import { parse, TomlError } from "smol-toml";
+import path from "node:path";
 import { DurationOverflowError, MAX_SETTIMEOUT_MS, parseDuration } from "../util/duration.ts";
+import { expandHomePrefix } from "./paths.ts";
 
 /**
  * Exactly the four `[[dir]].rules[]` modes the implementation plan's
@@ -194,6 +196,10 @@ export interface PartialAuditConfig {
   path?: string;
 }
 
+export interface PartialWorkspacesConfig {
+  paths?: string[];
+}
+
 /**
  * One layer's worth of config, as parsed from a single TOML document —
  * `config.toml`, or one workspace file. M2.2's loader merges several of
@@ -212,6 +218,7 @@ export interface ConfigLayer {
   dir?: PartialDirConfig[];
   policy?: PartialPolicyConfig;
   audit?: PartialAuditConfig;
+  workspaces?: PartialWorkspacesConfig;
 }
 
 /**
@@ -696,17 +703,47 @@ function parseAuditConfig(value: unknown, sourceLabel: string): PartialAuditConf
   return result;
 }
 
-const TOP_LEVEL_KEYS = ["version", "name", "vm", "agent", "secrets", "egress", "git", "dir", "policy", "audit"] as const;
+const WORKSPACES_KEYS = ["paths"] as const;
+
+function parseWorkspacesConfig(value: unknown, sourceLabel: string): PartialWorkspacesConfig {
+  const table = expectTable(value, "workspaces", sourceLabel);
+  assertKnownKeys(table, WORKSPACES_KEYS, "workspaces", sourceLabel);
+  const result: PartialWorkspacesConfig = {};
+  if (table.paths !== undefined) {
+    const seen = new Set<string>();
+    result.paths = expectArray(table.paths, "workspaces.paths", sourceLabel).map((entry, i) => {
+      const location = `workspaces.paths[${i}]`;
+      const raw = expectString(entry, location, sourceLabel);
+      const expanded = expandHomePrefix(raw);
+      if (raw === "" || !path.isAbsolute(expanded)) {
+        throw new ConfigParseError(sourceLabel, `field '${location}' must be an absolute path, optionally starting with ~ or $HOME`, location);
+      }
+      const normalized = path.resolve(expanded);
+      if (seen.has(normalized)) {
+        throw new ConfigParseError(sourceLabel, `field '${location}' duplicates a workspace source after home expansion`, location);
+      }
+      seen.add(normalized);
+      return raw;
+    });
+  }
+  return result;
+}
+
+const TOP_LEVEL_KEYS = ["version", "name", "vm", "agent", "secrets", "egress", "git", "dir", "policy", "audit", "workspaces"] as const;
+
+export interface ParseConfigLayerOptions {
+  scope?: "global" | "workspace";
+}
 
 /**
  * Parses the text of one `corb.toml`-shaped document (`config.toml`, or one
- * workspace file — both share this exact schema) into a `ConfigLayer`.
+ * workspace file) into a `ConfigLayer`. Workspace scope rejects `[workspaces]`.
  * Throws `ConfigParseError` for invalid TOML syntax, an unknown key at any
  * level, a value of the wrong type or shape, or a malformed duration/size/
  * percentage string. `sourceLabel` (e.g. `~/.config/corb/config.toml`) is
  * folded into every thrown error so the caller doesn't need to re-wrap.
  */
-export function parseConfigLayer(toml: string, sourceLabel: string): ConfigLayer {
+export function parseConfigLayer(toml: string, sourceLabel: string, options: ParseConfigLayerOptions = {}): ConfigLayer {
   let parsed: unknown;
   try {
     parsed = parse(toml);
@@ -719,6 +756,9 @@ export function parseConfigLayer(toml: string, sourceLabel: string): ConfigLayer
 
   const table = expectTable(parsed, "", sourceLabel);
   assertKnownKeys(table, TOP_LEVEL_KEYS, "", sourceLabel);
+  if (options.scope === "workspace" && table.workspaces !== undefined) {
+    throw new ConfigParseError(sourceLabel, "[workspaces] is only allowed in the global config.toml because a shared workspace file cannot add sources", "workspaces");
+  }
 
   const layer: ConfigLayer = {};
   if (table.version !== undefined) {
@@ -758,6 +798,9 @@ export function parseConfigLayer(toml: string, sourceLabel: string): ConfigLayer
   }
   if (table.audit !== undefined) {
     layer.audit = parseAuditConfig(table.audit, sourceLabel);
+  }
+  if (table.workspaces !== undefined) {
+    layer.workspaces = parseWorkspacesConfig(table.workspaces, sourceLabel);
   }
   return layer;
 }
