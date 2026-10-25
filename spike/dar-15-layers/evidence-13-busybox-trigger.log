@@ -1,0 +1,25 @@
+Source: stock corb:0.1.0, buildId 2747a805-7a7e-5798-84ca-077fb5086311, /lib/apk/db/scripts.tar.gz
+busybox-1.37.0-r29.X10541a8e4f11caa1b595f3d53857726d81bf3d754.trigger
+1: #!/bin/busybox sh
+2:
+3: do_bb_install=
+4:
+5: for i in "$@"; do
+6: 	case "$i" in
+7: 		/lib/modules/* | /usr/lib/modules/*)
+8: 			# don't run busybox depmod if we have kmod installed
+9: 			# we dont need to run it twice.
+10: 			target=$(readlink -f "$(command -v depmod || true)")
+11: 			if [ -d "$i" ] && [ "$target" = "/bin/busybox" ]; then
+12: 				/bin/busybox depmod ${i#*/lib/modules/}
+13: 			fi
+14: 			;;
+15: 		*) do_bb_install=yes;;
+16: 	esac
+17: done
+18:
+19: if [ -n "$do_bb_install" ]; then
+20: 	[ -e /bin/bbsuid ] && /bin/bbsuid --install
+21: 	[ -e /bin/busybox-extras ] && /bin/busybox-extras --install -s
+22: 	/bin/busybox --install -s
+23: fi

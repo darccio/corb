@@ -1,0 +1,95 @@
+Verified OK
+{
+  "C": "Q1VguvzJDu+rFWlYIbUq3kmXd/66s=",
+  "P": "postgresql-common",
+  "V": "1.2-r2",
+  "A": "x86_64",
+  "S": "4634",
+  "I": "4577",
+  "T": "Common files for PostgreSQL",
+  "U": "https://www.postgresql.org/",
+  "L": "MIT",
+  "o": "postgresql-common",
+  "m": "Jakub Jirutka <jakub@jirutka.cz>",
+  "t": "1753282076",
+  "c": "730f2f5bdc97be98b2beee33f55134c622e6189c",
+  "D": "/bin/sh",
+  "p": "cmd:pg_versions=1.2-r2"
+}
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/postgresql-common-1.2-r2.apk", "bytes": 4634}
+Verified OK
+Signed-index C checksum verified: Q1VguvzJDu+rFWlYIbUq3kmXd/66s=
+.trigger
+1: #!/bin/sh
+2:
+3: # Sort dirs in reverse order to prefer a higher version if the user installed
+4: # multiple versions at once.
+5: for dir in $(printf '%s\n' "$@" | sort -r); do
+6: 	[ -f "$dir" ] && continue
+7: 	pgver=${dir#*postgresql}
+8: 	expr "$pgver" : '[0-9]*$' >/dev/null || continue
+9:
+10: 	case "$dir" in
+11: 		# This is needed for creating man pages symlinks after a -doc
+12: 		# package is installed.
+13: 		/usr/share/postgresql[0-9]*)
+14: 				pg_versions fix
+15: 				continue
+16: 		;;
+17: 		/usr/libexec/postgresql[0-9]*)
+18: 			# 1. If the default version is already linked and provides postgres server.
+19: 			if [ -f /usr/libexec/postgresql/postgres ]; then
+20: 				pg_versions fix
+21:
+22: 			# 2. If the default version is already linked and both the default version
+23: 			#    and the affected version provides only client programs.
+24: 			elif [ -f /usr/libexec/postgresql/psql ] && ! [ -f "$dir"/postgres ]; then
+25: 				pg_versions fix
+26:
+27: 			# 3. If a new version has been installed and no default version has been
+28: 			#    set yet or the new version provides postgres server while the current
+29: 			#    default does not.
+30: 			elif [ -f "$dir"/psql ]; then
+31: 				echo "* Setting postgresql$pgver as the default version" >&2
+32: 				pg_versions set-default "$pgver"
+33:
+34: 			# 4. If the default version has not been set yet or it was uninstalled
+35: 			#    and there is some postgresql version installed.
+36: 			elif pg_versions list -q >/dev/null; then
+37: 				pgver=$(pg_versions list | head -n1)
+38: 				echo "* Setting postgresql$pgver as the default version" >&2
+39:
+40: 			# 5. There's no postgresql version installed.
+41: 			else
+42: 				pg_versions uninstall
+43: 			fi
+44: 		;;
+45: 		*)
+46: 			continue
+47: 		;;
+48: 	esac
+49: done
+50:
+51:
+52: # APK cannot offer the user an upgrade to a newer major version because it's
+53: # provided by a different package. Thus we use this trigger and inform the user
+54: # about a new major version if the current default version is not the latest.
+55:
+56: # Find the latest available major version.
+57: latest_ver=$(apk list -Pa postgresql \
+58:              	| sed -En 's/.*\{postgresql([0-9]+)\}.*/\1/p' \
+59:              	| sort | tail -n1) || exit 0
+60:
+61: default_ver=$(pg_versions get-default -q) || exit 0
+62:
+63: if [ "$latest_ver" ] && [ "$default_ver" -lt "$latest_ver" ]; then
+64: 	cat >&2 <<-EOF
+65: 	*
+66: 	* You are using 'postgresql$default_ver'. It's recommended to upgrade to the latest
+67: 	* major version provided by package 'postgresql$latest_ver'.
+68: 	* Use command 'pg_versions' to switch between versions.
+69: 	*
+70: 	EOF
+71: fi
+72:
+73: exit 0

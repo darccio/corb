@@ -1,0 +1,8 @@
+{
+  "source": "src/commands/image.ts:155-164",
+  "originalHash": "171874b9",
+  "changedInitHash": "171874b9",
+  "initChangeDetected": false,
+  "changedPostBuildCopyHash": "0f6fe6d9",
+  "postBuildCopyChangeDetected": true
+}

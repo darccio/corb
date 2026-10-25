@@ -1,0 +1,365 @@
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:176:         `Fix: pull this build id (or any ref pointing to it), then retry resume\n` +
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:177:         `  gondolin image inspect ${canonicalBuildId}`;
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:178:     throw new Error(msg);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:179: }
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:180: function ensureCheckpointBackedByRootfs(checkpointDiskPath, rootfsPath) {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:181:     const checkpointAbs = path.resolve(checkpointDiskPath);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:182:     const backingAbs = resolveQcow2BackingPath(checkpointDiskPath);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:183:     if (!backingAbs)
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:184:         return;
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:185:     if (backingAbs === checkpointAbs) {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:186:         throw new Error(`checkpoint is corrupt: qcow2 backing file points to itself (${checkpointAbs})`);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:187:     }
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:188:     const desired = path.resolve(rootfsPath);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:189:     if (backingAbs === desired)
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:190:         return;
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:191:     rebaseQcow2InPlace(checkpointDiskPath, desired, inferDiskFormatFromPath(desired));
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:192: }
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:193: async function resolveGuestAssetsForResume(requiredBuildId, options) {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:194:     const canonicalRequiredBuildId = normalizeImageBuildId(requiredBuildId);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:195:     const userImagePath = options.sandbox?.imagePath;
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:291:     async resume(options = {}) {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:292:         const createVm = getVmCreate();
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:293:         const base = this.baseVmOptions ?? {};
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:294:         const mergedForResume = {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:295:             ...base,
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:296:             ...options,
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:297:             sandbox: {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:298:                 ...(base.sandbox ?? {}),
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:299:                 ...(options.sandbox ?? {}),
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:300:             },
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:301:         };
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:302:         const requestedVmm = resolveRequestedResumeVmm(mergedForResume);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:303:         const compatibleVmm = resolveCheckpointCompatibleVmm(this.data);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:304:         if (!compatibleVmm.includes(requestedVmm)) {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:305:             throw new Error(`checkpoint is not compatible with vmm=${requestedVmm} (compatible backends: ${compatibleVmm.join(", ")})`);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:306:         }
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:307:         ensureQemuImgAvailable();
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:308:         const checkpointDisk = this.diskPath;
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:309:         if (!fs.existsSync(checkpointDisk)) {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:310:             throw new Error(`checkpoint disk not found: ${checkpointDisk}`);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:311:         }
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:312:         const resolved = await resolveGuestAssetsForResume(this.data.guestAssetBuildId, mergedForResume);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:313:         // Fix qcow2 backing filename portability by rebasing in-place on resume.
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:314:         ensureCheckpointBackedByRootfs(checkpointDisk, resolved.assets.rootfsPath);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:315:         const overlayPath = createTempQcow2Overlay(checkpointDisk, "qcow2");
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:316:         const merged = {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:317:             ...mergedForResume,
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:318:             sandbox: {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:319:                 ...(mergedForResume.sandbox ?? {}),
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:320:                 imagePath: resolved.imagePath,
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:321:                 rootDiskPath: overlayPath,
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:322:                 rootDiskFormat: "qcow2",
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:323:                 rootDiskReadOnly: false,
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:324:                 rootDiskDeleteOnClose: true,
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:325:             },
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:326:         };
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:327:         return (await createVm(merged));
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:328:     }
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:329:     /** @deprecated Use {@link resume} */
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:330:     async clone(options = {}) {
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:331:         return await this.resume(options);
+node_modules/@earendil-works/gondolin/dist/src/checkpoint.js:332:     }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1507:     async checkpoint(checkpointPath) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1508:         return await this.checkpointInternal(checkpointPath, {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1509:             keepSessionIpc: false,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1510:         });
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1511:     }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1512:     async checkpointInternal(checkpointPath, options) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1513:         if (!checkpointPath) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1514:             throw new Error("checkpointPath is required");
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1515:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1516:         if (!path.isAbsolute(checkpointPath)) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1517:             throw new Error(`checkpointPath must be an absolute path (got: ${checkpointPath})`);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1518:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1519:         const rootDisk = this.rootDisk;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1520:         if (!rootDisk) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1521:             throw new Error("vm has no root disk");
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1522:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1523:         if (rootDisk.snapshot) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1524:             throw new Error("cannot checkpoint: root disk is running in ephemeral snapshot mode");
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1525:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1526:         if (rootDisk.format !== "qcow2") {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1527:             throw new Error(`cannot checkpoint: root disk must be qcow2 (got ${rootDisk.format})`);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1528:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1529:         // Ensure the disk isn't deleted by close().
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1530:         rootDisk.deleteOnClose = false;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1531:         // Best-effort flush of guest filesystem buffers so the checkpoint captures
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1532:         // recent writes even though we currently stop QEMU abruptly.
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1533:         if (this.server && this.server.getState() === "running") {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1534:             try {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1535:                 await this.exec(["/bin/sh", "-c", "sync; sync"]);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1536:             }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1537:             catch {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1538:                 // ignore
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1539:             }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1540:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1541:         if (options.keepSessionIpc) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1542:             await this.closeSingleflight.run(() => this.closeInternal({
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1543:                 keepSessionIpc: true,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1544:                 keepSessionRegistration: true,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1545:             }));
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1546:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1547:         else {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1548:             await this.close();
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1549:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1550:         const resolvedCheckpointPath = path.resolve(checkpointPath);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1551:         const rootfsPath = path.resolve(this.resolvedSandboxOptions.rootfsPath);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1552:         const backingPath = resolveQcow2BackingPath(rootDisk.path);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1553:         if (backingPath && backingPath !== rootfsPath) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1554:             // Collapse resume-generated checkpoint ancestry before we publish this
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1555:             // overlay as the new checkpoint file.
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1556:             ensureQemuImgAvailable();
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1557:             rebaseQcow2InPlace(rootDisk.path, rootfsPath, inferDiskFormatFromPath(rootfsPath), "safe");
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1558:             const rebasedBackingPath = resolveQcow2BackingPath(rootDisk.path);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1559:             if (rebasedBackingPath === resolvedCheckpointPath) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1560:                 throw new Error(`cannot checkpoint: rebased overlay still points to destination checkpoint path (${resolvedCheckpointPath})`);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1561:             }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1562:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1563:         fs.mkdirSync(path.dirname(resolvedCheckpointPath), { recursive: true });
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1564:         fs.rmSync(resolvedCheckpointPath, { force: true });
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1565:         moveFile(rootDisk.path, resolvedCheckpointPath);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1566:         const checkpointName = path.basename(resolvedCheckpointPath, path.extname(resolvedCheckpointPath));
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1567:         const guestAssets = {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1568:             kernelPath: this.resolvedSandboxOptions.kernelPath,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1569:             initrdPath: this.resolvedSandboxOptions.initrdPath,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1570:             rootfsPath: this.resolvedSandboxOptions.rootfsPath,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1571:         };
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1572:         const commonDir = path.dirname(guestAssets.kernelPath) ===
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1573:             path.dirname(guestAssets.initrdPath) &&
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1574:             path.dirname(guestAssets.kernelPath) ===
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1575:                 path.dirname(guestAssets.rootfsPath)
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1576:             ? path.dirname(guestAssets.kernelPath)
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1577:             : null;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1578:         const manifest = commonDir ? loadAssetManifest(commonDir) : null;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1579:         const guestAssetBuildId = manifest?.buildId;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1580:         if (!guestAssetBuildId) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1581:             throw new Error("cannot checkpoint: guest assets are missing manifest buildId (rebuild guest assets with a newer gondolin build)");
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1582:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1583:         const createdWithVmm = this.resolvedSandboxOptions.vmm;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1584:         const compatibleVmm = manifest?.assets?.krunKernel || createdWithVmm === "krun"
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1585:             ? ["qemu", "krun"]
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1586:             : ["qemu"];
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1587:         const data = {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1588:             version: 1,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1589:             name: checkpointName,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1590:             createdAt: new Date().toISOString(),
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1591:             // Kept for schema compatibility (ignored for single-file checkpoints)
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1592:             diskFile: path.basename(resolvedCheckpointPath),
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1593:             guestAssetBuildId,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1594:             snapshotKind: "disk",
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1595:             createdWithVmm,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1596:             compatibleVmm,
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1597:         };
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1598:         VmCheckpoint.writeTrailer(resolvedCheckpointPath, data);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1599:         // Mark this VM as consumed.
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1600:         this.rootDisk = null;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1601:         this.checkpointed = true;
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1602:         return new VmCheckpoint(resolvedCheckpointPath, data, this.baseOptionsForClone);
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1603:     }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1604:     sendJson(message) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1605:         if (!this.connection) {
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1606:             throw new Error("sandbox connection is not available");
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1607:         }
+node_modules/@earendil-works/gondolin/dist/src/vm/core.js:1608:         this.connection.send(message);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:39:         .map((l) => l.trim())
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:40:         .filter((l) => l && !l.startsWith("#"));
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:41:     const pkgMeta = new Map();
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:42:     const pkgRepo = new Map();
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:43:     const provides = new Map();
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:44:     for (const repo of repos) {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:45:         const safeName = repo.replace(/[^A-Za-z0-9]+/g, "_");
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:46:         const indexPath = path.join(cacheDir, `APKINDEX-${safeName}-${arch}`);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:47:         if (!fs.existsSync(indexPath)) {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:48:             const tarPath = `${indexPath}.tar.gz`;
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:49:             const url = `${repo}/${arch}/APKINDEX.tar.gz`;
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:50:             await downloadFile(url, tarPath);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:51:             const raw = await decompressTarGz(tarPath);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:52:             const entries = parseTar(raw);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:53:             const indexEntry = entries.find((e) => e.name === "APKINDEX" && e.content);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:54:             if (!indexEntry?.content) {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:55:                 throw new Error(`APKINDEX not found in ${url}`);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:56:             }
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:57:             fs.writeFileSync(indexPath, indexEntry.content);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:58:         }
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:59:         const content = fs.readFileSync(indexPath, "utf8");
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:60:         const pkgs = parseApkIndex(content);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:61:         for (const pkg of pkgs) {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:62:             if (pkgMeta.has(pkg.P))
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:101:         }
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:102:     }
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:103:     for (const pkgName of needed) {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:104:         const meta = pkgMeta.get(pkgName);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:105:         const repo = pkgRepo.get(pkgName);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:106:         const apkFilename = `${pkgName}-${meta.V}.apk`;
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:107:         const apkPath = path.join(cacheDir, `${arch}-${apkFilename}`);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:108:         if (!fs.existsSync(apkPath)) {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:109:             const url = `${repo}/${arch}/${apkFilename}`;
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:110:             await downloadFile(url, apkPath);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:111:         }
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:112:         const raw = await decompressTarGz(apkPath);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:113:         const entries = parseTar(raw);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:114:         extractEntries(entries, targetDir);
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:115:     }
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:116: }
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:117: export function runPostBuildCommands(rootfsDir, commands, targetArch, log) {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:118:     if (process.platform !== "linux") {
+node_modules/@earendil-works/gondolin/dist/src/alpine/packages.js:119:         throw new Error("postBuild.commands requires a Linux build environment. Set container.force=true when building on macOS.");
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:985:             ? contentLengthValue[0]
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:986:             : contentLengthValue;
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:987:         const parsedLength = contentLength ? Number(contentLength) : null;
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:988:         const hasValidLength = parsedLength !== null &&
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:989:             Number.isFinite(parsedLength) &&
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:990:             parsedLength >= 0;
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:991:         if (contentEncoding) {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:992:             delete responseHeaders["content-encoding"];
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:993:             delete responseHeaders["content-length"];
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:994:         }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:995:         responseHeaders["connection"] = "close";
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:996:         const responseBodyStream = response.body;
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:997:         const suppressBody = currentRequest.method === "HEAD" ||
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:998:             response.status === 204 ||
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:999:             response.status === 205 ||
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1000:             response.status === 304;
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1001:         if (suppressBody) {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1002:             if (responseBodyStream) {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1003:                 try {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1004:                     await responseBodyStream.cancel();
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1005:                 }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1006:                 catch {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1007:                     // ignore cancellation failures
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1008:                 }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1009:             }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1010:             // No message body is allowed for these responses.
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1011:             delete responseHeaders["transfer-encoding"];
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1012:             if (response.status === 204 ||
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1013:                 response.status === 205 ||
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1014:                 response.status === 304) {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1015:                 delete responseHeaders["content-encoding"];
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1016:                 responseHeaders["content-length"] = "0";
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1017:             }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1018:             else {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1088:         const maxResponseBytes = backend.http.maxHttpResponseBodyBytes;
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1089:         if (hasValidLength &&
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1090:             !contentEncoding &&
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1091:             parsedLength > maxResponseBytes) {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1092:             if (responseBodyStream) {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1093:                 try {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1094:                     await responseBodyStream.cancel();
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1095:                 }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1096:                 catch {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1097:                     // ignore cancellation failures
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1098:                 }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1099:             }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1100:             throw new HttpRequestBlockedError(`response body exceeds ${maxResponseBytes} bytes`, 502, "Bad Gateway");
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1101:         }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1102:         const responseBody = responseBodyStream
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1103:             ? await bufferResponseBodyWithLimit(responseBodyStream, maxResponseBytes)
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1104:             : Buffer.from(await response.arrayBuffer());
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1105:         if (responseBody.length > maxResponseBytes) {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1106:             throw new HttpRequestBlockedError(`response body exceeds ${maxResponseBytes} bytes`, 502, "Bad Gateway");
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1107:         }
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1108:         responseHeaders["content-length"] = responseBody.length.toString();
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1109:         let hookResponse = {
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1110:             status: response.status,
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1111:             statusText: response.statusText || "OK",
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1112:             headers: responseHeaders,
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1113:             body: responseBody,
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1114:         };
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1115:         hookResponse = await applyResponseHooks(backend, hookResponse, currentRequest);
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1116:         hookResponse = normalizeHookResponseForGuest(hookResponse, currentRequest.method);
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1117:         sendHttpResponse(write, hookResponse, httpVersion);
+node_modules/@earendil-works/gondolin/dist/src/qemu/http.js:1118:         if (backend.options.debug) {
+src/commands/image.ts:148:  * Corb's own content hash for the image tag: the effective BuildConfig
+src/commands/image.ts:149:  * (after the --arch override is applied) plus the bytes of every
+src/commands/image.ts:150:  * postBuild.copy source file, in config order. This is what actually
+src/commands/image.ts:151:  * changes when the guest binaries (dropcap) or the overlay data
+src/commands/image.ts:152:  * (suid-allowlist.txt, image.json) change, which the BuildConfig JSON alone
+src/commands/image.ts:153:  * would not capture.
+src/commands/image.ts:154:  */
+src/commands/image.ts:155: function computeContentHash(config: BuildConfig, configDir: string): string {
+src/commands/image.ts:156:   const hash = createHash("sha256");
+src/commands/image.ts:157:   hash.update(JSON.stringify(config));
+src/commands/image.ts:158:   for (const entry of config.postBuild?.copy ?? []) {
+src/commands/image.ts:159:     const src = path.resolve(configDir, entry.src);
+src/commands/image.ts:160:     hash.update(entry.dest);
+src/commands/image.ts:161:     hash.update(fs.readFileSync(src));
+src/commands/image.ts:162:   }
+src/commands/image.ts:163:   return hash.digest("hex").slice(0, 8);
+src/commands/image.ts:164: }
+src/commands/image.ts:165:
+src/commands/image.ts:166: /**
+src/commands/image.ts:167:  * Go's `GOARCH` naming (what the `guest-<GOARCH>` Makefile targets actually
+src/commands/image.ts:168:  * produce, in `guest/build/<GOARCH>/`) differs from Gondolin's own
+src/commands/image.ts:234:   }
+src/commands/image.ts:235:   const config = raw as BuildConfig;
+src/commands/image.ts:236:
+src/commands/image.ts:237:   const pkgVersion = readPackageVersion();
+src/commands/image.ts:238:   const contentHash = computeContentHash(config, configDir);
+src/commands/image.ts:239:   const primaryReference = opts.tagOverride ?? `corb:${pkgVersion}-${config.arch}-${contentHash}`;
+src/commands/image.ts:240:   const movingAlias = `corb:${pkgVersion}`;
+src/commands/image.ts:241:
+src/commands/image.ts:242:   // Corb's own build-artifact directory. Deliberately separate from
+src/commands/image.ts:275:   }
+src/commands/image.ts:276:
+src/commands/image.ts:277:   const imported = importImageFromDirectory(result.outputDir);
+src/commands/image.ts:278:   const primaryTag = tagImage(imported.buildId, primaryReference, config.arch);
+src/commands/image.ts:279:   const aliasTag = tagImage(imported.buildId, movingAlias, config.arch);
+src/commands/image.ts:280:
+src/commands/image.ts:281:   return {
+src/commands/image.ts:282:     configPath: opts.configPath,
+src/commands/image.ts:283:     arch: config.arch,
+image/verify.ts:136:
+image/verify.ts:137: async function gateSuid(vm: VM): Promise<GateResult> {
+image/verify.ts:138:   const name = "suid";
+image/verify.ts:139:   const allowlistResult = await run(vm, ["/bin/cat", "/etc/corb/suid-allowlist.txt"]);
+image/verify.ts:140:   if (!allowlistResult.ok) {
+image/verify.ts:141:     return fail(name, `could not read /etc/corb/suid-allowlist.txt: exit ${allowlistResult.exitCode}`);
+image/verify.ts:142:   }
+image/verify.ts:143:   const allowlist = new Set(
+image/verify.ts:144:     allowlistResult.stdout
+image/verify.ts:145:       .split("\n")
+image/verify.ts:146:       .map((line) => line.trim())
+image/verify.ts:147:       .filter((line) => line.length > 0 && !line.startsWith("#")),
+image/verify.ts:148:   );
+image/verify.ts:149:
+image/verify.ts:150:   const sweepResult = await run(vm, [
+image/verify.ts:151:     "/bin/sh",
+image/verify.ts:152:     "-lc",
+image/verify.ts:153:     "find / -xdev \\( -perm -4000 -o -perm -2000 \\) -type f 2>/dev/null | sort",
+image/verify.ts:154:   ]);
+image/verify.ts:155:   if (!sweepResult.ok) {
+image/verify.ts:156:     return fail(name, `SUID/SGID sweep failed: exit ${sweepResult.exitCode}: ${sweepResult.stderr.trim()}`);
+image/verify.ts:157:   }
+image/verify.ts:158:   const live = new Set(
+image/verify.ts:159:     sweepResult.stdout
+image/verify.ts:177: async function gateRemovals(vm: VM): Promise<GateResult> {
+image/verify.ts:178:   const name = "removals";
+image/verify.ts:179:   const candidates = ["npm", "npx", "su", "sudo", "doas", "apk"];
+image/verify.ts:180:   const script = candidates.map((c) => `command -v ${c} >/dev/null 2>&1 && echo "PRESENT:${c}"`).join("; ");
+image/verify.ts:181:   const result = await run(vm, ["/bin/sh", "-lc", script]);
+image/verify.ts:182:   const present = result.stdout
+image/verify.ts:183:     .split("\n")
+image/verify.ts:184:     .filter((line) => line.startsWith("PRESENT:"))
+image/verify.ts:185:     .map((line) => line.slice("PRESENT:".length).trim());
+image/verify.ts:186:
+image/verify.ts:187:   if (present.length > 0) {
+image/verify.ts:188:     return fail(name, `still reachable on PATH: ${present.join(", ")}`);
+image/verify.ts:189:   }
+image/verify.ts:190:   return pass(name, `absent from PATH: ${candidates.join(", ")}`);
+image/verify.ts:191: }
+image/verify.ts:192:
+image/verify.ts:193: async function gateCaTrust(vm: VM): Promise<GateResult> {
+image/verify.ts:194:   const name = "ca-trust";
+image/verify.ts:394:
+image/verify.ts:395: const GATES: Array<(vm: VM) => Promise<GateResult>> = [
+image/verify.ts:396:   gateUser,
+image/verify.ts:397:   gatePrivilegeDrop,
+image/verify.ts:398:   gateSuid,
+image/verify.ts:399:   gateRemovals,
+image/verify.ts:400:   gateCaTrust,
+image/verify.ts:401:   gateGitGhShimmed,
+image/verify.ts:402:   gatePi,
+image/verify.ts:403: ];
+image/verify.ts:404:
+image/verify.ts:405: /**

@@ -1,0 +1,12 @@
+{"label":"concurrent-preflight","canonicalBacking":"/home/dario/.cache/gondolin/images/objects/e8292a0a-0a1a-52d5-959b-9ed372068d54/rootfs.ext4","availableMemoryBytes":7740575744,"tmpAvailableBytes":8615694336,"vmMemory":"1G each","vmCpus":"2 each"}
+{"label":"concurrent-resource-options","values":[{"memory":"1G","cpus":2},{"memory":"1G","cpus":2}]}
+{"label":"concurrent-1-first-exec","exitCode":0,"ms":2732.133242,"stdout":"{\n  \"user\": \"agent\",\n  \"uid\": 1000,\n  \"gid\": 1000,\n  \"piVersion\": \"1.4.0\",\n  \"paths\": {\n    \"dropcapPath\": \"/usr/local/bin/dropcap\",\n    \"home\": \"/home/agent\",\n    \"sessionsDir\": \"/home/agent/sessions\"\n  }\n}\n","stderr":""}
+{"label":"concurrent-1-boot","ms":3007.966988,"tmpdir":"/tmp","tmpFsType":16914836,"tmpfs":true,"tmpAvailableBytes":8614502400,"temporaryOverlay":{"path":"/tmp/gondolin-disk-ae6472f9.qcow2","bytes":655360,"allocatedBytes":593920}}
+{"label":"concurrent-0-first-exec","exitCode":0,"ms":2840.340188,"stdout":"{\n  \"user\": \"agent\",\n  \"uid\": 1000,\n  \"gid\": 1000,\n  \"piVersion\": \"1.4.0\",\n  \"paths\": {\n    \"dropcapPath\": \"/usr/local/bin/dropcap\",\n    \"home\": \"/home/agent\",\n    \"sessionsDir\": \"/home/agent/sessions\"\n  }\n}\n","stderr":""}
+{"label":"concurrent-0-boot","ms":3094.798402,"tmpdir":"/tmp","tmpFsType":16914836,"tmpfs":true,"tmpAvailableBytes":8614502400,"temporaryOverlay":{"path":"/tmp/gondolin-disk-ddc1e308.qcow2","bytes":655360,"allocatedBytes":593920}}
+{"label":"concurrent-overlays","overlays":[{"path":"/tmp/gondolin-disk-ddc1e308.qcow2","bytes":655360,"allocatedBytes":593920},{"path":"/tmp/gondolin-disk-ae6472f9.qcow2","bytes":655360,"allocatedBytes":593920}]}
+{"label":"concurrent-write-0","exitCode":0,"ms":4.3384219999998095,"stdout":"","stderr":""}
+{"label":"concurrent-write-1","exitCode":0,"ms":4.383678000000145,"stdout":"","stderr":""}
+{"label":"concurrent-read-0","exitCode":0,"ms":24.740999999999985,"stdout":"0go version go1.25.10 linux/amd64\npsql (PostgreSQL) 16.15\n","stderr":""}
+{"label":"concurrent-read-1","exitCode":0,"ms":27.500229000000218,"stdout":"1go version go1.25.10 linux/amd64\npsql (PostgreSQL) 16.15\n","stderr":""}
+{"label":"concurrent-shared-layer","before":"8fab7c674e639ca597519f374096a6bb4e5b97fc4670f1764b1e24b863845f3d","after":"8fab7c674e639ca597519f374096a6bb4e5b97fc4670f1764b1e24b863845f3d","unchanged":true}

@@ -1,0 +1,5 @@
+8067AA2A3E7F0000:error:0308010C:digital envelope routines:inner_evp_generic_fetch:unsupported:crypto/evp/evp_fetch.c:476:Global default library context, Algorithm (dgst : 0), Properties (<null>)
+8067AA2A3E7F0000:error:02000068:rsa routines:ossl_rsa_verify:bad signature:crypto/rsa/rsa_sign.c:441:
+8067AA2A3E7F0000:error:1C880004:Provider routines:rsa_verify_directly:RSA lib:providers/implementations/signature/rsa_sig.c:1072:
+Verification failure
+PASS: A one-byte change to the signed index gzip header fails RSA verification.

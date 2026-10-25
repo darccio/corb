@@ -1,0 +1,24 @@
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+debugfs 1.47.4 (6-Mar-2025)
+{"package":"bash","file":"/bin/bash","plain":{"sha256":"e805797b56d13acbf57b72fe8f419361f7f178021a1c8512c6f3b28786d88109","database":null},"fixed":{"sha256":"e805797b56d13acbf57b72fe8f419361f7f178021a1c8512c6f3b28786d88109","database":{"C":"Q1jpqyHU374PqoFRUXvYVbY7TjMBw=","P":"bash","V":"5.3.3-r1","p":"cmd:bash=5.3.3-r1"}},"bytesUnchanged":true}
+{"package":"curl","file":"/usr/bin/curl","plain":{"sha256":"0245018bc932c56f56702dea6d5c08b19408edee0f1e4205ab0cb7740992b371","database":null},"fixed":{"sha256":"0245018bc932c56f56702dea6d5c08b19408edee0f1e4205ab0cb7740992b371","database":{"C":"Q1+63ItsaqO20RxwNR2bcyWVEQg3s=","P":"curl","V":"8.23.0-r0","p":"wcurl=8.23.0-r0 cmd:curl=8.23.0-r0 cmd:wcurl=8.23.0-r0"}},"bytesUnchanged":true}
+{"package":"git","file":"/usr/local/libexec/real-git","plain":{"sha256":"24e937e0de40640bc45573cc7a775f60636b87750409e4fc66b342995f67afc8","database":null},"fixed":{"sha256":"24e937e0de40640bc45573cc7a775f60636b87750409e4fc66b342995f67afc8","database":{"C":"Q1vQso+RiU3HWICiJGhEWi0IS+sAk=","P":"git","V":"2.52.0-r0","p":"cmd:git-receive-pack=2.52.0-r0 cmd:git-shell=2.52.0-r0 cmd:git-upload-archive=2.52.0-r0 cmd:git-upload-pack=2.52.0-r0 cmd:git=2.52.0-r0"}},"bytesUnchanged":true}
+{"package":"nodejs","file":"/usr/bin/node","plain":{"sha256":"75cece49711a90126814ce00421c023d6c09c0f4ec26094b5593fc2ec6690357","database":null},"fixed":{"sha256":"75cece49711a90126814ce00421c023d6c09c0f4ec26094b5593fc2ec6690357","database":{"C":"Q1U574g+2RoyzzCyh1ElbiVG0JaFY=","P":"nodejs","V":"24.22.1-r0","p":"nodejs-lts=24.22.1-r0 cmd:node=24.22.1-r0"}},"bytesUnchanged":true}
+{"package":"github-cli","file":"/usr/local/libexec/real-gh","plain":{"sha256":"4740e913fcffa646991162e48dc82232e1525aa6c9e8575b0bbc0e21f155a0b5","database":null},"fixed":{"sha256":"4740e913fcffa646991162e48dc82232e1525aa6c9e8575b0bbc0e21f155a0b5","database":{"C":"Q1oB1Y4QcAV9HWy9wPjPN9MLHSCR8=","P":"github-cli","V":"2.83.0-r6","p":"cmd:gh=2.83.0-r6"}},"bytesUnchanged":true}
+{"package":"jq","file":"/usr/bin/jq","plain":{"sha256":"544cbc85ffaab4dba869a88d086ea049e0a833a261bda63aa62867e5df369b8e","database":null},"fixed":{"sha256":"544cbc85ffaab4dba869a88d086ea049e0a833a261bda63aa62867e5df369b8e","database":{"C":"Q1ahW4edKTHB0NeUAy5L1jpVyaV1s=","P":"jq","V":"1.8.2-r0","p":"cmd:jq=1.8.2-r0 so:libjq.so.1=1.0.4"}},"bytesUnchanged":true}
+{"package":"openssh-client-default","file":"/usr/bin/ssh","plain":{"sha256":"b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096","database":null},"fixed":{"sha256":"66d5452f447ef3066666069e0ac704345750583a01c77508ee7eb1a7f943e3e1","database":{"C":"Q1VK8JGwPQ8Di/vMFhKI5fes7GY68=","P":"openssh-client-default","V":"10.2_p1-r0","p":"openssh-client=10.2_p1-r0 cmd:ssh=10.2_p1-r0"}},"bytesUnchanged":false}
+{"package":"bindfs","file":"/usr/bin/bindfs","plain":{"sha256":"20adc060758865899012c328fa679aa01538b453cfd551e609c4542ee73a73f2","database":null},"fixed":{"sha256":"20adc060758865899012c328fa679aa01538b453cfd551e609c4542ee73a73f2","database":null},"bytesUnchanged":true}
