@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { base, bootstrap, runtime, log, run, save, read, options, boot, protectedHashes, checkpoint, sha256, diskInfo } from "./common.mjs";
 import { GATES } from "./verify-copy.ts";
 
@@ -76,20 +77,53 @@ async function fixedInstall(name, packages) {
   try {
     const before = await protectedHashes(vm, name + "-protected-before");
     save("protected-fixed-base", { hashes: before });
+    await run(vm, name + "-tools-before", "set -e; node --version; pi --version; /usr/local/libexec/real-git --version; bindfs --version");
     await run(vm, name + "-base-db", "cat /lib/apk/db/installed");
-    const start = performance.now();
+    const beforeFiles = await persistentManifest(vm, name + "-base-files-before");
+    let update = await run(vm, name + "-update", "/opt/corb-build/apk.static update", { required: false });
+    if (!update.ok && /HTTP 502|Bad Gateway/.test(update.stdout + update.stderr)) {
+      update = await run(vm, name + "-update-https-retry", "/opt/corb-build/apk.static update", { required: false });
+    }
+    if (!update.ok && /certificate verify|certificate.*(?:fail|invalid)|unable to get local issuer|SSL certificate/i.test(update.stdout + update.stderr)) {
+      update = await run(vm, name + "-update-http-trust-fallback", "sed -i 's@https://@http://@g' /etc/apk/repositories; /opt/corb-build/apk.static update", { required: false });
+    }
+    if (!update.ok) throw new Error("Repository update failed before package installation");
     await run(vm, name + "-simulate", "/opt/corb-build/apk.static add --simulate " + packages);
+    const start = performance.now();
     await run(vm, name + "-install", "/opt/corb-build/apk.static --no-cache add " + packages);
     save(name + "-install-time", { ms: performance.now() - start });
     const after = await protectedHashes(vm, name + "-protected-after");
     log(name + "-protected-comparison", { same: before === after });
-    await run(vm, name + "-tools", "node --version; pi --version; /usr/local/libexec/real-git --version; bindfs --version; go version; psql --version; for c in npm npx su sudo doas apk apk.static; do command -v \"$c\" || true; done", { required: false });
+    if (before !== after) throw new Error("Refusing a layer that changed protected base files");
+    const afterFiles = await persistentManifest(vm, name + "-base-files-after");
+    log(name + "-base-file-changes", {
+      changed: [...beforeFiles].filter(([file, digest]) => afterFiles.get(file) !== digest).map(([file]) => file),
+      addedCount: [...afterFiles.keys()].filter(file => !beforeFiles.has(file)).length,
+    });
+    const requested = packages.split(/\s+/);
+    const checks = ["node --version", "pi --version", "/usr/local/libexec/real-git --version", "bindfs --version"];
+    if (requested.includes("go")) checks.push("go version");
+    if (requested.includes("postgresql16-client")) checks.push("psql --version");
+    await run(vm, name + "-tools", "set -e; " + checks.join("; "));
     await run(vm, name + "-db-after", "cat /lib/apk/db/installed");
     await cleanRemovals(vm, name);
     await checkpoint(vm, name, image);
   } finally {
     await vm.close();
   }
+}
+
+async function persistentManifest(vm, label) {
+  const result = await vm.exec(["/bin/sh", "-c", "find / -xdev -type f -exec sha256sum '{}' ';' | sort"], {
+    stdout: "buffer", stderr: "buffer", signal: AbortSignal.timeout(180_000),
+  });
+  if (!result.ok) throw new Error("Persistent file manifest failed: " + result.stderr);
+  const digest = createHash("sha256").update(result.stdout).digest("hex");
+  const filename = path.join(runtime, label + "-" + digest.slice(0, 8) + ".sha256");
+  fs.writeFileSync(filename, result.stdout);
+  const entries = new Map(result.stdout.trim().split("\n").filter(Boolean).map(line => [line.slice(66), line.slice(0, 64)]));
+  log(label, { files: entries.size, manifestSha256: digest, file: filename });
+  return entries;
 }
 
 async function cleanRemovals(vm, label) {
@@ -169,12 +203,15 @@ async function stack() {
   try {
     await run(vm, "stack-install", "/opt/corb-build/apk.static --no-cache add postgresql16-client");
     await cleanRemovals(vm, "stack");
+    const hashes = await protectedHashes(vm, "stack-protected");
+    if (hashes !== read("protected-fixed-base").hashes) throw new Error("Stacking changed protected base files");
     second = await checkpoint(vm, "stacked-layer", first.base);
   } finally {
     await vm.close();
   }
   const info = diskInfo(second.path);
   log("stack-disk-info", info);
+  if (info["full-backing-filename"] !== path.join(first.base.assetDir, "rootfs.ext4")) throw new Error("Stacked checkpoint is not flat");
   const hidden = first.path + ".hidden";
   fs.renameSync(first.path, hidden);
   let checked;
@@ -210,18 +247,21 @@ async function movedBase() {
   }
 }
 
-async function baseControl() {
-  const vm = await boot("base-control", options("base-control", { workspace: true, verify: true }));
+async function baseControl(imageName) {
+  const image = imageName ? read(imageName) : base;
+  const label = imageName ? "fixed-base-control" : "base-control";
+  const vm = await boot(label, options(label, { image: image.assetDir, workspace: true, verify: true }));
   try {
+    if (imageName) save("protected-fixed-base", { hashes: await protectedHashes(vm, "protected-fixed-base") });
     const gates = [];
     for (const gate of GATES) {
       const result = await gate(vm);
       gates.push(result);
-      log("base-control-gate", result);
+      log(label + "-gate", result);
     }
     await run(vm, "base-git-http1", "/usr/local/libexec/real-git -c http.version=HTTP/1.1 ls-remote https://github.com/octocat/Hello-World.git", { required: false });
     await run(vm, "base-git-trust-explicit", "/usr/local/libexec/real-git ls-remote https://github.com/octocat/Hello-World.git", { required: false, env: { GIT_SSL_CAINFO: "/run/gondolin/ca-certificates.crt" } });
-    save("base-control", { gates });
+    save(label, { gates });
   } finally {
     await vm.close();
   }
@@ -234,7 +274,7 @@ try {
   else if (action === "negative") await negative(process.argv[3]);
   else if (action === "stack") await stack();
   else if (action === "moved-base") await movedBase();
-  else if (action === "base-control") await baseControl();
+  else if (action === "base-control") await baseControl(process.argv[3]);
   else if (action === "clean-original") await cleanOriginal();
   else throw new Error("Unknown phase: " + action);
 } catch (err) {

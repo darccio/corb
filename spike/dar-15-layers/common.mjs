@@ -112,12 +112,24 @@ export async function boot(label, opts, checkpoint) {
   const vm = checkpoint ? await VmCheckpoint.load(checkpoint).resume(opts) : await VM.create(opts);
   try {
     await run(vm, label + "-first-exec", "cat /etc/corb/image.json");
-    log(label + "-boot", { ms: performance.now() - start, tmpdir: os.tmpdir(), tmpFsType: fs.statfsSync(os.tmpdir()).type });
+    const filesystem = fs.statfsSync(os.tmpdir());
+    log(label + "-boot", {
+      ms: performance.now() - start, tmpdir: os.tmpdir(), tmpFsType: filesystem.type,
+      tmpfs: filesystem.type === 0x01021994, tmpAvailableBytes: filesystem.bavail * filesystem.bsize,
+      temporaryOverlay: temporaryOverlay(vm),
+    });
     return vm;
   } catch (err) {
     await vm.close();
     throw err;
   }
+}
+
+export function temporaryOverlay(vm) {
+  const filename = vm.rootDisk?.path;
+  if (!filename) return null;
+  const stat = fs.statSync(filename);
+  return { path: filename, bytes: stat.size, allocatedBytes: stat.blocks * 512 };
 }
 
 export async function protectedHashes(vm, label) {
@@ -128,8 +140,15 @@ export async function protectedHashes(vm, label) {
 export async function checkpoint(vm, name, image = base) {
   const filename = path.join(runtime, "layers", "dar-15", name + ".qcow2");
   const start = performance.now();
+  log(name + "-temporary-overlay", temporaryOverlay(vm));
   const value = await vm.checkpoint(filename);
   const result = { path: filename, ms: performance.now() - start, bytes: fs.statSync(filename).size, sha256: sha256(filename), checkpoint: value.toJSON(), base: image };
+  fs.writeFileSync(filename.replace(/\.qcow2$/, ".json"), JSON.stringify({
+    baseBuildId: image.buildId,
+    layerSha256: result.sha256,
+    createdAt: result.checkpoint.createdAt,
+    bytes: result.bytes,
+  }, null, 2) + "\n");
   save(name, result);
   log(name + "-checkpoint", result);
   return result;
