@@ -77,6 +77,10 @@ Directories merge by name. Later `host`, `mode`, `create`, and `protect-git` fie
 Rules for the same directory append across layers. Secret `hosts` replace instead of appending.
 The trust check flags every widening change.
 
+A workspace that sets a brokered `[agent] provider` gets its API hosts added to `egress.allow`.
+`corb explain` marks them as implied and names the workspace.
+If a change implies a new host, the next run needs `--trust-config`.
+
 Without a workspace match, the positional directory retains its existing behavior.
 Its generated `rw` mode overrides a global `ro` entry with the same name.
 Use a CLI override when you need a read-only positional mount.
