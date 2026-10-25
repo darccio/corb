@@ -1,17 +1,6 @@
-// `src/config/trust.ts` — M2.3: the trust ratchet's pure decision logic.
-// Given the `EffectiveConfig` a workspace was last accepted with (or
-// `undefined`, if this is the first time) and the `EffectiveConfig` it has
-// now, decide whether the change is safe to proceed on silently ("trusted")
-// or must be confirmed by a human ("requires-confirmation"), and provide the
-// pure store-update helper for recording a fresh acceptance. Like
-// `src/config/schema.ts` (M2.1) and `src/config/load.ts` (M2.2), this module
-// does no filesystem I/O (no reading/writing `~/.config/corb/trusted.json`,
-// no `os.homedir()`) and no interactive prompting — both are wiring left to
-// a later milestone (M2.6) that actually hooks this into `corb run`. Every
-// `EffectiveConfig` this module receives is assumed to already be built from
-// only the persistent, on-disk layers (built-in defaults + config.toml +
-// workspace file) — excluding the CLI-flags layer is the caller's job; this
-// module has no CLI-flag awareness at all.
+// Compare accepted and current persistent configs without disk I/O or prompts.
+// The resolver supplies defaults, global, workspace, and any positional layer.
+// CLI flags never enter the accepted config or this comparison.
 import { createHash } from "node:crypto";
 import type { DirConfig, DirRuleConfig, EffectiveConfig } from "./load.ts";
 import type { DirMode, PartialSecretConfig } from "./schema.ts";
@@ -32,15 +21,9 @@ export interface TrustedWorkspaceRecord {
 }
 
 /**
- * The whole `trusted.json` file: multiple workspaces in one store, keyed by
- * a caller-chosen stable identifier. This module doesn't derive or enforce
- * the key itself — `recordAcceptance` below just takes whatever string the
- * caller passes — but `EffectiveConfig.name` is the natural choice, since
- * that's what identifies a workspace. One consequence worth noting: keying
- * by `name` means renaming a workspace file's `name` field starts a fresh
- * trust history (the old record is simply orphaned under its old key). That
- * is a reasonable, expected consequence of using a human-editable field as
- * the identifier, not a bug this module needs to guard against.
+ * Personal records use caller-supplied keys. The resolver uses a plain directory path
+ * without a workspace, or workspace:<name>:<resolved dir> with one.
+ * EffectiveConfig.name is a session label and does not identify a trust record.
  */
 export type TrustStore = Record<string, TrustedWorkspaceRecord>;
 

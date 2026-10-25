@@ -225,7 +225,7 @@ function renderAudit(audit: EffectiveConfig["audit"]): string[] {
 }
 
 function renderWorkspaces(listing: WorkspaceListing): string[] {
-  const lines = ["workspaces:"];
+  const lines = ["workspaces:", `  projects-root: ${fmtScalar(listing.projectsRoot)}`];
   if (listing.sources.length === 0) {
     lines.push("  sources: (none)");
   }
@@ -264,13 +264,20 @@ function renderConfigChangeList(label: string, changes: readonly ConfigChange[])
  * run` for `requires-confirmation` without `--trust-config` — the error
  * message must not reinvent a second diff format.
  */
-export function renderTrust(trust: TrustEvaluation, trustKey: string): string[] {
+export function renderTrust(trust: TrustEvaluation, trustKey: string, scope?: Pick<ResolvedWorkspace, "selectedWorkspace" | "dir" | "positionalDirAdded">): string[] {
+  const layers = ["config.toml"];
+  if (scope?.selectedWorkspace !== undefined) {
+    layers.push(`workspace ${scope.selectedWorkspace.name} corb.toml`);
+  }
+  if (scope?.positionalDirAdded) {
+    layers.push(`positional directory ${scope.dir}`);
+  }
   const isNoOp = trust.verdict === "trusted" && trust.widened.length === 0 && trust.narrowed.length === 0;
   const lines = [
     "trust:",
-    `  key (directory path): ${trustKey}`,
+    `  key: ${trustKey}`,
     `  verdict: ${trust.verdict.toUpperCase()}`,
-    "  scope: config.toml + this workspace directory only (does not include any --dir-added directories)",
+    `  scope: ${layers.join(" + ")} (does not include any --dir-added directories)`,
   ];
   if (isNoOp) {
     lines.push("  (no changes since the last trusted run)");
@@ -294,7 +301,10 @@ export function renderText(resolved: ResolvedWorkspace): string {
     // Neutral header — this rendering is shared by both `corb explain` and
     // `corb run --dry-run` (see `src/commands/run.ts`'s module comment), so
     // it deliberately doesn't name either command.
-    `workspace: ${dir}`,
+    `directory: ${dir ?? "(none)"}`,
+    resolved.selectedWorkspace === undefined ? "workspace: (none; global config only)"
+      : `workspace: ${resolved.selectedWorkspace.name} (selected by ${resolved.selectedWorkspace.selectedBy}; source ${resolved.selectedWorkspace.source.raw}; ${resolved.selectedWorkspace.dir})`,
+    `primary: ${resolved.primary}`,
     "",
     `version: ${fmtScalar(config.version)}`,
     `name: ${fmtScalar(config.name)}`,
@@ -308,14 +318,16 @@ export function renderText(resolved: ResolvedWorkspace): string {
     ...renderAudit(config.audit),
     ...renderWorkspaces(resolved.workspaces),
     "",
-    ...renderTrust(trustEvaluation, trustKey),
+    ...renderTrust(trustEvaluation, trustKey, resolved),
   ];
   return lines.join("\n");
 }
 
 /** The JSON payload `renderJson` serializes — round-trips through `JSON.parse` to structurally the same data. `config` is `fullConfig` (see module comment): what will actually run, not just the persistent layers. */
 export interface ExplainJson {
-  dir: string;
+  dir: string | null;
+  primary: string;
+  selectedWorkspace: ResolvedWorkspace["selectedWorkspace"] | null;
   trustKey: string;
   config: EffectiveConfig;
   impliedHosts: ImpliedHost[];
@@ -326,7 +338,9 @@ export interface ExplainJson {
 /** Machine-readable rendering of `resolved`, pretty-printed (this is meant to be read by a human piping through `jq` or eyeballed directly, not a wire format optimized for size). */
 export function renderJson(resolved: ResolvedWorkspace): string {
   const payload: ExplainJson = {
-    dir: resolved.dir,
+    dir: resolved.dir ?? null,
+    primary: resolved.primary,
+    selectedWorkspace: resolved.selectedWorkspace ?? null,
     trustKey: resolved.trustKey,
     config: resolved.fullConfig,
     impliedHosts: resolved.impliedHosts,

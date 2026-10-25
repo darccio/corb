@@ -27,6 +27,7 @@ export interface ListedWorkspace {
 }
 
 export interface WorkspaceListing {
+  projectsRoot?: string;
   sources: WorkspaceSource[];
   workspaces: ListedWorkspace[];
   /** Includes replaced copies so the guard protects them too. */
