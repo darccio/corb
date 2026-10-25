@@ -126,7 +126,12 @@ function matchesAllowPattern(hostname: string, pattern: string): boolean {
   return new RegExp(`^${escaped}$`, "i").test(hostname);
 }
 
+/** Hosts that no pattern in `allow` permits. */
+export function uncoveredHosts(hosts: readonly string[], allow: readonly string[] | undefined): string[] {
+  return hosts.filter((host) => !(allow ?? []).some((pattern) => matchesAllowPattern(host, pattern)));
+}
+
 /** API hosts that `allow` does not permit. Corb adds them through `src/config/implied.ts`. */
 export function unreachableApiHosts(provider: BrokeredProvider, allow: readonly string[] | undefined): string[] {
-  return provider.apiHosts.filter((host) => !(allow ?? []).some((pattern) => matchesAllowPattern(host, pattern)));
+  return uncoveredHosts(provider.apiHosts, allow);
 }

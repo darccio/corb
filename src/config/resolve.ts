@@ -16,7 +16,7 @@ import {
 } from "./trust.ts";
 import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath, expandHomePrefix } from "./paths.ts";
 import { writeFileSecure } from "../util/secure-write.ts";
-import { applyImpliedHosts, type ImpliedHost } from "./implied.ts";
+import { agentProviderLayer, applyImpliedHosts, type ImpliedHost } from "./implied.ts";
 import { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
 import { listWorkspaces, selectWorkspace, workspaceSourcePaths, workspaceTrustKey, WorkspaceSelectionError, type WorkspaceListing } from "./workspaces.ts";
 import { resolveLayerHosts } from "./hostpath.ts";
@@ -254,7 +254,7 @@ export interface ResolvedWorkspace {
   workspaces: WorkspaceListing;
 }
 
-/** Resolve without writes. Apply implied hosts before trust, and guard the final CLI merge. */
+/** Resolve without writes. Track the provider layer before trust, then guard the final CLI merge. */
 export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer, opts: ResolveWorkspaceOptions = {}): ResolvedWorkspace {
   if (dir === undefined && opts.workspace === undefined) {
     throw new WorkspaceSelectionError("a directory or --workspace <name> is required");
@@ -297,7 +297,9 @@ export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer,
     }
     layers.push({ dir: [{ name, host: resolvedDir!, mode: "rw" }] });
   }
-  const { config: persistentConfig, implied: impliedHosts } = applyImpliedHosts(mergeConfigLayers(layers));
+  const { config: persistentConfig, implied: impliedHosts } = applyImpliedHosts(mergeConfigLayers(layers), {
+    providerLayer: agentProviderLayer(configTomlLayer, selected === undefined ? undefined : { name: selected.name, layer: selected.layer }),
+  });
   let primary: string;
   let keyDir: string;
   if (selected?.matchedDir?.host !== undefined) {
