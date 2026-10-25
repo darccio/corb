@@ -10,13 +10,18 @@ corb run [DIR] [flags] [-- PI_ARGS...]
 ```
 
 Start a VM and run Pi interactively in the foreground. `DIR` defaults to the
-current directory.
+current directory unless `--workspace` is given without DIR.
+Corb selects a workspace by a matching host path, or uses global settings when none matches.
+
+- `--workspace NAME`: Select a workspace from the configured sources. Without DIR,
+  use its configured mounts and global mounts. Corb does not add cwd.
 
 - `--dir NAME=HOST[:ro|:rw]`: Add or override a directory mount. Repeatable. The
   default mode is read/write.
 
-- `--primary NAME`: Select the mount where Pi starts. The default is the
-  positional directory's basename.
+- `--primary NAME`: Select the mount where Pi starts. An inside DIR uses the
+  matching workspace mount. Without DIR, the first hosted workspace entry is primary.
+  An added positional directory uses its basename. Pi starts at the primary mount's root.
 
 - `--trust-config`: Accept the persistent configuration when the trust verdict
   requires confirmation.
@@ -43,13 +48,17 @@ For persistent Pi transcripts and `--continue`, see the
 ## Explain
 
 ```bash
-corb explain [DIR] [--dir NAME=HOST[:ro|:rw]] \
+corb explain [DIR] [--workspace NAME] [--dir NAME=HOST[:ro|:rw]] \
   [--primary NAME] [--json]
 ```
 
 Print the merged configuration and trust verdict without starting a session. Use
 the same mount flags as the run you want to inspect. `--json` emits
-machine-readable output.
+machine-readable output. Both formats show the selected workspace, primary mount,
+and trust key. JSON uses `null` for DIR when an explicit workspace has no DIR.
+
+Selection, no-DIR behavior, and errors match `corb run`.
+See [Workspaces](workspaces.md#selection-and-primary-directory) for the matching rules.
 
 ## Login
 
@@ -126,5 +135,5 @@ There are no run flags yet for image selection, memory, CPUs, network
 allowlists, Git repositories, per-path rules, or session duration. Configure
 those settings in [config.toml](configuration.md).
 
-Only one positional workspace directory is accepted. Use repeated `--dir` flags
+Only one positional DIR is accepted. `--workspace` selects a definition by name. Use repeated `--dir` flags
 for additional mounts. `--expose` supports one port.

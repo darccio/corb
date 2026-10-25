@@ -1,7 +1,6 @@
 # Configuration
 
-Corb reads one TOML configuration file. Unknown keys and invalid values fail at
-parse time.
+Corb reads global and selected workspace TOML files. Unknown keys and invalid values fail at parse time.
 
 ## Location
 
@@ -13,13 +12,14 @@ parse time.
 `config.toml` and stores `trusted.json` there. The override replaces the default
 directory.
 
-Corb does not read policy files from the repository. For a project's own settings,
-select a separate host config directory as shown in the
-[walkthrough](walkthrough.md#apply-repository-specific-setup). Pi's repository
+Corb does not read policy files from the repository. Use an external [workspace definition](workspaces.md) for project settings. Pi's repository
 instructions and `.pi` settings are separate from Corb's configuration.
 
-Corb expands leading `~` and `$HOME` only in `[workspaces] paths`.
-Use absolute paths for `[[dir]] host` and other path settings.
+Corb expands leading `~` and `$HOME` in `[workspaces] paths`, `projects-root`, and `[[dir]] host`.
+Relative hosts use the global `[workspaces] projects-root`.
+Without it, a relative host is an error. This also applies to global `config.toml`.
+
+Other path settings keep their existing behavior. This includes `audit.path`.
 Configuration, state, and the audit file must not overlap a mounted directory.
 
 Inspect the effective settings with `corb explain DIR` or
@@ -30,6 +30,7 @@ Inspect the effective settings with `corb explain DIR` or
 ```toml
 [workspaces]
 paths = ["~/corbfiles/workspaces", "~/.config/corb/workspaces"]
+projects-root = "~/Code"
 ```
 
 Each source contains workspace directories at `<source>/<name>/corb.toml`.
@@ -49,7 +50,15 @@ Sources and workspace files remain outside all mounts. The guard resolves their 
 Missing sources stay protected. Dangling source symlinks fail with an error.
 
 `corb explain` shows the listing, and `corb doctor` checks it.
-`corb run` does not apply workspace files yet. Selection and layering will follow in DAR-9.
+Select a definition with `corb run --workspace <name>`, or let Corb select it by DIR.
+With no DIR, explicit workspace selection does not mount cwd.
+Workspace files layer above global settings and below CLI flags.
+Read [selection and primary directory](workspaces.md#selection-and-primary-directory) for matching and error rules.
+
+`projects-root` must be absolute after home expansion. It resolves relative hosts in both TOML layers.
+A workspace file cannot set it. A host may use `~`, `~/x`, `$HOME`, or `$HOME/x`.
+Empty hosts and forms such as `~bob/x` or `${HOME}/x` are errors.
+Relative `--dir` hosts still resolve against cwd after home expansion.
 
 ## Agent and secrets
 
@@ -295,7 +304,5 @@ all workspace mounts.
 Non-empty `agent.extensions` and any `agent.append-system-prompt-file` are
 rejected because they are not wired to Pi. An empty extension list is accepted.
 
-Workspace sources and workspace-scoped parsing are available.
-Workspace selection and layering are not implemented yet.
 Multiple named agent profiles are also not implemented.
 There is one agent declaration per effective configuration.
