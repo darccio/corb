@@ -264,16 +264,16 @@ Before the first run in a fresh checkout:
 
 ## Documentation map
 
-- [`docs/todo.md`](docs/todo.md). planned command-policy improvements:
+- [`docs/todo.md`](docs/todo.md): planned command-policy improvements:
   mandatory arguments and extensible command shims.
-- [`docs/design.md`](docs/design.md). Corb's own architecture and the
+- [`docs/design.md`](docs/design.md): Corb's own architecture and the
   reasoning behind it.
-- [`docs/gondolin-notes.md`](docs/gondolin-notes.md). verified facts,
+- [`docs/gondolin-notes.md`](docs/gondolin-notes.md): verified facts,
   sharp edges, and the risk register for the Gondolin SDK version Corb is
   pinned to.
-- [`docs/spike-results.md`](docs/spike-results.md). evidence from the
+- [`docs/spike-results.md`](docs/spike-results.md): evidence from the
   go/no-go spikes gating the early milestones.
-- [`docs/adr/`](docs/adr/README.md). Architecture Decision Records for the
+- [`docs/adr/`](docs/adr/README.md): Architecture Decision Records for the
   load-bearing decisions made along the way.
 
 ## Status
