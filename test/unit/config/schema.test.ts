@@ -55,9 +55,9 @@ describe("config/schema: workspace sources", () => {
     }
   });
 
-  it("rejects projects-root until the portable-host issue adds it", () => {
-    expect(() => parseConfigLayer('[workspaces]\nprojects-root = "/projects"', "config.toml"))
-      .toThrow("unknown key 'workspaces.projects-root'");
+  it("keeps projects-root alongside ordered sources", () => {
+    expect(parseConfigLayer('[workspaces]\npaths = ["/source"]\nprojects-root = "/projects"', "config.toml").workspaces)
+      .toEqual({ paths: ["/source"], "projects-root": "/projects" });
   });
 
   it("rejects workspace source configuration in workspace scope", () => {
@@ -790,5 +790,24 @@ max-session = "4h"
       expect(err.message).toContain("config.toml");
       expect(err.message).toContain("invalid TOML syntax");
     });
+  });
+});
+
+describe("config/schema: projects-root", () => {
+  it.each(["/projects", "~", "~/projects", "$HOME", "$HOME/projects"])("accepts %s without expanding the parsed layer", (value) => {
+    expect(parseConfigLayer(`[workspaces]\nprojects-root = ${JSON.stringify(value)}`, "config.toml").workspaces?.["projects-root"]).toBe(value);
+  });
+
+  it.each(["relative", "", "~bob/projects", "${HOME}/projects"])("rejects invalid projects-root %s", (value) => {
+    expect(() => parseConfigLayer(`[workspaces]\nprojects-root = ${JSON.stringify(value)}`, "config.toml")).toThrow(ConfigParseError);
+    try {
+      parseConfigLayer(`[workspaces]\nprojects-root = ${JSON.stringify(value)}`, "config.toml");
+    } catch (err) {
+      expect(err).toMatchObject({ location: "workspaces.projects-root" });
+    }
+  });
+
+  it("rejects projects-root in a workspace file", () => {
+    expect(() => parseConfigLayer('[workspaces]\nprojects-root = "/projects"', "corb.toml", { scope: "workspace" })).toThrow("only allowed in the global config.toml");
   });
 });

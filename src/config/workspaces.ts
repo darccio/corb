@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { corbConfigDir, defaultWorkspacesDir, expandHomePrefix } from "./paths.ts";
-import { realpathOrResolve } from "./hostpaths.ts";
-import type { ConfigLayer } from "./schema.ts";
+import { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
+import type { ConfigLayer, PartialDirConfig } from "./schema.ts";
 
 export interface WorkspaceSourcePath {
   raw: string;
@@ -166,4 +166,72 @@ export function listWorkspaces(sourcePaths: readonly WorkspaceSourcePath[], conf
     }
   }
   return { sources, workspaces: [...selected.values()], allWorkspaces };
+}
+
+export interface SelectedWorkspace {
+  name: string;
+  selectedBy: "name" | "path";
+  entry: ListedWorkspace;
+  layer: ConfigLayer;
+  matchedDir: PartialDirConfig | undefined;
+}
+
+export class WorkspaceSelectionError extends Error {
+  constructor(detail: string) {
+    super(`corb config: ${detail}`);
+    this.name = "WorkspaceSelectionError";
+  }
+}
+
+/** Match only hosts set by the workspace file itself. The deepest host wins. */
+function matchingDir(layer: ConfigLayer, dir: string | undefined): PartialDirConfig | undefined {
+  if (dir === undefined) {
+    return undefined;
+  }
+  const target = realpathOrResolve(dir);
+  return layer.dir?.filter((entry) => entry.host !== undefined && isSameOrDescendant(realpathOrResolve(entry.host), target))
+    .sort((a, b) => realpathOrResolve(b.host!).split(path.sep).length - realpathOrResolve(a.host!).split(path.sep).length)[0];
+}
+
+/** Select a winning workspace copy without merging inherited global hosts. */
+export function selectWorkspace({ listing, byName, dir, loadLayer }: {
+  listing: WorkspaceListing;
+  byName?: string;
+  dir?: string;
+  loadLayer: (entry: ListedWorkspace) => ConfigLayer;
+}): SelectedWorkspace | undefined {
+  if (byName !== undefined) {
+    assertValidWorkspaceName(byName);
+    const entry = listing.workspaces.find((candidate) => candidate.name === byName);
+    if (entry === undefined) {
+      const names = listing.workspaces.filter((candidate) => candidate.valid).map((candidate) => candidate.name);
+      throw new WorkspaceSelectionError(`unknown workspace '${byName}'. Valid names: ${names.join(", ") || "(none)"}`);
+    }
+    if (!entry.valid) {
+      throw new WorkspaceSelectionError(`invalid workspace '${byName}': ${entry.reason}`);
+    }
+    const layer = loadLayer(entry);
+    return { name: byName, selectedBy: "name", entry, layer, matchedDir: matchingDir(layer, dir) };
+  }
+  const matches: SelectedWorkspace[] = [];
+  for (const entry of listing.workspaces) {
+    if (!entry.valid) {
+      continue;
+    }
+    const layer = loadLayer(entry);
+    const matchedDir = matchingDir(layer, dir);
+    if (matchedDir !== undefined) {
+      matches.push({ name: entry.name, selectedBy: "path", entry, layer, matchedDir });
+    }
+  }
+  if (matches.length > 1) {
+    throw new WorkspaceSelectionError(`directory '${dir}' matches several workspaces: ${matches.map((match) => `${match.name} (${match.matchedDir!.host})`).join(", ")}. Select one with --workspace <name>`);
+  }
+  return matches[0];
+}
+
+/** Workspace records never reuse the plain directory keys from older runs. */
+export function workspaceTrustKey(name: string, dir: string): string {
+  assertValidWorkspaceName(name);
+  return `workspace:${name}:${dir}`;
 }
