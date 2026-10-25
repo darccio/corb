@@ -28,6 +28,49 @@ describe("config/schema: protect-git", () => {
   });
 });
 
+describe("config/schema: workspace sources", () => {
+  it("accepts absolute and home-prefixed paths without expanding their stored spelling", () => {
+    expect(parseConfigLayer('[workspaces]\npaths = ["/shared", "~/personal", "$HOME/team"]', "config.toml"))
+      .toEqual({ workspaces: { paths: ["/shared", "~/personal", "$HOME/team"] } });
+    expect(parseConfigLayer("[workspaces]\npaths = []", "config.toml")).toEqual({ workspaces: { paths: [] } });
+  });
+
+  it.each(['"relative"', '""', '"~someone/shared"', '"$HOME_OTHER/shared"', "42"])("rejects path %s at its array index", (entry) => {
+    const err = expectConfigParseError(() => parseConfigLayer(`[workspaces]\npaths = [${entry}]`, "config.toml"));
+    expect(err.location).toBe("workspaces.paths[0]");
+  });
+
+  it("rejects duplicate expanded paths, including equivalent lexical spellings", () => {
+    const previousHome = process.env.HOME;
+    process.env.HOME = "/tmp/corb-schema-home";
+    try {
+      for (const paths of [["~/shared", "$HOME/shared"], ["/shared/child/..", "/shared"]]) {
+        const err = expectConfigParseError(() => parseConfigLayer(`[workspaces]\npaths = ${JSON.stringify(paths)}`, "config.toml"));
+        expect(err.location).toBe("workspaces.paths[1]");
+        expect(err.message).toContain("duplicates");
+      }
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
+  });
+
+  it("rejects projects-root until the portable-host issue adds it", () => {
+    expect(() => parseConfigLayer('[workspaces]\nprojects-root = "/projects"', "config.toml"))
+      .toThrow("unknown key 'workspaces.projects-root'");
+  });
+
+  it("rejects workspace source configuration in workspace scope", () => {
+    for (const text of ["[workspaces]", "[workspaces]\npaths = []"]) {
+      const err = expectConfigParseError(() => parseConfigLayer(text, "team/corb.toml", { scope: "workspace" }));
+      expect(err.location).toBe("workspaces");
+      expect(err.message).toContain("only allowed in the global config.toml");
+    }
+    expect(parseConfigLayer('name = "session-label"', "team/corb.toml", { scope: "workspace" }))
+      .toEqual({ name: "session-label" });
+  });
+});
+
 const FULL_VALID_TOML = `
 version = 1
 name    = "corb-dev"

@@ -18,11 +18,38 @@ select a separate host config directory as shown in the
 [walkthrough](walkthrough.md#apply-repository-specific-setup). Pi's repository
 instructions and `.pi` settings are separate from Corb's configuration.
 
-Corb uses host paths in TOML as written. It does not expand `~`. Use absolute paths.
+Corb expands leading `~` and `$HOME` only in `[workspaces] paths`.
+Use absolute paths for `[[dir]] host` and other path settings.
 Configuration, state, and the audit file must not overlap a mounted directory.
 
 Inspect the effective settings with `corb explain DIR` or
 `corb explain DIR --json`.
+
+## Workspace sources
+
+```toml
+[workspaces]
+paths = ["~/corbfiles/workspaces", "~/.config/corb/workspaces"]
+```
+
+Each source contains workspace directories at `<source>/<name>/corb.toml`.
+When `paths` is unset, Corb uses `<configDir>/workspaces`.
+The default follows `CORB_CONFIG_DIR`.
+An explicit list replaces that default. `paths = []` disables sources.
+
+Each path must be absolute after leading `~` or `$HOME` expansion.
+Duplicate expanded paths are errors.
+
+Later sources replace whole same-named workspace directories from earlier sources.
+The `[workspaces]` table is allowed only in the global `config.toml`.
+Shared workspace files cannot add sources.
+Keep `trusted.json` in the personal config directory and outside every source.
+
+Sources and workspace files remain outside all mounts. The guard resolves their symlink targets too.
+Missing sources stay protected. Dangling source symlinks fail with an error.
+
+`corb explain` shows the listing, and `corb doctor` checks it.
+`corb run` does not apply workspace files yet. Selection and layering will follow in DAR-9.
 
 ## Agent and secrets
 
@@ -268,5 +295,7 @@ all workspace mounts.
 Non-empty `agent.extensions` and any `agent.append-system-prompt-file` are
 rejected because they are not wired to Pi. An empty extension list is accepted.
 
-Named workspace files and multiple named agent profiles are not implemented.
+Workspace sources and workspace-scoped parsing are available.
+Workspace selection and layering are not implemented yet.
+Multiple named agent profiles are also not implemented.
 There is one agent declaration per effective configuration.

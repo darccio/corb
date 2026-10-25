@@ -31,6 +31,7 @@ import {
   classifySessionSocketPermissions,
   classifySocketPathBudget,
   classifySshAuthSock,
+  classifyWorkspaceSources,
   compareVersionTuples,
   locateTool,
   parseGoModFloor,
@@ -45,6 +46,50 @@ import {
 } from "../../../src/commands/doctor.ts";
 import { ConfigParseError } from "../../../src/config/schema.ts";
 import { CREDENTIAL_FILE_VERSION, CredentialFileError, type StoredCredential } from "../../../src/auth/store.ts";
+import type { WorkspaceListing } from "../../../src/config/workspaces.ts";
+
+describe("commands/doctor: workspace sources", () => {
+  function listing(exists = true): WorkspaceListing {
+    return {
+      sources: [{ raw: "/sources", path: "/sources", realPath: "/sources", exists }], workspaces: [], allWorkspaces: [],
+    };
+  }
+
+  it("reports source and workspace counts", () => {
+    expect(classifyWorkspaceSources({ kind: "listed", listing: listing(), explicit: true, invalidConfigs: 0 }))
+      .toEqual({ name: "workspace-sources", status: "ok", detail: "1 source(s), 0 workspace(s)" });
+  });
+
+  it("permits a missing default source but warns about a missing explicit one", () => {
+    expect(classifyWorkspaceSources({ kind: "listed", listing: listing(false), explicit: false, invalidConfigs: 0 }).status)
+      .toBe("ok");
+    const result = classifyWorkspaceSources({ kind: "listed", listing: listing(false), explicit: true, invalidConfigs: 0 });
+    expect(result.status).toBe("warn");
+    expect(result.detail).toContain("configured sources missing");
+  });
+
+  it("warns about invalid names and configuration without listing their details", () => {
+    const input = listing();
+    const entry = {
+      name: "bad name", dir: "/sources/bad name", realPath: "/sources/bad name", corbToml: "/sources/bad name/corb.toml",
+      source: 0, valid: false, reason: "invalid workspace name", replaced: [],
+    };
+    input.workspaces.push(entry);
+    input.allWorkspaces.push(entry);
+    const result = classifyWorkspaceSources({ kind: "listed", listing: input, explicit: true, invalidConfigs: 1 });
+    expect(result.status).toBe("warn");
+    expect(result.detail).toContain("invalid workspace names");
+    expect(result.detail).toContain("invalid workspace configurations");
+    expect(result.detail).not.toContain("/sources/bad name");
+  });
+
+  it("fails listing errors and warns when global config parsing already failed", () => {
+    expect(classifyWorkspaceSources({ kind: "listing-error", error: new Error("source cannot be listed") }))
+      .toEqual({ name: "workspace-sources", status: "fail", detail: "source cannot be listed" });
+    expect(classifyWorkspaceSources({ kind: "config-error", error: new ConfigParseError("config.toml", "bad TOML") }).status)
+      .toBe("warn");
+  });
+});
 
 describe("commands/doctor: buildDoctorReport", () => {
   it("ok is true when no check failed, even with warnings", () => {
@@ -604,6 +649,7 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
         "ssh-auth-sock",
         "required-secrets",
         "secrets-configured",
+        "workspace-sources",
         "image-resolvable",
         "cgroup-controllers",
         "gondolin-socket-path",
@@ -611,6 +657,34 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
       ]),
     );
     expect(report.ok).toBe(report.checks.every((c) => c.status !== "fail"));
+  });
+
+  it("warns when a workspace config cannot parse in workspace scope", async () => {
+    const dir = path.join(configDir, "workspaces", "team");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "corb.toml"), "[workspaces]\npaths = []");
+    const report = await runDoctorChecks({ runCommand });
+    expect(report.checks.find((check) => check.name === "workspace-sources"))
+      .toMatchObject({ status: "warn", detail: expect.stringContaining("invalid workspace configurations") });
+  });
+
+  it("reports a listing failure through the workspace-sources check", async () => {
+    fs.mkdirSync(path.join(configDir, "workspaces"));
+    fs.writeFileSync(path.join(configDir, "workspaces", "trusted.json"), "{}");
+    const report = await runDoctorChecks({ runCommand });
+    expect(report.checks.find((check) => check.name === "workspace-sources"))
+      .toMatchObject({ status: "fail", detail: expect.stringContaining("Trust must stay in the personal config directory") });
+  });
+
+  it("warns for an explicitly missing source and tolerates malformed global config", async () => {
+    fs.writeFileSync(path.join(configDir, "config.toml"), `[workspaces]\npaths = [${JSON.stringify(path.join(configDir, "absent"))}]`);
+    const missing = await runDoctorChecks({ runCommand });
+    expect(missing.checks.find((check) => check.name === "workspace-sources"))
+      .toMatchObject({ status: "warn", detail: expect.stringContaining("configured sources missing") });
+    fs.writeFileSync(path.join(configDir, "config.toml"), "not = [TOML");
+    const malformed = await runDoctorChecks({ runCommand });
+    expect(malformed.checks.find((check) => check.name === "workspace-sources"))
+      .toMatchObject({ status: "warn", detail: expect.stringContaining("required-secrets") });
   });
 
   it("checkVerifySecrets only runs when verifySecrets: true, even with a [secrets.NAME.verify] configured", async () => {

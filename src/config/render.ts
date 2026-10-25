@@ -21,6 +21,7 @@
 import type { DirConfig, EffectiveConfig } from "./load.ts";
 import type { ConfigChange, TrustEvaluation } from "./trust.ts";
 import type { ResolvedWorkspace } from "./resolve.ts";
+import type { WorkspaceListing } from "./workspaces.ts";
 import { findBrokeredProvider } from "../auth/provider.ts";
 import { describeImpliedHostSource, type ImpliedHost } from "./implied.ts";
 
@@ -223,6 +224,29 @@ function renderAudit(audit: EffectiveConfig["audit"]): string[] {
   return ["audit:", `  path: ${fmtScalar(audit.path)}`];
 }
 
+function renderWorkspaces(listing: WorkspaceListing): string[] {
+  const lines = ["workspaces:"];
+  if (listing.sources.length === 0) {
+    lines.push("  sources: (none)");
+  }
+  for (const [index, source] of listing.sources.entries()) {
+    lines.push(`  source ${index}: raw=${source.raw} resolved=${source.realPath}${source.exists ? "" : " missing"}`);
+  }
+  if (listing.workspaces.length === 0) {
+    lines.push("  entries: (none)");
+  }
+  for (const entry of listing.workspaces) {
+    lines.push(`  - ${entry.name}: source=${entry.source} dir=${entry.dir}`);
+    if (!entry.valid) {
+      lines.push(`    invalid: ${entry.reason}`);
+    }
+    for (const replaced of entry.replaced) {
+      lines.push(`    replaces ${replaced.dir} (source=${replaced.source})`);
+    }
+  }
+  return lines;
+}
+
 function renderConfigChangeList(label: string, changes: readonly ConfigChange[]): string[] {
   if (changes.length === 0) {
     return [`  ${label}: (none)`];
@@ -282,6 +306,7 @@ export function renderText(resolved: ResolvedWorkspace): string {
     ...renderDirs(config.dir),
     ...renderPolicy(config.policy),
     ...renderAudit(config.audit),
+    ...renderWorkspaces(resolved.workspaces),
     "",
     ...renderTrust(trustEvaluation, trustKey),
   ];
@@ -295,6 +320,7 @@ export interface ExplainJson {
   config: EffectiveConfig;
   impliedHosts: ImpliedHost[];
   trust: TrustEvaluation;
+  workspaces: WorkspaceListing;
 }
 
 /** Machine-readable rendering of `resolved`, pretty-printed (this is meant to be read by a human piping through `jq` or eyeballed directly, not a wire format optimized for size). */
@@ -305,6 +331,7 @@ export function renderJson(resolved: ResolvedWorkspace): string {
     config: resolved.fullConfig,
     impliedHosts: resolved.impliedHosts,
     trust: resolved.trustEvaluation,
+    workspaces: resolved.workspaces,
   };
   return JSON.stringify(payload, null, 2);
 }

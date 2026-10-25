@@ -131,16 +131,44 @@ and its JSON output includes `builtin-rules` on each directory.
 CLI overrides are treated as explicit user choices. They affect the running
 session but are excluded from the stored trust snapshot.
 
-## Planned named workspaces
+## Workspace sources
 
-**NOT IMPLEMENTED**
+A workspace definition is a directory at `<source>/<name>/`, with one `corb.toml` file.
+The directory name identifies the workspace. A `name` inside its TOML remains a session label.
+The file uses the global configuration schema except `[workspaces]`, which stays personal.
+Image and layer pins in `corb.sum` will follow in DAR-16.
 
-The intended design stores named workspace files under
-`~/.config/corb/workspaces/<name>.toml`. They add a workspace-specific layer
-between global configuration and CLI overrides.
+The global `config.toml` lists source directories in order:
 
-Today, `corb run` takes a directory path. It does not look up a saved workspace
-name or read files from that directory.
+```toml
+[workspaces]
+paths = ["~/corbfiles/workspaces", "~/.config/corb/workspaces"]
+```
+
+When `paths` is unset, the default is `<configDir>/workspaces`.
+It follows `CORB_CONFIG_DIR`. An explicit list replaces that default.
+Use `paths = []` to disable all sources.
+Only these source paths expand a leading `~` or `$HOME` today.
+
+Later sources replace earlier workspaces with the same name.
+They replace the whole directory instead of merging its files.
+`corb explain` shows source order and missing paths.
+It marks invalid names and replaced copies.
+`corb doctor` reports source counts and problems.
+A missing source is allowed, but a dangling source symlink is an error.
+
+A team can share a "corbfiles" Git checkout and add its workspace directory as a source.
+Each user keeps `trusted.json` in their personal config directory.
+Never commit `trusted.json` to a source. Corb refuses trust records in a source or its child directories.
+
+Corb refuses mounts that overlap any source or workspace directory.
+This covers replaced and invalid copies.
+The guard resolves symlinks and protects linked `corb.toml` and existing `corb.sum` targets too.
+Even a missing source stays protected when a mount contains its future location.
+
+`corb run` does not use workspace definitions yet.
+It still takes a directory path and applies the global configuration.
+Workspace selection and layering will follow in DAR-9.
 
 A current workaround is to select a different configuration directory:
 

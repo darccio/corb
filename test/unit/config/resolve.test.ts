@@ -25,6 +25,154 @@ import { ConfigParseError } from "../../../src/config/schema.ts";
 import type { EffectiveConfig } from "../../../src/config/load.ts";
 import { hashEffectiveConfig } from "../../../src/config/trust.ts";
 
+describe("config/resolve: workspace source guard", () => {
+  let root: string;
+  let configDir: string;
+  let source: string;
+  let workDir: string;
+  const previousStateDir = process.env.CORB_STATE_DIR;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-source-guard-"));
+    configDir = path.join(root, "config");
+    source = path.join(root, "source");
+    workDir = path.join(root, "work");
+    for (const dir of [configDir, source, workDir]) fs.mkdirSync(dir);
+    process.env.CORB_STATE_DIR = path.join(root, "state");
+    writeSources([source]);
+  });
+
+  afterEach(() => {
+    if (previousStateDir === undefined) delete process.env.CORB_STATE_DIR;
+    else process.env.CORB_STATE_DIR = previousStateDir;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function writeSources(paths: string[], extra = "") {
+    fs.writeFileSync(path.join(configDir, "config.toml"), `[workspaces]\npaths = ${JSON.stringify(paths)}\n${extra}`);
+  }
+
+  function mount(host: string) {
+    return () => resolveWorkspace(workDir, { dir: [{ name: "mounted", host }] }, { configDir });
+  }
+
+  function workspace(parent: string, name: string): string {
+    const dir = path.join(parent, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "corb.toml"), "");
+    return dir;
+  }
+
+  it("rejects mounts equal to, inside, or containing a source", () => {
+    const nested = path.join(source, "nested");
+    fs.mkdirSync(nested);
+    for (const host of [source, nested]) expect(mount(host)).toThrow("workspace source directory");
+    const parent = path.join(root, "external");
+    const childSource = path.join(parent, "definitions");
+    fs.mkdirSync(childSource, { recursive: true });
+    writeSources([childSource]);
+    expect(mount(parent)).toThrow("workspace source directory");
+  });
+
+  it("rejects a child whose name starts with two dots without rejecting siblings", () => {
+    const nested = path.join(source, "..cache");
+    const sibling = `${source}-sibling`;
+    fs.mkdirSync(nested);
+    fs.mkdirSync(sibling);
+    expect(mount(nested)).toThrow("workspace source directory");
+    expect(mount(sibling)).not.toThrow();
+  });
+
+  it("protects a symlinked default source through its target and its original path", () => {
+    const checkout = path.join(root, "checkout");
+    const target = path.join(checkout, "definitions");
+    fs.mkdirSync(target, { recursive: true });
+    const alias = path.join(configDir, "workspaces");
+    fs.symlinkSync(target, alias);
+    fs.writeFileSync(path.join(configDir, "config.toml"), "");
+    expect(mount(checkout)).toThrow("workspace source directory");
+    expect(mount(alias)).toThrow(ForbiddenMountError);
+  });
+
+  it("rejects a mount host that is a symlink to a source", () => {
+    const alias = path.join(root, "alias");
+    fs.symlinkSync(source, alias);
+    expect(mount(alias)).toThrow("workspace source directory");
+  });
+
+  it("protects missing sources when their parent is mounted", () => {
+    const parent = path.join(root, "external");
+    fs.mkdirSync(parent);
+    writeSources([path.join(parent, "missing")]);
+    expect(mount(parent)).toThrow("workspace source directory");
+  });
+
+  it.each(["project", "bad name"])("protects symlinked workspace %s and both overlap directions", (name) => {
+    const parent = path.join(root, "outside");
+    const target = workspace(parent, "target");
+    const nested = path.join(target, "nested");
+    fs.mkdirSync(nested);
+    fs.symlinkSync(target, path.join(source, name));
+    for (const host of [parent, target, nested]) expect(mount(host)).toThrow("workspace directory");
+  });
+
+  it("protects replaced workspace directories and their external configuration files", () => {
+    const firstTarget = workspace(root, "old-target");
+    const otherSource = path.join(root, "second-source");
+    workspace(otherSource, "project");
+    fs.symlinkSync(firstTarget, path.join(source, "project"));
+    const files = path.join(root, "old-files");
+    fs.mkdirSync(files);
+    const toml = path.join(files, "config.toml");
+    fs.writeFileSync(toml, "");
+    fs.unlinkSync(path.join(firstTarget, "corb.toml"));
+    fs.symlinkSync(toml, path.join(firstTarget, "corb.toml"));
+    writeSources([source, otherSource]);
+    expect(mount(firstTarget)).toThrow("workspace directory");
+    expect(mount(files)).toThrow("workspace file");
+  });
+
+  it.each(["corb.toml", "corb.sum"])("protects an external target of %s", (filename) => {
+    const dir = workspace(source, "project");
+    const files = path.join(root, "external-files");
+    fs.mkdirSync(files);
+    const target = path.join(files, filename);
+    fs.writeFileSync(target, "");
+    if (filename === "corb.toml") fs.unlinkSync(path.join(dir, filename));
+    fs.symlinkSync(target, path.join(dir, filename));
+    expect(mount(files)).toThrow("workspace file");
+  });
+
+  it("checks global entries, CLI entries, and the positional directory", () => {
+    writeSources([source], `\n[[dir]]\nname = "source"\nhost = ${JSON.stringify(source)}`);
+    expect(() => resolveWorkspace(workDir, {}, { configDir })).toThrow(ForbiddenMountError);
+    writeSources([source]);
+    expect(mount(source)).toThrow(ForbiddenMountError);
+    expect(() => resolveWorkspace(source, {}, { configDir })).toThrow(ForbiddenMountError);
+  });
+
+  it("fails the run on a listing error and keeps unrelated directories usable", () => {
+    expect(mount(workDir)).not.toThrow();
+    const file = path.join(root, "source-file");
+    fs.writeFileSync(file, "");
+    writeSources([file]);
+    expect(() => resolveWorkspace(workDir, {}, { configDir })).toThrow("not a directory");
+  });
+
+  it("lists workspaces without layering their settings or hashing source configuration", () => {
+    workspace(source, "project");
+    fs.writeFileSync(path.join(source, "project", "corb.toml"), 'name = "not-applied"\n[git]\nallow-push = true');
+    const resolved = resolveWorkspace(workDir, {}, { configDir });
+    expect(resolved.workspaces.workspaces[0]?.name).toBe("project");
+    expect(resolved.persistentConfig.name).toBeUndefined();
+    expect(resolved.persistentConfig.git["allow-push"]).toBe(false);
+    expect(resolved.persistentConfig).not.toHaveProperty("workspaces");
+    acceptWorkspace(resolved.trustKey, resolved.persistentConfig, 1, { configDir });
+    writeSources([]);
+    expect(resolveWorkspace(workDir, {}, { configDir }).trustEvaluation.verdict).toBe("trusted");
+  });
+});
+
 describe("config/resolve: resolveWorkspace", () => {
   let workDir: string;
   let configDir: string;

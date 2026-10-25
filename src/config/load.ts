@@ -514,6 +514,7 @@ function finalizePolicy(merged: PartialPolicyConfig | undefined): EffectivePolic
  * produce the same result.
  */
 export function mergeConfigLayers(layers: ConfigLayer[]): EffectiveConfig {
+  // `workspaces` stays personal and is deliberately excluded from the merge and trust hash.
   let version: number | undefined;
   let name: string | undefined;
   let vm: PartialVmConfig | undefined;

@@ -8,6 +8,42 @@ import type { ResolvedWorkspace } from "../../../src/config/resolve.ts";
 import { renderJson, renderText } from "../../../src/config/render.ts";
 import { builtinGitRules } from "../../../src/config/gitprotect.ts";
 
+describe("config/render: workspace sources", () => {
+  function workspaceWithSources(): ResolvedWorkspace {
+    const resolved = noChangeWorkspace();
+    const entry = {
+      name: "bad name", dir: "/personal/bad name", realPath: "/personal/bad name", corbToml: "/personal/bad name/corb.toml",
+      source: 1, valid: false, reason: "invalid workspace name", replaced: [{ source: 0, dir: "/shared/bad name" }],
+    };
+    resolved.workspaces = {
+      sources: [
+        { raw: "~/shared", path: "/home/user/shared", realPath: "/shared", exists: true },
+        { raw: "/personal", path: "/personal", realPath: "/personal", exists: true },
+        { raw: "/missing", path: "/missing", realPath: "/missing", exists: false },
+      ],
+      workspaces: [entry], allWorkspaces: [entry],
+    };
+    return resolved;
+  }
+
+  it("shows ordered sources, missing paths, invalid names and replaced copies before trust", () => {
+    const text = renderText(workspaceWithSources());
+    expect(text).toContain("source 0: raw=~/shared resolved=/shared");
+    expect(text).toContain("source 2: raw=/missing resolved=/missing missing");
+    expect(text).toContain("bad name: source=1 dir=/personal/bad name");
+    expect(text).toContain("invalid: invalid workspace name");
+    expect(text).toContain("replaces /shared/bad name (source=0)");
+    expect(text.indexOf("audit:")).toBeLessThan(text.indexOf("workspaces:"));
+    expect(text.indexOf("workspaces:")).toBeLessThan(text.indexOf("trust:"));
+  });
+
+  it("includes the complete listing in JSON without modifying the effective config", () => {
+    const resolved = workspaceWithSources();
+    expect(JSON.parse(renderJson(resolved)).workspaces).toEqual(resolved.workspaces);
+    expect(JSON.parse(renderJson(resolved)).config).not.toHaveProperty("workspaces");
+  });
+});
+
 function baseConfig(): EffectiveConfig {
   return {
     version: 1,
@@ -36,6 +72,7 @@ function noChangeWorkspace(): ResolvedWorkspace {
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
     impliedHosts: [],
+    workspaces: { sources: [], workspaces: [], allWorkspaces: [] },
     trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
   };
 }
@@ -51,6 +88,7 @@ function wideningWorkspace(): ResolvedWorkspace {
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
     impliedHosts: [],
+    workspaces: { sources: [], workspaces: [], allWorkspaces: [] },
     trustEvaluation: {
       verdict: "requires-confirmation",
       widened: [{ field: "egress.allow", description: "egress.allow gained 'example.com'" }],
@@ -71,6 +109,7 @@ function cliAddedDirWorkspace(): ResolvedWorkspace {
     trustKey: "/home/user/myproj",
     priorRecord: undefined,
     impliedHosts: [],
+    workspaces: { sources: [], workspaces: [], allWorkspaces: [] },
     trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
   };
 }
@@ -153,6 +192,7 @@ describe("config/render: renderText", () => {
       trustKey: "/home/user/myproj",
       priorRecord: undefined,
       impliedHosts: [],
+      workspaces: { sources: [], workspaces: [], allWorkspaces: [] },
       trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
     };
     const text = renderText(workspace);
@@ -174,6 +214,7 @@ describe("config/render: renderText", () => {
       trustKey: "/home/user/myproj",
       priorRecord: undefined,
       impliedHosts: [],
+      workspaces: { sources: [], workspaces: [], allWorkspaces: [] },
       trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
     };
     const text = renderText(workspace);
@@ -259,6 +300,7 @@ describe("config/render: renderJson", () => {
       config: resolved.fullConfig,
       impliedHosts: [],
       trust: resolved.trustEvaluation,
+      workspaces: resolved.workspaces,
     });
   });
 
