@@ -1,0 +1,126 @@
+Verified OK
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/community/x86_64/APKINDEX.tar.gz", "bytes": 2383372}
+Verified OK
+{
+  "definition": {
+    "build-hosts": [
+      "dl-cdn.alpinelinux.org"
+    ],
+    "packages": [
+      "go",
+      "postgresql16-client"
+    ]
+  },
+  "definitionSha256": "b866078eb87b5f62f10e3744ccbe2ab19bdf28cc6e49e516fc7ed18ab211a333",
+  "pinCount": 18,
+  "pins": [
+    {
+      "name": "binutils",
+      "version": "2.45.1-r0",
+      "apkindex-checksum": "Q1KxcboP2WIlhkKMp7tatcWuy2lFU=",
+      "repository": "main"
+    },
+    {
+      "name": "gcc",
+      "version": "15.2.0-r2",
+      "apkindex-checksum": "Q1skR/VdEj2lz6X+sj9cyv3amZrew=",
+      "repository": "main"
+    },
+    {
+      "name": "gmp",
+      "version": "6.3.0-r4",
+      "apkindex-checksum": "Q1HJ+QnV2G3LsuS9vP0jE3iIu1UYE=",
+      "repository": "main"
+    },
+    {
+      "name": "go",
+      "version": "1.25.10-r0",
+      "apkindex-checksum": "Q1ydZTSU0BWJhZpVQRN3BZvK29P88=",
+      "repository": "community"
+    },
+    {
+      "name": "isl26",
+      "version": "0.26-r1",
+      "apkindex-checksum": "Q1DOrlXzA6PronY7H5ws1bmjNc/XM=",
+      "repository": "main"
+    },
+    {
+      "name": "jansson",
+      "version": "2.14.1-r0",
+      "apkindex-checksum": "Q1Xgjn3HxzP9DfFigBF8SpFhmlzwc=",
+      "repository": "main"
+    },
+    {
+      "name": "libatomic",
+      "version": "15.2.0-r2",
+      "apkindex-checksum": "Q16vGee52zrpypV2Ve1B21KgXlQHc=",
+      "repository": "main"
+    },
+    {
+      "name": "libgomp",
+      "version": "15.2.0-r2",
+      "apkindex-checksum": "Q1wyR67mZlZZy++2qQ42Ea7q0ESI0=",
+      "repository": "main"
+    },
+    {
+      "name": "libncursesw",
+      "version": "6.5_p20251123-r0",
+      "apkindex-checksum": "Q1ZJ0wQcUrgGIPtQqY9ZedJeu+FSM=",
+      "repository": "main"
+    },
+    {
+      "name": "libpq",
+      "version": "18.6-r0",
+      "apkindex-checksum": "Q1xIUf5C0oc5HRvpi3Rfb3cXHedKI=",
+      "repository": "main"
+    },
+    {
+      "name": "lz4-libs",
+      "version": "1.10.0-r0",
+      "apkindex-checksum": "Q13VJPS8mK8mBWeEyJcl3cVMVwZdQ=",
+      "repository": "main"
+    },
+    {
+      "name": "mpc1",
+      "version": "1.3.1-r1",
+      "apkindex-checksum": "Q121m28TJAovjl+c30ZdEodF48Drs=",
+      "repository": "main"
+    },
+    {
+      "name": "mpfr4",
+      "version": "4.2.2-r0",
+      "apkindex-checksum": "Q1K0nfBtbml6dKLq5Pli2JAgsEeg4=",
+      "repository": "main"
+    },
+    {
+      "name": "musl-dev",
+      "version": "1.2.5-r24",
+      "apkindex-checksum": "Q16eHJjWMRqoaOHrXz8jCrSx0ll/g=",
+      "repository": "main"
+    },
+    {
+      "name": "ncurses-terminfo-base",
+      "version": "6.5_p20251123-r0",
+      "apkindex-checksum": "Q1V70dgSTslX7v6iMUvfRbDtEGjO4=",
+      "repository": "main"
+    },
+    {
+      "name": "postgresql-common",
+      "version": "1.2-r2",
+      "apkindex-checksum": "Q1VguvzJDu+rFWlYIbUq3kmXd/66s=",
+      "repository": "main"
+    },
+    {
+      "name": "postgresql16-client",
+      "version": "16.15-r0",
+      "apkindex-checksum": "Q1bLlQhTcdCL9ZFu7evtBp06DH4HM=",
+      "repository": "community"
+    },
+    {
+      "name": "readline",
+      "version": "8.3.1-r0",
+      "apkindex-checksum": "Q1iuuBs6R3+SK5tqUzOBEUxj3ZKP4=",
+      "repository": "main"
+    }
+  ]
+}

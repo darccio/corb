@@ -1,0 +1,13 @@
+Verified OK
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/openssh-client-krb5-10.2_p1-r0.apk", "bytes": 380902}
+Verified OK
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "plain", "buildId": "a7e4ca98-2359-516c-8d37-e4607e470e66", "file": "/usr/bin/ssh", "signedPackage": {"name": "openssh-client-krb5", "version": "10.2_p1-r0", "checksum": "Q1z9J/MLbC3DOlQf2UYYd2+8UeAFs="}, "signedPayloadFileSha256": "b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096", "actualFileSha256": "b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096", "matches": true}
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "fixed", "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54", "file": "/usr/bin/ssh", "signedPackage": {"name": "openssh-client-krb5", "version": "10.2_p1-r0", "checksum": "Q1z9J/MLbC3DOlQf2UYYd2+8UeAFs="}, "signedPayloadFileSha256": "b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096", "actualFileSha256": "66d5452f447ef3066666069e0ac704345750583a01c77508ee7eb1a7f943e3e1", "matches": false}
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/openssh-client-default-10.2_p1-r0.apk", "bytes": 377036}
+Verified OK
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "plain", "buildId": "a7e4ca98-2359-516c-8d37-e4607e470e66", "file": "/usr/bin/ssh", "signedPackage": {"name": "openssh-client-default", "version": "10.2_p1-r0", "checksum": "Q1VK8JGwPQ8Di/vMFhKI5fes7GY68="}, "signedPayloadFileSha256": "66d5452f447ef3066666069e0ac704345750583a01c77508ee7eb1a7f943e3e1", "actualFileSha256": "b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096", "matches": false}
+debugfs 1.47.4 (6-Mar-2025)
+{"image": "fixed", "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54", "file": "/usr/bin/ssh", "signedPackage": {"name": "openssh-client-default", "version": "10.2_p1-r0", "checksum": "Q1VK8JGwPQ8Di/vMFhKI5fes7GY68="}, "signedPayloadFileSha256": "66d5452f447ef3066666069e0ac704345750583a01c77508ee7eb1a7f943e3e1", "actualFileSha256": "66d5452f447ef3066666069e0ac704345750583a01c77508ee7eb1a7f943e3e1", "matches": true}

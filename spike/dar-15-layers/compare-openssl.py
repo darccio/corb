@@ -7,6 +7,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 root = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("bootstrap", root / "fetch-apk.py")
@@ -20,7 +21,14 @@ bootstrap.verify_signature(index_parts, keys, runtime)
 index = bootstrap.entries(index_parts[1][1])["APKINDEX"].decode()
 records = [dict(line.split(":", 1) for line in block.splitlines() if ":" in line) for block in index.split("\n\n")]
 
-for name, filename in [("libcrypto3", "libcrypto.so.3"), ("libssl3", "libssl.so.3")]:
+cases = [("libcrypto3", "usr/lib/libcrypto.so.3"), ("libssl3", "usr/lib/libssl.so.3")]
+images = [("stock", "2747a805-7a7e-5798-84ca-077fb5086311"), ("fixed", "e8292a0a-0a1a-52d5-959b-9ed372068d54")]
+if "--ssh" in sys.argv:
+    cases = [("openssh-client-krb5", "usr/bin/ssh"), ("openssh-client-default", "usr/bin/ssh")]
+    images = [("plain", "a7e4ca98-2359-516c-8d37-e4607e470e66"), ("fixed", "e8292a0a-0a1a-52d5-959b-9ed372068d54")]
+
+for name, relative in cases:
+    filename = Path(relative).name
     package = next(record for record in records if record.get("P") == name)
     url = "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/" + name + "-" + package["V"] + ".apk"
     raw = bootstrap.download(url, runtime / (name + ".apk"))
@@ -32,15 +40,15 @@ for name, filename in [("libcrypto3", "libcrypto.so.3"), ("libssl3", "libssl.so.
     info = dict(line.split(" = ", 1) for line in bootstrap.entries(parts[1][1])[".PKGINFO"].decode().splitlines() if " = " in line)
     if hashlib.sha256(parts[2][0]).hexdigest() != info["datahash"]:
         raise ValueError("Payload hash differs from signed control")
-    payload = bootstrap.entries(parts[2][1])["usr/lib/" + filename]
+    payload = bootstrap.entries(parts[2][1])[relative]
     expected = hashlib.sha256(payload).hexdigest()
-    for label, build_id in [("stock", "2747a805-7a7e-5798-84ca-077fb5086311"), ("fixed", "e8292a0a-0a1a-52d5-959b-9ed372068d54")]:
+    for label, build_id in images:
         image = Path.home() / ".cache/gondolin/images/objects" / build_id / "rootfs.ext4"
         target = runtime / (label + "-" + filename)
-        subprocess.run(["/usr/sbin/debugfs", "-R", "dump /usr/lib/" + filename + " " + str(target), str(image)], check=True)
+        subprocess.run(["/usr/sbin/debugfs", "-R", "dump /" + relative + " " + str(target), str(image)], check=True)
         actual = hashlib.sha256(target.read_bytes()).hexdigest()
         record = {
-            "image": label, "buildId": build_id, "file": "/usr/lib/" + filename,
+            "image": label, "buildId": build_id, "file": "/" + relative,
             "signedPackage": {"name": name, "version": package["V"], "checksum": package["C"]},
             "signedPayloadFileSha256": expected, "actualFileSha256": actual, "matches": actual == expected,
         }
