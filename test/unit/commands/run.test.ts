@@ -344,7 +344,7 @@ describe("commands/run: runRunCommand", () => {
       await runRunCommand([workDir, "--dry-run"]);
       expect(logSpy).toHaveBeenCalledTimes(1);
       const output = logSpy.mock.calls[0]?.[0] as string;
-      expect(output).toContain(`workspace: ${fs.realpathSync(workDir)}`);
+      expect(output).toContain(`directory: ${fs.realpathSync(workDir)}`);
       expect(output).toContain("trust:");
       expect(runSessionMock).not.toHaveBeenCalled();
     });
@@ -831,5 +831,103 @@ describe("commands/run: runRunCommand with a host-brokered provider", () => {
     expect(options.brokered).toBeUndefined();
     expect(options.egress.allow).not.toContain("chatgpt.com");
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("commands/run: named workspaces", () => {
+  let root: string;
+  let configDir: string;
+  let project: string;
+  let previousConfig: string | undefined;
+  let previousHome: string | undefined;
+  let previousState: string | undefined;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-run-named-"));
+    configDir = path.join(root, "config");
+    project = path.join(root, "project");
+    fs.mkdirSync(project);
+    fs.mkdirSync(path.join(configDir, "workspaces", "team"), { recursive: true });
+    previousConfig = process.env.CORB_CONFIG_DIR;
+    previousHome = process.env.HOME;
+    previousState = process.env.CORB_STATE_DIR;
+    process.env.CORB_CONFIG_DIR = configDir;
+    process.env.HOME = root;
+    process.env.CORB_STATE_DIR = path.join(root, "state");
+    fs.writeFileSync(path.join(configDir, "workspaces", "team", "corb.toml"), `[[dir]]\nname = "saved"\nhost = ${JSON.stringify(project)}\nmode = "ro"`);
+    runSessionMock.mockClear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (previousConfig === undefined) delete process.env.CORB_CONFIG_DIR;
+    else process.env.CORB_CONFIG_DIR = previousConfig;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousState === undefined) delete process.env.CORB_STATE_DIR;
+    else process.env.CORB_STATE_DIR = previousState;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("parses --workspace and records whether DIR was explicit", () => {
+    expect(parseRunArgs(["--workspace", "team"])).toMatchObject({ workspace: "team", dirExplicit: false, dir: process.cwd() });
+    expect(parseRunArgs([project, "--workspace", "team"])).toMatchObject({ workspace: "team", dirExplicit: true, dir: project });
+  });
+
+  it("expands CLI home hosts while keeping relative hosts relative to cwd", () => {
+    expect(parseDirFlag("work=~/project:ro")).toEqual({ name: "work", host: project, mode: "ro" });
+    expect(parseDirFlag("work=$HOME/project").host).toBe(project);
+    expect(parseDirFlag("work=relative").host).toBe(path.resolve("relative"));
+  });
+
+  it.each(["~bob/x", "${HOME}/x", "$OTHER/x", "$HOMELESS/x"])("rejects invalid CLI host prefix %s", (host) => {
+    expect(() => parseDirFlag(`work=${host}`)).toThrow(DirFlagError);
+  });
+
+  it("runs a named workspace with no cwd mount and its own primary", async () => {
+    await runRunCommand(["--workspace", "team", "--trust-config"]);
+    const options = runSessionMock.mock.calls[0]?.[0];
+    expect(options.primary).toBe("saved");
+    expect(options.dirs).toEqual([{ name: "saved", hostPath: project, mode: "ro", rules: [] }]);
+  });
+
+  it("starts at the matching mount root for an inside positional directory", async () => {
+    const child = path.join(project, "child");
+    fs.mkdirSync(child);
+    await runRunCommand([child, "--trust-config"]);
+    const options = runSessionMock.mock.calls[0]?.[0];
+    expect(options.primary).toBe("saved");
+    expect(options.dirs).toHaveLength(1);
+    expect(options.dirs[0].hostPath).toBe(project);
+  });
+
+  it("renders the actual --primary override in dry-run output", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runRunCommand(["--workspace", "team", "--dir", `extra=${project}`, "--primary", "extra", "--dry-run"]);
+    expect(log.mock.calls[0]?.[0]).toContain("primary: extra");
+    expect(runSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("prints matching workspace and DIR hints when trust is required", async () => {
+    const outside = path.join(root, "outside");
+    fs.mkdirSync(outside);
+    await expect(runRunCommand(["--workspace", "team", outside])).rejects.toThrow(`corb explain --workspace team ${outside}`);
+    await expect(runRunCommand(["--workspace", "team"])).rejects.toThrow("corb explain --workspace team'");
+    await expect(runRunCommand(["--workspace", "team"])).rejects.toThrow("workspace 'team' requires confirmation");
+    expect(runSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps --primary and --dir in a usable hint for a workspace with no own host", async () => {
+    fs.writeFileSync(path.join(configDir, "workspaces", "team", "corb.toml"), "");
+    fs.writeFileSync(path.join(configDir, "config.toml"), `[[dir]]\nname = "shared"\nhost = ${JSON.stringify(project)}`);
+    await expect(runRunCommand(["--workspace", "team", "--primary", "shared"])).rejects.toThrow("corb explain --workspace team --primary shared");
+    fs.writeFileSync(path.join(configDir, "config.toml"), "");
+    const cliHost = `shared=${project}`;
+    await expect(runRunCommand(["--workspace", "team", "--dir", cliHost, "--primary", "shared"])).rejects.toThrow(`corb explain --workspace team --dir ${cliHost} --primary shared`);
+    const { runExplainCommand } = await import("../../../src/commands/explain.ts");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runExplainCommand(["--workspace", "team", "--dir", cliHost, "--primary", "shared"]);
+    expect(log.mock.calls[0]?.[0]).toContain("primary: shared");
+    expect(runSessionMock).not.toHaveBeenCalled();
   });
 });

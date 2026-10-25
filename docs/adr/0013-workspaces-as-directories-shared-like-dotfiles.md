@@ -4,21 +4,22 @@
 
 Accepted
 
-This decision is not implemented yet. DAR-10, DAR-9, DAR-14, DAR-17 and
-DAR-16 will build it. The DAR-15 spike will inform the layer design.
+DAR-10 provides workspace sources and the mount guard. DAR-9 provides selection,
+configuration layering, portable hosts, and workspace trust keys.
+DAR-14 provides implied provider hosts. Their source metadata stays global until DAR-17.
+Layers and pins remain for DAR-16. The DAR-15 spike will inform their design.
 
 ## Context and Problem Statement
 
 [ADR 0006](0006-workspace-config-outside-every-mount.md) keeps configuration
-outside every directory the agent can write. It reserves named files at
-`~/.config/corb/workspaces/<name>.toml`, but Corb currently reads only the
-global `config.toml`.
+outside every directory the agent can write. It originally reserved named files at `~/.config/corb/workspaces/<name>.toml`.
+This decision replaces that layout with workspace directories.
 
 Teams need to share workspace settings without sharing personal trust records.
 They also need several mount paths, portable across different home directories.
 A workspace will hold image and layer pins alongside its configuration.
 
-Today, `CORB_CONFIG_DIR` can select a separate configuration for each project.
+`CORB_CONFIG_DIR` can select a separate configuration for each project.
 That replaces both the global configuration and its `trusted.json`.
 It does not add project settings to personal defaults.
 
@@ -75,7 +76,7 @@ The user's global `config.toml` lists workspace sources in order:
 
 ```toml
 [workspaces]
-paths = [".../corbfiles/workspaces", "~/.config/corb/workspaces"]
+paths = ["~/corbfiles/workspaces", "~/.config/corb/workspaces"]
 ```
 
 When `paths` is unset, the default is `corbConfigDir()/workspaces`.
@@ -111,7 +112,7 @@ An additive list cannot drop a global item.
 A workspace also cannot remove a whole global directory entry or an earlier rule.
 It can replace scalar values such as `egress.block-internal-ranges`,
 `git.allow-push` and fields in `[policy]`.
-It can replace `host`, `mode` and `create` on a same-named directory.
+It can replace `host`, `mode`, `create`, and `protect-git` on a same-named directory.
 A secret's `hosts` also replace the global value, unlike additive security lists.
 
 `mergeConfigLayers` and `evaluateTrust` already support these rules.
@@ -127,31 +128,41 @@ Corb can also select by path when a workspace's directory host contains the
 positional directory, or equals it.
 Only workspace `[[dir]]` entries with a `host` count.
 Host-less entries never select a workspace.
+
 If several workspaces match, Corb reports an error and names the candidates.
+If several hosts within one workspace match, the deepest host wins.
+Path selection loads every valid winning file. A broken file causes an error even when another workspace matches.
+Only hosts set in the workspace file count. Inherited global hosts do not count.
 
 If none matches, Corb uses the global configuration alone, as today.
 These two selection methods support saved definitions and ordinary directory
 runs without guessing between matching candidates.
 
 If the positional directory matches a workspace host, that entry becomes primary.
-Corb adds no extra mount for a directory inside that host.
+Corb adds no extra mount for a directory inside that host. Pi starts at the mount root.
 Otherwise, it adds the positional directory after the workspace layer, as today.
-`--workspace <name>` without DIR mounts only the workspace's own directories.
-It does not automatically mount the current directory.
+A basename that conflicts with a hosted merged entry is an error and suggests `--dir NAME=HOST`.
+A same-named host-less entry remains allowed.
+
+`--workspace <name>` without DIR adds no positional mount.
+It does not automatically mount the current directory. Global configured mounts still apply.
+The first hosted entry in the workspace's own file supplies the default primary.
+If there is no such entry, an explicit `--primary` must name a hosted global or CLI entry.
 
 ### Portable host paths
 
-Corb will expand `~` and `$HOME` in `[[dir]] host` values.
-Relative values will resolve against the user's global `[workspaces] projects-root`.
+Corb expands `~` and `$HOME` in `[[dir]] host` values.
+Relative values resolve against the user's global `[workspaces] projects-root`.
 This keeps shared definitions independent of `/home/<user>/...` paths.
 `projects-root` stays personal because each user chooses where projects live.
 
-A relative `host` without `projects-root` will be an error.
-This also applies to global `config.toml` and changes current behaviour.
-Today, the docs say `~` is not expanded and recommend absolute paths.
-The code does not enforce that recommendation.
-`path.resolve` in `resolve.ts` and `session.ts` instead resolves relative or
-literal `~` values against the current directory.
+A relative `host` without `projects-root` is an error.
+This also applies to global `config.toml` and changes earlier behaviour.
+Before DAR-9, `path.resolve` in the resolver and session code resolved relative
+or literal `~` values against the current directory.
+The new resolver expands home prefixes and rejects relative hosts without `projects-root`.
+Empty hosts and partial prefixes such as `~bob/x`, `${HOME}/x`, and `$OTHER/x` are errors.
+CLI `--dir` hosts also expand home prefixes, but relative CLI hosts still use cwd.
 
 The new rule replaces that accidental dependence on the current directory.
 Expansion happens before the mount guard and before trust hashing.
@@ -169,6 +180,8 @@ workspace:<name>:<resolved dir>
 `<resolved dir>` is the matched workspace entry's resolved host when DIR is
 inside it or absent. If Corb adds DIR as an extra mount, the key uses that
 resolved positional directory instead.
+Corb canonicalizes workspace host paths through symlinks for these keys.
+With no DIR and no workspace-owned host, the explicit primary supplies the key's host path.
 All subdirectories of one workspace host therefore share one trust record.
 Runs without a workspace keep today's plain path key.
 
@@ -182,7 +195,7 @@ Shared acceptance records let one teammate approve changes for another.
 Personal records preserve each user's decision instead.
 A dotfiles checkout of the whole configuration directory is unsupported.
 Users must never commit `trusted.json`.
-DAR-10 may refuse a workspace source that contains that file.
+DAR-10 refuses a source or child directory that contains that file.
 
 ### Protection of sources and directories
 
@@ -192,27 +205,26 @@ The existing list already covers the configuration directory, state directory
 and an explicit `audit.path`.
 The guard rejects overlaps in either direction.
 
-This protection must ship with workspace sources in DAR-10.
-Adding sources before protecting them lets an agent rewrite future configuration.
-Protecting only the configuration directory is insufficient because the current
-guard resolves that directory itself, but not each source or workspace beneath it.
+DAR-10 ships this protection with workspace sources.
+Unprotected sources let an agent rewrite future configuration.
+The earlier guard resolved only the configuration directory. It did not protect linked sources beneath it.
 
 For example, `~/.config/corb/workspaces` can link to a checkout beneath `~/src`.
-Today, both `corb run ~/src` and `--dir x=~/.config/corb/workspaces:rw` pass
-the guard in that case.
-The comment in `resolve.ts` describes the second path as protected, but the
-resolved target escapes the current forbidden list.
+Before DAR-10, both `corb run ~/src` and `--dir x=~/.config/corb/workspaces:rw` passed
+the guard in that case. The extended guard rejects both overlaps.
 
 ### Implied allowed hosts
 
-Corb will add brokered providers' API hosts to `egress.allow` automatically.
-DAR-14 provides this for global providers, and DAR-17 extends it to workspaces.
+Corb adds brokered providers' API hosts to `egress.allow` automatically.
+DAR-14 applies this before trust. DAR-9 includes the workspace layer in that merge.
+Source metadata still says global until DAR-17 adds workspace source reporting.
+
 Layers' run-time hosts will also become implied through DAR-16.
 `corb explain` shows each implied host and its source.
 A newly implied host counts as widening and requires personal acceptance.
 
-This amends [ADR 0012](0012-host-brokered-oauth-providers.md), which currently
-says a login does not grant network access.
+This amends [ADR 0012](0012-host-brokered-oauth-providers.md), which originally
+required explicit network allowance for a login.
 Implied API hosts replace the need to repeat the provider's required hosts manually.
 Secret `hosts` still do not grant network access.
 That separation remains deliberate, as documented in `docs/configuration.md`.
@@ -220,7 +232,6 @@ That separation remains deliberate, as documented in `docs/configuration.md`.
 ### Open questions
 
 * What exact format will `corb.sum` use? DAR-15 must inform that decision.
-* May two workspaces share a directory?
 * How will `corb ls` show the workspace a session used? Its WORKSPACE column
   currently lists mounted directory names.
 
@@ -236,5 +247,5 @@ That separation remains deliberate, as documented in `docs/configuration.md`.
 * Bad, because even previously working relative global host paths now need `projects-root`.
 * Bad, because old path-keyed acceptance does not cover a workspace's first run.
 * Neutral, because scalars, same-named directory fields and secret host lists still replace earlier values. Widening requires acceptance.
-* Neutral, because sharing the whole configuration directory through dotfiles is unsupported. DAR-10 may reject sources containing `trusted.json`.
+* Neutral, because sharing the whole configuration directory through dotfiles is unsupported. DAR-10 rejects sources containing `trusted.json`.
 * Neutral, because the layer and pin format remains open until the DAR-15 spike supplies evidence.

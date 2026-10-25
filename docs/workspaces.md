@@ -1,14 +1,16 @@
 # Workspaces
 
-A workspace is the collection of host directories and settings used to start a
-Corb session. One session can include several repositories, reference material,
-and scratch space.
+A workspace definition is a directory with a `corb.toml` file outside every mount.
+Its directory name identifies the workspace. A session combines that definition
+with global settings and any CLI overrides.
 
-To start a new workspace, prepare a directory on the host and run `corb run DIR`.
+Use `corb run --workspace <name>` to select a definition.
+You can also run `corb run DIR`. Corb selects a workspace whose own host paths contain DIR.
+If no workspace matches, Corb uses global settings and adds DIR as a mount.
+
 There is no creation or registration command. Corb does not read repository-local
 policy files or run setup scripts. Follow the [development
-walkthrough](walkthrough.md) for a complete example. It covers project-specific
-host configuration and Pi's repository instructions.
+walkthrough](walkthrough.md) for a complete example.
 
 Each run starts a fresh VM and one Pi process. Multiple mounts belong to that
 same session and agent. Mounted host files persist. Guest-only files and default
@@ -34,11 +36,12 @@ contents or create separate checkouts or Git worktrees. Sessions that mount
 the same host path share its files, and ordinary read/write edits are visible
 to the host and other sessions using that directory.
 
-Replace the example paths with existing directories on your host. The positional
-directory defaults to your current directory and is automatically mounted
-read/write. Each additional directory gets a guest path based on its name.
+Replace the example paths with existing directories on your host.
+Without `--workspace`, an omitted DIR defaults to your current directory.
+If DIR is outside the selected workspace's own hosts, Corb adds it as a read/write mount.
+Each additional directory gets a guest path based on its name.
 
-Pi starts in the positional directory's mount. `--primary scratch` changes its
+Pi starts in the matching workspace mount, or the added positional mount. `--primary scratch` changes its
 working directory to `/work/scratch`. All configured mounts remain available.
 
 To make the positional directory read only, override its generated mount by
@@ -57,20 +60,67 @@ This example assumes you have already accepted the persistent configuration. Add
 ```text
 built-in defaults
   + global config.toml
-  + positional directory (read/write)
+  + selected workspace corb.toml
+  + positional directory, only when outside the workspace's own hosts
   + CLI overrides
   = effective session configuration
 ```
 
-Every `[[dir]]` in the global configuration participates in every run. Corb does
-not select global mounts according to the project you pass.
+Every global `[[dir]]` participates in every run. Global `egress.allow` values
+also remain in workspace runs. A workspace can set every option except `[workspaces]`.
+That table stays in the personal global file.
 
-Directories merge by name. A later entry overrides the fields it sets. These
-include the host path and access mode. Rules for the same directory append across layers.
+Lists only add. A workspace cannot remove a global directory entry or an earlier rule.
+Scalars replace. This covers VM settings, provider, model, policy, and Git push permission.
 
-The positional directory is added after the global file. Its generated `rw` mode
-overrides a global `ro` entry with the same name. Use an explicit CLI override
-when you need a read-only primary mount.
+Directories merge by name. Later `host`, `mode`, `create`, and `protect-git` fields replace earlier values.
+Rules for the same directory append across layers. Secret `hosts` replace instead of appending.
+The trust check flags every widening change.
+
+Without a workspace match, the positional directory retains its existing behavior.
+Its generated `rw` mode overrides a global `ro` entry with the same name.
+Use a CLI override when you need a read-only positional mount.
+
+## Selection and primary directory
+
+`--workspace <name>` selects the winning copy from the ordered sources below.
+An unknown or invalid name is an error. Without that flag, Corb loads every valid winning workspace.
+A broken file is an error even when another workspace matches DIR.
+
+Only hosts set in a workspace's own file count for path selection.
+Host-less entries and hosts inherited from global entries do not count.
+Corb compares paths after resolving symlinks. More than one matching workspace is an error that names the candidates.
+If several hosts within one workspace contain DIR, the deepest host wins.
+
+When DIR equals or is inside a workspace host, Corb adds no extra mount.
+That host's mount becomes primary. Pi starts at its root, such as `/work/project`, even for a subdirectory DIR.
+Otherwise Corb adds DIR after the workspace layer.
+If its basename conflicts with a hosted mount name, Corb reports an error and suggests `--dir NAME=HOST`.
+A same-named entry without a host is allowed.
+
+With `--workspace <name>` and no DIR, Corb does not mount cwd automatically.
+Global configured mounts still apply. The first hosted entry in the workspace's own file becomes primary.
+If the file has no hosted entry, you must give `--primary` for a hosted global or CLI entry.
+Use `--primary NAME` to choose another mount.
+
+## Portable host paths
+
+Corb expands a complete leading `~` or `$HOME` component in every `[[dir]] host`.
+Relative hosts use the global `projects-root`:
+
+```toml
+[workspaces]
+projects-root = "~/Code"
+```
+
+A workspace file can then use `host = "packet-loss"` for `~/Code/packet-loss`.
+Without `projects-root`, a relative host is an error. This also applies to global `config.toml`.
+`projects-root` must be absolute after home expansion and cannot appear in a workspace file.
+Empty hosts and forms such as `~bob/x`, `${HOME}/x`, and `$OTHER/x` are errors.
+
+`--dir NAME=HOST` also expands `~` and `$HOME`. Relative CLI hosts still use cwd.
+Corb expands hosts before selection, the mount guard, and trust hashing.
+This does not expand `~` in `audit.path` or other path settings.
 
 ## Rules within a directory
 
@@ -87,8 +137,9 @@ When you run the `packet-loss` directory, the generated mount supplies its host
 path and the rules above remain attached. Globs are relative to that mount's
 root.
 
-This host-less entry must match the basename of the positional directory on each
-run. Other runs need a host path for it or will fail before starting a VM.
+This host-less entry must match the basename of an added positional directory.
+It does not apply when DIR is inside a workspace host. Put rules and `protect-git`
+on that workspace entry instead. Other host-less entries need a host path before a real run.
 
 `hidden` makes a path absent from listings and access. `deny-read` blocks reads
 and writes. `deny-write` preserves reads while refusing edits.
@@ -115,8 +166,17 @@ corb explain ~/Code/packet-loss
 corb run ~/Code/packet-loss --dry-run
 ```
 
-Corb records accepted persistent configuration in `~/.config/corb/trusted.json`,
-keyed by the positional directory's resolved absolute path.
+Corb keeps personal acceptance records in `~/.config/corb/trusted.json`.
+Runs without a workspace use the positional directory's resolved absolute path as the key.
+Workspace runs use `workspace:<name>:<resolved dir>`.
+
+When DIR is inside a workspace host, that host's resolved path supplies `<resolved dir>`.
+All subdirectories of that host share one record.
+With no DIR, Corb uses the default primary host, or the explicit primary when the workspace has no own host.
+When Corb adds DIR as an extra mount, the key uses that resolved DIR instead.
+
+Corb does not reuse old path-keyed records for workspace runs.
+The first workspace run therefore needs `--trust-config` once.
 
 A first run, or a change that widens policy, requires `--trust-config`. Examples
 include a new permitted host, a mount change from `ro` to `rw`, Git push
@@ -148,7 +208,7 @@ paths = ["~/corbfiles/workspaces", "~/.config/corb/workspaces"]
 When `paths` is unset, the default is `<configDir>/workspaces`.
 It follows `CORB_CONFIG_DIR`. An explicit list replaces that default.
 Use `paths = []` to disable all sources.
-Only these source paths expand a leading `~` or `$HOME` today.
+Source paths also expand a leading `~` or `$HOME`.
 
 Later sources replace earlier workspaces with the same name.
 They replace the whole directory instead of merging its files.
@@ -166,17 +226,6 @@ This covers replaced and invalid copies.
 The guard resolves symlinks and protects linked `corb.toml` and existing `corb.sum` targets too.
 Even a missing source stays protected when a mount contains its future location.
 
-`corb run` does not use workspace definitions yet.
-It still takes a directory path and applies the global configuration.
-Workspace selection and layering will follow in DAR-9.
-
-A current workaround is to select a different configuration directory:
-
-```bash
-CORB_CONFIG_DIR="$HOME/.config/corb/roost-ops" \
-  corb run ~/Code/packet-loss --trust-config
-```
-
-This reads `roost-ops/config.toml` instead of the global file. It does not
-inherit the global configuration and uses its own `trusted.json`. Keep the
-configuration directory outside every mounted directory.
+`CORB_CONFIG_DIR` remains supported. It selects the personal configuration directory,
+its `trusted.json`, and the default workspace source. Workspace files still layer
+above that selected global `config.toml`.

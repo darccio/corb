@@ -1,10 +1,5 @@
-// `src/config/load.ts` — M2.2: merges an ordered stack of `ConfigLayer`
-// values (`src/config/schema.ts`, M2.1) — built-in defaults, `config.toml`,
-// a workspace file, and CLI flags as a pseudo-layer — into one fully-merged
-// `EffectiveConfig`. Nothing here reads a path off disk, prompts for trust,
-// or parses a `--dir NAME=HOST:ro`-shaped flag string; those are M2.3/M2.5/
-// M2.6. This module answers exactly one question: given N already-structured
-// layers (later wins), what is the one effective config they produce?
+// Merge parsed global, workspace, positional, and CLI layers over built-in defaults.
+// This module does no disk I/O. Each table keeps the rules below.
 //
 // Merge rules (decided; see the M2.2 brief, not re-litigated here):
 //   1. List-valued security settings are additive across layers, deduplicated

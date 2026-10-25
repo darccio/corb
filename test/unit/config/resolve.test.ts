@@ -12,7 +12,7 @@ import { builtinGitRules } from "../../../src/config/gitprotect.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ConfigReadError,
   ForbiddenMountError,
@@ -666,5 +666,356 @@ describe("config/resolve: resolveWorkspace", () => {
       const mode = fs.statSync(path.join(configDir, "trusted.json")).mode & 0o777;
       expect(mode).toBe(0o600);
     });
+  });
+});
+
+describe("config/resolve: workspace selection and layering", () => {
+  let root: string;
+  let configDir: string;
+  let source: string;
+  let projects: string;
+  let workDir: string;
+  let previousHome: string | undefined;
+  let previousState: string | undefined;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-layering-"));
+    configDir = path.join(root, "config");
+    source = path.join(root, "definitions");
+    projects = path.join(root, "projects");
+    workDir = path.join(projects, "outside");
+    for (const dir of [configDir, source, workDir]) fs.mkdirSync(dir, { recursive: true });
+    previousHome = process.env.HOME;
+    previousState = process.env.CORB_STATE_DIR;
+    process.env.HOME = root;
+    process.env.CORB_STATE_DIR = path.join(root, "state");
+    global();
+  });
+
+  afterEach(() => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousState === undefined) delete process.env.CORB_STATE_DIR;
+    else process.env.CORB_STATE_DIR = previousState;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function global(text = "", rootPath?: string) {
+    fs.writeFileSync(path.join(configDir, "config.toml"), `${text}\n[workspaces]\npaths = ${JSON.stringify([source])}\n${rootPath === undefined ? "" : `projects-root = ${JSON.stringify(rootPath)}\n`}`);
+  }
+
+  function workspace(text: string, name = "team") {
+    const dir = path.join(source, name);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "corb.toml");
+    fs.writeFileSync(file, text);
+    return file;
+  }
+
+  function resolve(dir: string | undefined = workDir, cli = {}, extra = {}) {
+    return resolveWorkspace(dir, cli, { configDir, workspace: "team", ...extra });
+  }
+
+  function host(name = "app", host = path.join(projects, "app"), extra = "") {
+    return `[[dir]]\nname = ${JSON.stringify(name)}\nhost = ${JSON.stringify(host)}\n${extra}`;
+  }
+
+  it("layers every table while retaining additive values and global directory entries", () => {
+    const globalMount = path.join(projects, "global");
+    const oldApp = path.join(projects, "old-app");
+    const newApp = path.join(projects, "app");
+    global(`version = 1
+name = "global"
+[vm]
+image = "global:1"
+memory = "1G"
+cpus = 1
+max-session = "1h"
+[vm.limits]
+memory-max = "2G"
+pids-max = 10
+cpu-quota = "50%"
+[agent]
+provider = "anthropic"
+model = "global-model"
+[secrets.TOKEN]
+hosts = ["old.example"]
+optional = false
+[secrets.TOKEN.verify]
+url = "https://old.example/verify"
+header = "X-Old"
+expect-status = [200]
+[egress]
+allow = ["global.example"]
+allow-internal = ["internal.global"]
+block-internal-ranges = true
+websockets = false
+[egress.github-api]
+hosts = ["global.api"]
+methods = ["GET"]
+deny-paths = ["/old"]
+[git]
+allow-hosts = ["global.git"]
+allow-repos = ["global/repo"]
+ssh-agent = true
+allow-push = false
+${host("global", globalMount, 'mode = "ro"')}
+${host("app", oldApp, 'mode = "ro"\ncreate = false\nprotect-git = false\nrules = [{ glob = "global", mode = "deny-write" }]')}
+[policy]
+enabled = true
+secret-scan = true
+max-changed-files = 10
+fail-open = false
+[audit]
+path = ${JSON.stringify(path.join(root, "old-audit"))}`);
+    workspace(`version = 1
+name = "team-label"
+[vm]
+image = "workspace:2"
+memory = "2G"
+cpus = 2
+max-session = "2h"
+[vm.limits]
+memory-max = "3G"
+pids-max = 20
+cpu-quota = "75%"
+[agent]
+provider = "openai-codex"
+model = "workspace-model"
+[secrets.TOKEN]
+hosts = ["new.example"]
+optional = true
+[secrets.TOKEN.verify]
+url = "https://new.example/check"
+header = "X-New"
+expect-status = [204]
+[secrets.OTHER]
+hosts = ["other.example"]
+[egress]
+allow = ["workspace.example"]
+allow-internal = ["internal.workspace"]
+block-internal-ranges = false
+websockets = true
+[egress.github-api]
+hosts = ["workspace.api"]
+methods = ["POST"]
+deny-paths = ["/new"]
+[git]
+allow-hosts = ["workspace.git"]
+allow-repos = ["workspace/repo"]
+ssh-agent = false
+allow-push = true
+${host("app", newApp, 'mode = "rw"\ncreate = true\nprotect-git = true\nrules = [{ glob = "workspace", mode = "hidden" }]')}
+[policy]
+enabled = false
+secret-scan = false
+max-changed-files = 20
+fail-open = true
+[audit]
+path = ${JSON.stringify(path.join(root, "new-audit"))}`);
+    const result = resolve();
+    const config = result.persistentConfig;
+    expect(config).toMatchObject({
+      version: 1, name: "team-label",
+      vm: { image: "workspace:2", memory: "2G", cpus: 2, "max-session": "2h", limits: { "memory-max": "3G", "pids-max": 20, "cpu-quota": "75%" } },
+      agent: { provider: "openai-codex", model: "workspace-model" },
+      secrets: { TOKEN: { hosts: ["new.example"], optional: true, verify: { url: "https://new.example/check", header: "X-New", "expect-status": [204] } }, OTHER: { hosts: ["other.example"] } },
+      egress: { allow: ["global.example", "workspace.example", "chatgpt.com"], "allow-internal": ["internal.global", "internal.workspace"], "block-internal-ranges": false, websockets: true, "github-api": { hosts: ["global.api", "workspace.api"], methods: ["GET", "POST"], "deny-paths": ["/old", "/new"] } },
+      git: { "allow-hosts": ["global.git", "workspace.git"], "allow-repos": ["global/repo", "workspace/repo"], "ssh-agent": false, "allow-push": true },
+      policy: { enabled: false, "secret-scan": false, "max-changed-files": 20, "fail-open": true },
+      audit: { path: path.join(root, "new-audit") },
+    });
+    expect(config.dir.map((entry) => entry.name)).toEqual(["global", "app", "outside"]);
+    expect(config.dir[0]).toMatchObject({ name: "global", host: globalMount, mode: "ro" });
+    expect(config.dir[1]).toEqual({ name: "app", host: newApp, mode: "rw", create: true, "protect-git": true, rules: [{ glob: "global", mode: "deny-write" }, { glob: "workspace", mode: "hidden" }], "builtin-rules": builtinGitRules() });
+    expect(result.fullConfig.dir[1]?.["builtin-rules"]).toEqual(builtinGitRules());
+    expect(result.impliedHosts).toEqual([{ host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "global" } }]);
+    expect(config).not.toHaveProperty("workspaces");
+    expect(config).not.toHaveProperty("selectedWorkspace");
+    expect(result.selectedWorkspace).toMatchObject({ name: "team", selectedBy: "name", source: { index: 0, raw: source, path: source }, corbToml: path.join(source, "team", "corb.toml") });
+  });
+
+  it("selects an inside path without adding a mount and uses the deepest host", () => {
+    const app = path.join(projects, "app");
+    const deep = path.join(app, "deep");
+    const child = path.join(deep, "child");
+    fs.mkdirSync(child, { recursive: true });
+    workspace(`${host("outer", app)}\n${host("inner", deep, 'mode = "ro"')}`);
+    const result = resolveWorkspace(child, {}, { configDir });
+    expect(result.selectedWorkspace?.selectedBy).toBe("path");
+    expect(result.primary).toBe("inner");
+    expect(result.persistentConfig.dir.map((entry) => entry.name)).toEqual(["outer", "inner"]);
+    expect(result.positionalDirAdded).toBe(false);
+    expect(result.trustKey).toBe(`workspace:team:${deep}`);
+  });
+
+  it("uses only workspace-owned hosts for selection and inside matching", () => {
+    global(host("outside", workDir, 'mode = "ro"'));
+    workspace('[[dir]]\nname = "outside"\nprotect-git = false');
+    expect(resolveWorkspace(workDir, {}, { configDir }).selectedWorkspace).toBeUndefined();
+    expect(() => resolve()).toThrow("Use --dir NAME=HOST");
+  });
+
+  it("a host-less basename entry is allowed when adding the positional mount", () => {
+    workspace('[[dir]]\nname = "outside"\nprotect-git = false');
+    const result = resolve();
+    expect(result.primary).toBe("outside");
+    expect(result.persistentConfig.dir[0]).toMatchObject({ name: "outside", host: workDir, "protect-git": false });
+    expect(result.trustKey).toBe(`workspace:team:${workDir}`);
+  });
+
+  it("rejects a hosted basename collision in the global or workspace layer", () => {
+    workspace(host("outside"));
+    expect(() => resolve()).toThrow("Use --dir NAME=HOST");
+    global(host("outside"));
+    workspace("");
+    expect(() => resolve()).toThrow("Use --dir NAME=HOST");
+  });
+
+  it("keeps non-workspace positional basename overrides unchanged", () => {
+    global(host("outside", path.join(projects, "other"), 'mode = "ro"'));
+    const result = resolveWorkspace(workDir, {}, { configDir });
+    expect(result.selectedWorkspace).toBeUndefined();
+    expect(result.trustKey).toBe(workDir);
+    expect(result.persistentConfig.dir[0]).toMatchObject({ host: workDir, mode: "rw" });
+  });
+
+  it("named selection without DIR uses its first own host and never adds cwd", () => {
+    global(host("global", path.join(projects, "global")));
+    workspace(`[[dir]]\nname = "hostless"\n${host("app")}\n${host("second", path.join(projects, "second"))}`);
+    const result = resolveWorkspace(undefined, {}, { configDir, workspace: "team" });
+    expect(result.dir).toBeUndefined();
+    expect(result.primary).toBe("app");
+    expect(result.positionalDirAdded).toBe(false);
+    expect(result.persistentConfig.dir.map((entry) => entry.name)).toEqual(["global", "hostless", "app", "second"]);
+    expect(result.trustKey).toBe(`workspace:team:${path.join(projects, "app")}`);
+  });
+
+  it("requires an explicit primary when a named workspace has no own host", () => {
+    global(host("global", workDir));
+    workspace("");
+    expect(() => resolveWorkspace(undefined, {}, { configDir, workspace: "team" })).toThrow("no hosted directory of its own");
+    const result = resolveWorkspace(undefined, {}, { configDir, workspace: "team", primary: "global" });
+    expect(result.primary).toBe("global");
+    expect(result.trustKey).toBe(`workspace:team:${workDir}`);
+    const cli = resolveWorkspace(undefined, { dir: [{ name: "cli", host: workDir }] }, { configDir, workspace: "team", primary: "cli" });
+    expect(cli.primary).toBe("cli");
+    expect(cli.persistentConfig.dir.some((entry) => entry.name === "cli")).toBe(false);
+  });
+
+  it("requires a directory or explicit workspace name", () => {
+    expect(() => resolveWorkspace(undefined, {}, { configDir })).toThrow("a directory or --workspace");
+  });
+
+  it("reports workspace read failures with ConfigReadError and the real file path", () => {
+    const file = workspace(host());
+    const original = fs.readFileSync;
+    const read = vi.spyOn(fs, "readFileSync").mockImplementation((...args: Parameters<typeof fs.readFileSync>) => {
+      if (args[0] === file) throw new Error("permission denied");
+      return original(...args);
+    });
+    try {
+      expect(() => resolve()).toThrow(ConfigReadError);
+      expect(() => resolve()).toThrow(file);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it("canonicalizes a symlinked workspace host for shared subdirectory trust", () => {
+    const app = path.join(projects, "app");
+    const first = path.join(app, "one");
+    const second = path.join(app, "two");
+    fs.mkdirSync(first, { recursive: true });
+    fs.mkdirSync(second);
+    const alias = path.join(root, "alias");
+    fs.symlinkSync(app, alias);
+    workspace(host("app", alias));
+    const initial = resolveWorkspace(first, {}, { configDir });
+    acceptWorkspace(initial.trustKey, initial.persistentConfig, 1, { configDir });
+    const next = resolveWorkspace(path.join(alias, "two"), {}, { configDir });
+    expect(initial.trustKey).toBe(`workspace:team:${app}`);
+    expect(next.trustKey).toBe(initial.trustKey);
+    expect(next.trustEvaluation.verdict).toBe("trusted");
+  });
+
+  it("shares one trust record across subdirectories and never reuses a path record", () => {
+    const app = path.join(projects, "app");
+    const first = path.join(app, "one");
+    const second = path.join(app, "two");
+    fs.mkdirSync(first, { recursive: true });
+    fs.mkdirSync(second);
+    workspace(host());
+    const initial = resolveWorkspace(first, {}, { configDir });
+    acceptWorkspace(app, initial.persistentConfig, 1, { configDir });
+    expect(resolveWorkspace(first, {}, { configDir }).trustEvaluation.verdict).toBe("requires-confirmation");
+    acceptWorkspace(initial.trustKey, initial.persistentConfig, 2, { configDir });
+    const next = resolveWorkspace(second, {}, { configDir });
+    expect(next.trustKey).toBe(initial.trustKey);
+    expect(next.trustEvaluation.verdict).toBe("trusted");
+    expect(next.priorRecord?.acceptedAt).toBe(2);
+  });
+
+  it.each([
+    ['[egress]\nallow = ["one.example"]', '[egress]\nallow = ["one.example", "two.example"]', "egress.allow"],
+    [host("app", path.join(os.tmpdir(), "corb-ro"), 'mode = "ro"'), host("app", path.join(os.tmpdir(), "corb-ro"), 'mode = "rw"'), "dir.app.mode"],
+    [host("app", path.join(os.tmpdir(), "corb-old")), host("app", path.join(os.tmpdir(), "corb-new")), "dir.app.host"],
+    ['[secrets.TOKEN]\nhosts = ["one.example"]', '[secrets.TOKEN]\nhosts = ["two.example"]', "secrets.TOKEN.hosts"],
+  ])("requires confirmation for a workspace edit to %s", (before, after, field) => {
+    workspace(before);
+    const initial = resolve();
+    acceptWorkspace(initial.trustKey, initial.persistentConfig, 1, { configDir });
+    workspace(after);
+    const edited = resolve();
+    expect(edited.trustEvaluation.verdict).toBe("requires-confirmation");
+    expect(edited.trustEvaluation.widened.some((change) => change.field === field)).toBe(true);
+  });
+
+  it("trusts narrowing after a workspace edit and keeps CLI settings outside trust", () => {
+    workspace('[egress]\nallow = ["one.example", "two.example"]');
+    const initial = resolve();
+    acceptWorkspace(initial.trustKey, initial.persistentConfig, 1, { configDir });
+    workspace('[egress]\nallow = ["one.example"]');
+    const result = resolve(workDir, { egress: { allow: ["cli.example"] }, dir: [{ name: "extra", host: path.join(projects, "extra") }] });
+    expect(result.trustEvaluation.verdict).toBe("trusted");
+    expect(result.trustEvaluation.narrowed).not.toHaveLength(0);
+    expect(result.persistentConfig.egress.allow).toEqual(["one.example"]);
+    expect(result.fullConfig.egress.allow).toEqual(["one.example", "cli.example"]);
+    expect(result.persistentConfig.dir.map((entry) => entry.name)).toEqual(["outside"]);
+  });
+
+  it("expands global and workspace hosts with home and projects-root before trust", () => {
+    global(host("global", "$HOME/projects/global"), "~/projects");
+    workspace(host("app", "app"));
+    const result = resolve();
+    expect(result.persistentConfig.dir[0]?.host).toBe(path.join(projects, "global"));
+    expect(result.persistentConfig.dir[1]?.host).toBe(path.join(projects, "app"));
+    expect(result.workspaces.projectsRoot).toBe(projects);
+  });
+
+  it("rejects a relative global host without projects-root", () => {
+    global(host("global", "relative"));
+    expect(() => resolveWorkspace(workDir, {}, { configDir })).toThrow("config.toml");
+    expect(() => resolveWorkspace(workDir, {}, { configDir })).toThrow("not resolved against the current directory");
+  });
+
+  it.each(["config", "state", "definitions"])("guards expanded home and relative hosts that overlap %s", (protectedDir) => {
+    global("", "~");
+    workspace(host("protected", `~/${protectedDir}`));
+    expect(() => resolve()).toThrow(ForbiddenMountError);
+    workspace(host("protected", protectedDir));
+    expect(() => resolve()).toThrow(ForbiddenMountError);
+  });
+
+  it("an inside mount retains its own Git rules and ignores a basename-only setting", () => {
+    const app = path.join(projects, "app");
+    const child = path.join(app, "child");
+    fs.mkdirSync(child, { recursive: true });
+    global('[[dir]]\nname = "child"\nprotect-git = false');
+    workspace(host());
+    const result = resolveWorkspace(child, {}, { configDir });
+    expect(result.primary).toBe("app");
+    expect(result.persistentConfig.dir.find((entry) => entry.name === "app")?.["builtin-rules"]).toEqual(builtinGitRules());
+    expect(result.persistentConfig.dir.find((entry) => entry.name === "child")?.host).toBeUndefined();
   });
 });

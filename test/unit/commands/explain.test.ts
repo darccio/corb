@@ -33,7 +33,7 @@ describe("commands/explain: parseExplainArgs", () => {
   });
 
   it("parses an explicit dir together with --json, in either order", () => {
-    const expected = { dir: path.resolve("some/dir"), json: true, dirFlags: [], primary: undefined };
+    const expected = { dir: path.resolve("some/dir"), dirExplicit: true, workspace: undefined, json: true, dirFlags: [], primary: undefined };
     expect(parseExplainArgs(["some/dir", "--json"])).toEqual(expected);
     expect(parseExplainArgs(["--json", "some/dir"])).toEqual(expected);
   });
@@ -84,7 +84,7 @@ describe("commands/explain: runExplainCommand (end-to-end smoke test)", () => {
     await runExplainCommand([workDir]);
     expect(logSpy).toHaveBeenCalledTimes(1);
     const output = logSpy.mock.calls[0]?.[0] as string;
-    expect(output).toContain(`workspace: ${fs.realpathSync(workDir)}`);
+    expect(output).toContain(`directory: ${fs.realpathSync(workDir)}`);
     expect(output).toContain("trust:");
   });
 
@@ -134,5 +134,60 @@ describe("commands/explain: runExplainCommand (end-to-end smoke test)", () => {
     } finally {
       fs.rmSync(extraDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("commands/explain: workspace selection", () => {
+  let root: string;
+  let project: string;
+  let configDir: string;
+  let previousConfig: string | undefined;
+  let log: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-explain-named-"));
+    project = path.join(root, "project");
+    configDir = path.join(root, "config");
+    fs.mkdirSync(project);
+    fs.mkdirSync(path.join(configDir, "workspaces", "team"), { recursive: true });
+    fs.writeFileSync(path.join(configDir, "workspaces", "team", "corb.toml"), `[[dir]]\nname = "saved"\nhost = ${JSON.stringify(project)}`);
+    previousConfig = process.env.CORB_CONFIG_DIR;
+    process.env.CORB_CONFIG_DIR = configDir;
+    log = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    log.mockRestore();
+    if (previousConfig === undefined) delete process.env.CORB_CONFIG_DIR;
+    else process.env.CORB_CONFIG_DIR = previousConfig;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("parses --workspace and records explicit DIR", () => {
+    expect(parseExplainArgs(["--workspace", "team"])).toMatchObject({ workspace: "team", dirExplicit: false, dir: process.cwd() });
+    expect(parseExplainArgs([project, "--workspace", "team"])).toMatchObject({ workspace: "team", dirExplicit: true, dir: project });
+  });
+
+  it("shows no DIR and the workspace's primary for named selection", async () => {
+    await runExplainCommand(["--workspace", "team", "--json"]);
+    const result = JSON.parse(log.mock.calls[0]?.[0] as string);
+    expect(result.dir).toBeNull();
+    expect(result.primary).toBe("saved");
+    expect(result.selectedWorkspace).toMatchObject({ name: "team", selectedBy: "name" });
+    expect(result.config.dir).toHaveLength(1);
+  });
+
+  it("shows path selection and the actual primary override", async () => {
+    await runExplainCommand([project, "--dir", `extra=${project}`, "--primary", "extra", "--json"]);
+    const result = JSON.parse(log.mock.calls[0]?.[0] as string);
+    expect(result.primary).toBe("extra");
+    expect(result.selectedWorkspace.selectedBy).toBe("path");
+  });
+
+  it("rejects missing own hosts unless --primary names a hosted entry", async () => {
+    fs.writeFileSync(path.join(configDir, "workspaces", "team", "corb.toml"), "");
+    await expect(runExplainCommand(["--workspace", "team"])).rejects.toThrow("no hosted directory of its own");
+    await runExplainCommand(["--workspace", "team", "--dir", `extra=${project}`, "--primary", "extra", "--json"]);
+    expect(JSON.parse(log.mock.calls[0]?.[0] as string).primary).toBe("extra");
   });
 });

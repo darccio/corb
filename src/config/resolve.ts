@@ -1,59 +1,9 @@
-// `src/config/resolve.ts` — M2.5: the real disk-I/O bridge between the pure
-// `src/config/{schema,load,trust}.ts` modules and a directory path. This is
-// the first place in the config system that actually touches the
-// filesystem — everything upstream (`schema.ts` M2.1, `load.ts` M2.2,
-// `trust.ts` M2.3) is pure, taking already-read strings/objects.
-//
-// Deliberately does not build named-workspace-file resolution
-// (`~/.config/corb/workspaces/<name>.toml`) — the plan's own spec describes
-// `[WORKSPACE]` as a name resolved that way, but that machinery does not
-// exist yet and is out of scope here (a later milestone's job). Instead,
-// both `corb explain` (`src/commands/explain.ts`) and `corb run --dry-run`
-// (`src/commands/run.ts`) take the exact same **directory path** argument
-// `corb run` already takes today (M1.6/M2.4): a positional directory,
-// defaulting to `process.cwd()` if omitted, synthesized into a single
-// anonymous `[[dir]]` config-layer entry —
-// `{ name: path.basename(resolvedDir), host: resolvedDir, mode: "rw" }` —
-// exactly matching what `src/commands/run.ts` already does when calling
-// `runSession`. This is what keeps `corb explain DIR` and `corb run DIR`
-// (with or without `--dry-run`) describing the *same* thing, which is the
-// property that actually matters for `--dry-run` to be trustworthy: if it
-// showed something resolved a different way than a real run, it would be
-// lying.
-//
-// Trust key: since there is no named workspace in this item's mode, the
-// trust store is keyed by the resolved absolute directory path itself, not
-// `EffectiveConfig.name` (which `trust.ts`'s own doc comment on `TrustStore`
-// notes is just the caller's chosen key, not something that module derives
-// or enforces). A directory path is a perfectly coherent identity for "this
-// specific host directory, mounted this way" — the same spirit as that
-// name-keying note, just a different key for this item's directory-anonymous
-// mode. One consequence, matching that same note: moving a workspace to a
-// different path starts a fresh trust history.
-//
-// M2.6 update — two `EffectiveConfig` values, not one: `resolveWorkspace`
-// below produces a **persistent** config (built-in defaults + `config.toml`
-// + the synthesized single-dir layer for the positional `DIR` — exactly
-// what this module always computed) and a **full** config (the persistent
-// config with a caller-supplied CLI layer, e.g. `--dir`-derived entries,
-// merged on top). Only the persistent config ever participates in the trust
-// ratchet (`evaluateTrust`, and — new in M2.6 — `acceptWorkspace`'s write of
-// `recordAcceptance`'s result back to `trusted.json`): CLI flags are always
-// trusted, "the human typed them" (`trust.ts`'s own module comment), and
-// that invariant only holds if they never sneak into what gets hashed,
-// compared, or recorded. The full config is what an actual `corb run`
-// builds `RunSessionOptions` from, and what `corb explain`/`corb run
-// --dry-run` display as "what will actually happen" — see
-// `src/config/render.ts`.
-//
-// This module now does write `trusted.json` (`acceptWorkspace`), unlike
-// M2.5's read-only version — this may be the first file Corb ever writes
-// under `~/.config/corb/` for a given user, so `acceptWorkspace` creates the
-// config directory if needed. `resolveWorkspace` itself is still read-only;
-// only `acceptWorkspace` writes, and only when a caller (`src/commands/
-// run.ts`, on `--trust-config` or an already-trusted verdict) calls it.
+// Read global and selected workspace layers, then check personal trust and mount safety.
+// Persistent layers include an added positional directory. CLI flags only affect fullConfig.
+// Selection metadata stays outside the effective config and its trust hash.
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { mergeConfigLayers, type DirConfig, type EffectiveConfig } from "./load.ts";
 import { parseConfigLayer, type ConfigLayer } from "./schema.ts";
 import {
@@ -64,15 +14,16 @@ import {
   type TrustStore,
   type TrustedWorkspaceRecord,
 } from "./trust.ts";
-import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath } from "./paths.ts";
+import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath, expandHomePrefix } from "./paths.ts";
 import { writeFileSecure } from "../util/secure-write.ts";
 import { applyImpliedHosts, type ImpliedHost } from "./implied.ts";
 import { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
-import { listWorkspaces, workspaceSourcePaths, type WorkspaceListing } from "./workspaces.ts";
+import { listWorkspaces, selectWorkspace, workspaceSourcePaths, workspaceTrustKey, WorkspaceSelectionError, type WorkspaceListing } from "./workspaces.ts";
+import { resolveLayerHosts } from "./hostpath.ts";
 
 export { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
 
-/** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
+/** The requested positional directory must exist and be a directory. */
 export class WorkspaceDirectoryError extends Error {
   constructor(dir: string, reason: string) {
     super(`corb config: workspace directory '${dir}' ${reason}`);
@@ -274,69 +225,114 @@ function readTrustStore(configDir: string): TrustStore {
 }
 
 export interface ResolveWorkspaceOptions {
-  /** Overrides `corbConfigDir()` — threads through to `paths.ts` so tests never need to touch the real `~/.config/corb`. */
+  /** Override the personal config directory. */
   configDir?: string;
+  workspace?: string;
+  /** Allow a named run without its own hosted directory to choose an explicit primary. */
+  primary?: string;
 }
 
-/** Everything a renderer (`src/config/render.ts`) or `corb run` needs to describe and act on one directory's config and trust status. */
 export interface ResolvedWorkspace {
-  /** The resolved, absolute host directory this workspace describes. */
-  dir: string;
-  /** Built-in defaults + `config.toml` + the synthesized single-dir layer for `dir` itself. The only config `trustEvaluation`/`acceptWorkspace` ever consider — see module comment. */
+  /** Undefined only for a named workspace run without positional DIR. */
+  dir: string | undefined;
+  primary: string;
+  selectedWorkspace: {
+    name: string;
+    selectedBy: "name" | "path";
+    source: { index: number; raw: string; path: string };
+    dir: string;
+    corbToml: string;
+  } | undefined;
+  /** True when the positional directory contributes a persistent mount layer. */
+  positionalDirAdded: boolean;
   persistentConfig: EffectiveConfig;
-  /** `persistentConfig` with the caller's CLI layer (e.g. `--dir`-derived entries) merged on top. What a real run actually uses, and what a renderer should describe as "what will happen". Equals `persistentConfig` exactly when the CLI layer is `{}`. */
   fullConfig: EffectiveConfig;
-  /** Hosts added to the effective allow list, with their source. */
   impliedHosts: ImpliedHost[];
-  /** Evaluated against `persistentConfig` only — never influenced by CLI-added directories. */
   trustEvaluation: TrustEvaluation;
-  /** The trust store key this resolution was evaluated against — the resolved absolute directory path itself (see module comment). */
   trustKey: string;
-  /** The trust record `trustEvaluation` was compared against, if one existed for `trustKey`; `undefined` for "never run before". */
   priorRecord: TrustedWorkspaceRecord | undefined;
-  /** Source metadata stays outside the effective config and its trust hash. */
   workspaces: WorkspaceListing;
 }
 
-/**
- * Resolves `dir` without writing files. Validates that the directory exists,
- * then merges the optional `config.toml` with a synthesized single-dir layer.
- * Adds implied provider hosts to `persistentConfig` before evaluating trust
- * against the directory's path-keyed record in the optional trust store.
- * Finally merges `cliLayer` into `fullConfig`.
- * `acceptWorkspace` records an acceptance separately.
- *
- * `BUILTIN_DEFAULTS` is not passed explicitly here; `mergeConfigLayers`
- * folds it in automatically (see `load.ts`'s own doc comment on
- * `mergeConfigLayers`). Re-merging `persistentConfig` itself as a layer
- * (`EffectiveConfig` is structurally assignable to `ConfigLayer`: every
- * field on the former is a required/non-optional refinement of the
- * same-named optional field on the latter) means `BUILTIN_DEFAULTS` gets
- * folded in a second time when building `fullConfig` — harmless, since
- * `persistentConfig` already reflects every value `BUILTIN_DEFAULTS` would
- * set, so it just gets overwritten right back (verified in
- * `resolve.test.ts`).
- */
-export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: ResolveWorkspaceOptions = {}): ResolvedWorkspace {
-  const resolvedDir = resolveWorkspaceDirectory(dir);
+/** Resolve without writes. Apply implied hosts before trust, and guard the final CLI merge. */
+export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer, opts: ResolveWorkspaceOptions = {}): ResolvedWorkspace {
+  if (dir === undefined && opts.workspace === undefined) {
+    throw new WorkspaceSelectionError("a directory or --workspace <name> is required");
+  }
   const configDir = opts.configDir ?? corbConfigDir();
-
-  const configTomlLayer = readConfigTomlLayer(configDir);
+  const rawConfigLayer = readConfigTomlLayer(configDir);
+  const projectsRoot = rawConfigLayer.workspaces?.["projects-root"] === undefined
+    ? undefined : expandHomePrefix(rawConfigLayer.workspaces["projects-root"]);
+  const hostOptions = { home: os.homedir(), ...(projectsRoot === undefined ? {} : { projectsRoot }) };
+  const configTomlLayer = resolveLayerHosts(rawConfigLayer, { ...hostOptions, sourceLabel: configTomlPath(configDir) });
   const workspaces = listWorkspaces(workspaceSourcePaths(configTomlLayer, configDir), configDir);
-  const dirLayer: ConfigLayer = {
-    dir: [{ name: path.basename(resolvedDir), host: resolvedDir, mode: "rw" }],
-  };
-  const { config: persistentConfig, implied: impliedHosts } = applyImpliedHosts(mergeConfigLayers([configTomlLayer, dirLayer]));
-
+  if (projectsRoot !== undefined) {
+    workspaces.projectsRoot = projectsRoot;
+  }
+  const resolvedDir = dir === undefined ? undefined : resolveWorkspaceDirectory(dir);
+  const selected = selectWorkspace({
+    listing: workspaces,
+    ...(opts.workspace === undefined ? {} : { byName: opts.workspace }),
+    ...(resolvedDir === undefined ? {} : { dir: resolvedDir }),
+    loadLayer: (entry) => {
+      let text: string;
+      try {
+        text = fs.readFileSync(entry.corbToml, "utf8");
+      } catch (err) {
+        throw new ConfigReadError(entry.corbToml, err);
+      }
+      return resolveLayerHosts(parseConfigLayer(text, entry.corbToml, { scope: "workspace" }), {
+        ...hostOptions, sourceLabel: entry.corbToml,
+      });
+    },
+  });
+  const positionalDirAdded = resolvedDir !== undefined && selected?.matchedDir === undefined;
+  const layers = [configTomlLayer, ...(selected === undefined ? [] : [selected.layer])];
+  if (positionalDirAdded) {
+    const name = path.basename(resolvedDir!);
+    const existingHost = selected === undefined ? undefined
+      : layers.flatMap((layer) => layer.dir ?? []).find((entry) => entry.name === name && entry.host !== undefined);
+    if (existingHost !== undefined) {
+      throw new WorkspaceSelectionError(`positional directory '${resolvedDir}' has the same basename '${name}' as a configured hosted directory. Use --dir NAME=HOST to choose another mount name`);
+    }
+    layers.push({ dir: [{ name, host: resolvedDir!, mode: "rw" }] });
+  }
+  const { config: persistentConfig, implied: impliedHosts } = applyImpliedHosts(mergeConfigLayers(layers));
+  let primary: string;
+  let keyDir: string;
+  if (selected?.matchedDir?.host !== undefined) {
+    primary = selected.matchedDir.name!;
+    keyDir = realpathOrResolve(selected.matchedDir.host);
+  } else if (resolvedDir !== undefined) {
+    primary = path.basename(resolvedDir);
+    keyDir = resolvedDir;
+  } else {
+    const firstHost = selected!.layer.dir?.find((entry) => entry.host !== undefined);
+    if (firstHost !== undefined) {
+      primary = firstHost.name!;
+      keyDir = realpathOrResolve(firstHost.host!);
+    } else {
+      const explicit = opts.primary === undefined ? undefined
+        : mergeConfigLayers([persistentConfig, cliLayer]).dir.find((entry) => entry.name === opts.primary && entry.host !== undefined);
+      if (explicit?.host === undefined) {
+        throw new WorkspaceSelectionError(`workspace '${selected!.name}' has no hosted directory of its own. Set a host in corb.toml or use --primary with a hosted directory`);
+      }
+      primary = explicit.name;
+      keyDir = realpathOrResolve(explicit.host);
+    }
+  }
   const trustStore = readTrustStore(configDir);
-  const trustKey = resolvedDir;
+  const trustKey = selected === undefined ? keyDir : workspaceTrustKey(selected.name, keyDir);
   const priorRecord = trustStore[trustKey];
   const trustEvaluation = evaluateTrust(priorRecord?.acceptedConfig, persistentConfig);
-
   const fullConfig = mergeConfigLayers([persistentConfig, cliLayer]);
   assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir, workspaces, fullConfig.audit?.path);
-
-  return { dir: resolvedDir, persistentConfig, fullConfig, impliedHosts, trustEvaluation, trustKey, priorRecord, workspaces };
+  const selectedWorkspace = selected === undefined ? undefined : {
+    name: selected.name, selectedBy: selected.selectedBy,
+    source: { index: selected.entry.source, raw: workspaces.sources[selected.entry.source]!.raw, path: workspaces.sources[selected.entry.source]!.path },
+    dir: selected.entry.dir, corbToml: selected.entry.corbToml,
+  };
+  return { dir: resolvedDir, primary, selectedWorkspace, positionalDirAdded, persistentConfig, fullConfig, impliedHosts, trustEvaluation, trustKey, priorRecord, workspaces };
 }
 
 /**

@@ -67,6 +67,9 @@ function noChangeWorkspace(): ResolvedWorkspace {
   const config = baseConfig();
   return {
     dir: "/home/user/myproj",
+    primary: "myproj",
+    selectedWorkspace: undefined,
+    positionalDirAdded: true,
     persistentConfig: config,
     fullConfig: config,
     trustKey: "/home/user/myproj",
@@ -83,6 +86,9 @@ function wideningWorkspace(): ResolvedWorkspace {
   fullConfig.egress.allow = ["api.anthropic.com", "example.com"];
   return {
     dir: "/home/user/myproj",
+    primary: "myproj",
+    selectedWorkspace: undefined,
+    positionalDirAdded: true,
     persistentConfig,
     fullConfig,
     trustKey: "/home/user/myproj",
@@ -104,6 +110,9 @@ function cliAddedDirWorkspace(): ResolvedWorkspace {
   fullConfig.dir = [...persistentConfig.dir, { name: "extra", host: "/tmp/extra", mode: "ro", "builtin-rules": [], rules: [] }];
   return {
     dir: "/home/user/myproj",
+    primary: "myproj",
+    selectedWorkspace: undefined,
+    positionalDirAdded: true,
     persistentConfig,
     fullConfig,
     trustKey: "/home/user/myproj",
@@ -133,7 +142,7 @@ describe("config/render: renderText", () => {
 
   it("contains the key config sections and a visible trust verdict for a no-change workspace", () => {
     const text = renderText(noChangeWorkspace());
-    expect(text).toContain("workspace: /home/user/myproj");
+    expect(text).toContain("directory: /home/user/myproj");
     expect(text).toContain("vm:");
     expect(text).toContain("corb:0.1.0");
     expect(text).toContain("agent:");
@@ -187,6 +196,9 @@ describe("config/render: renderText", () => {
     };
     const workspace: ResolvedWorkspace = {
       dir: "/home/user/myproj",
+      primary: "myproj",
+      selectedWorkspace: undefined,
+      positionalDirAdded: true,
       persistentConfig: config,
       fullConfig: config,
       trustKey: "/home/user/myproj",
@@ -209,6 +221,9 @@ describe("config/render: renderText", () => {
     };
     const workspace: ResolvedWorkspace = {
       dir: "/home/user/myproj",
+      primary: "myproj",
+      selectedWorkspace: undefined,
+      positionalDirAdded: true,
       persistentConfig: config,
       fullConfig: config,
       trustKey: "/home/user/myproj",
@@ -238,7 +253,7 @@ describe("config/render: renderText", () => {
   it("the trust section states its scope and does not claim to cover CLI-added directories, even though one is present in fullConfig", () => {
     const text = renderText(cliAddedDirWorkspace());
     expect(text).toContain("verdict: TRUSTED");
-    expect(text).toContain("scope: config.toml + this workspace directory only");
+    expect(text).toContain("scope: config.toml + positional directory /home/user/myproj");
   });
 
   it("shows github-api as (unset) when no [egress.github-api] table is configured at all", () => {
@@ -296,6 +311,8 @@ describe("config/render: renderJson", () => {
     const parsed = JSON.parse(json);
     expect(parsed).toEqual({
       dir: resolved.dir,
+      primary: resolved.primary,
+      selectedWorkspace: null,
       trustKey: resolved.trustKey,
       config: resolved.fullConfig,
       impliedHosts: [],
@@ -325,5 +342,43 @@ describe("config/render: renderJson", () => {
     const parsed = JSON.parse(json);
     expect(parsed.trust.verdict).toBe("requires-confirmation");
     expect(parsed.trust.widened).toEqual([{ field: "egress.allow", description: "egress.allow gained 'example.com'" }]);
+  });
+});
+
+describe("config/render: selected workspace metadata", () => {
+  it.each(["name", "path"] as const)("shows selection by %s in text and JSON", (selectedBy) => {
+    const resolved = noChangeWorkspace();
+    resolved.selectedWorkspace = { name: "team", selectedBy, source: { index: 0, raw: "~/corbfiles", path: "/home/user/corbfiles" }, dir: "/home/user/corbfiles/team", corbToml: "/home/user/corbfiles/team/corb.toml" };
+    resolved.positionalDirAdded = selectedBy === "name";
+    resolved.workspaces.projectsRoot = "/home/user/projects";
+    resolved.trustKey = "workspace:team:/home/user/myproj";
+    const text = renderText(resolved);
+    expect(text).toContain(`workspace: team (selected by ${selectedBy}; source ~/corbfiles; /home/user/corbfiles/team)`);
+    expect(text).toContain("primary: myproj");
+    expect(text).toContain("projects-root: /home/user/projects");
+    expect(text).toContain("key: workspace:team:/home/user/myproj");
+    expect(text).toContain("scope: config.toml + workspace team corb.toml");
+    if (selectedBy === "name") expect(text).toContain("+ positional directory /home/user/myproj");
+    else expect(text).not.toContain("+ positional directory");
+    const json = JSON.parse(renderJson(resolved));
+    expect(json.selectedWorkspace).toEqual(resolved.selectedWorkspace);
+    expect(json.primary).toBe("myproj");
+    expect(json.workspaces.projectsRoot).toBe("/home/user/projects");
+  });
+
+  it("shows a nullable DIR when name selection adds no positional mount", () => {
+    const resolved = noChangeWorkspace();
+    resolved.dir = undefined;
+    resolved.positionalDirAdded = false;
+    resolved.selectedWorkspace = { name: "team", selectedBy: "name", source: { index: 0, raw: "/definitions", path: "/definitions" }, dir: "/definitions/team", corbToml: "/definitions/team/corb.toml" };
+    expect(renderText(resolved)).toContain("directory: (none)");
+    expect(renderText(resolved)).not.toContain("+ positional directory");
+    expect(JSON.parse(renderJson(resolved)).dir).toBeNull();
+  });
+
+  it("shows global-only selection explicitly", () => {
+    const resolved = noChangeWorkspace();
+    expect(renderText(resolved)).toContain("workspace: (none; global config only)");
+    expect(JSON.parse(renderJson(resolved)).selectedWorkspace).toBeNull();
   });
 });

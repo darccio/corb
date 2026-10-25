@@ -129,8 +129,10 @@ larger target surface than what exists today:
 ## Configuration
 
 Corb reads `~/.config/corb/config.toml`, or the file selected through `CORB_CONFIG_DIR`.
-`corb run` and `corb explain` take a directory path that defaults to the current directory.
-That path adds a synthesized single-`dir` layer above the global configuration.
+`corb run` and `corb explain` select a workspace with `--workspace <name>` or by a matching directory path.
+An omitted DIR defaults to cwd unless you select a workspace by name.
+Explicit selection without DIR uses configured mounts and does not add cwd.
+Global settings remain below workspace settings. CLI flags override both.
 
 Workspace sources contain named directories at `<source>/<name>/corb.toml`.
 The global `[workspaces] paths` list chooses sources, with later sources replacing earlier copies of the same name.
@@ -138,7 +140,9 @@ Its default is `<configDir>/workspaces`. An explicit list replaces that default,
 
 Sources and workspace files stay outside every mount. The guard resolves symlink targets too.
 `corb explain` lists them, and `corb doctor` checks their status.
-Workspace selection and layering are not implemented yet. See [Workspace sources](docs/workspaces.md#workspace-sources).
+If DIR is inside a workspace host, that mount becomes primary and Pi starts at its root.
+Otherwise Corb adds DIR as a read/write mount after the workspace layer.
+See [Workspaces](docs/workspaces.md) for selection, portable paths, and merge rules.
 
 ```toml
 [vm]
@@ -223,9 +227,15 @@ fail-open         = true
 path = "/home/you/.local/state/corb/audit.jsonl"
 ```
 
-Corb uses `host` paths as written, without `~` expansion. Use absolute paths.
+Corb expands leading `~` and `$HOME` in `[[dir]] host`.
+Relative hosts need the global `[workspaces] projects-root`. This also applies to global `config.toml`.
+Relative CLI `--dir` hosts still use cwd.
 
-**Trust ratchet.** Corb stores each accepted effective config in `~/.config/corb/trusted.json`, keyed by the resolved absolute directory path.
+**Trust ratchet.** Corb stores accepted persistent config in `~/.config/corb/trusted.json`.
+Workspace runs use `workspace:<name>:<resolved dir>` keys. Subdirectories of one workspace host share its record.
+Runs without a workspace keep plain resolved directory keys.
+Old path-keyed records do not cover workspace runs, so the first workspace run needs `--trust-config` once.
+
 It structurally compares that snapshot with the current effective config.
 Any widening requires `--trust-config` before a real run proceeds.
 Examples include new allowed hosts, writable mounts, push permission and removed rules.

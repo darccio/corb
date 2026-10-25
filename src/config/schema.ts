@@ -198,6 +198,7 @@ export interface PartialAuditConfig {
 
 export interface PartialWorkspacesConfig {
   paths?: string[];
+  "projects-root"?: string;
 }
 
 /**
@@ -703,12 +704,20 @@ function parseAuditConfig(value: unknown, sourceLabel: string): PartialAuditConf
   return result;
 }
 
-const WORKSPACES_KEYS = ["paths"] as const;
+const WORKSPACES_KEYS = ["paths", "projects-root"] as const;
 
 function parseWorkspacesConfig(value: unknown, sourceLabel: string): PartialWorkspacesConfig {
   const table = expectTable(value, "workspaces", sourceLabel);
   assertKnownKeys(table, WORKSPACES_KEYS, "workspaces", sourceLabel);
   const result: PartialWorkspacesConfig = {};
+  if (table["projects-root"] !== undefined) {
+    const location = "workspaces.projects-root";
+    const raw = expectString(table["projects-root"], location, sourceLabel);
+    if (raw === "" || !path.isAbsolute(expandHomePrefix(raw))) {
+      throw new ConfigParseError(sourceLabel, `field '${location}' must be an absolute path, optionally starting with ~ or $HOME`, location);
+    }
+    result["projects-root"] = raw;
+  }
   if (table.paths !== undefined) {
     const seen = new Set<string>();
     result.paths = expectArray(table.paths, "workspaces.paths", sourceLabel).map((entry, i) => {
