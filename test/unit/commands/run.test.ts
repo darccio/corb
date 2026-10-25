@@ -912,7 +912,7 @@ describe("commands/run: named workspaces", () => {
     const outside = path.join(root, "outside");
     fs.mkdirSync(outside);
     await expect(runRunCommand(["--workspace", "team", outside])).rejects.toThrow(`corb explain --workspace team ${outside}`);
-    await expect(runRunCommand(["--workspace", "team"])).rejects.toThrow("corb explain --workspace team'");
+    await expect(runRunCommand(["--workspace", "team"])).rejects.toThrow("corb explain --workspace team --trusted'");
     await expect(runRunCommand(["--workspace", "team"])).rejects.toThrow("workspace 'team' requires confirmation");
     expect(runSessionMock).not.toHaveBeenCalled();
   });

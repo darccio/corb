@@ -231,7 +231,7 @@ export class TrustConfirmationRequiredError extends Error {
     const hint = ["corb explain", ...(selected === undefined ? [] : ["--workspace", quote(selected.name)]),
       ...(resolved.dir === undefined ? [] : [quote(resolved.dir)]),
       ...(flags.dirFlags ?? []).flatMap((raw) => ["--dir", quote(raw)]),
-      ...(flags.primary === undefined ? [] : ["--primary", quote(flags.primary)])].join(" ");
+      ...(flags.primary === undefined ? [] : ["--primary", quote(flags.primary)]), "--trusted"].join(" ");
     const subject = selected === undefined ? `directory '${resolved.dir}'` : `workspace '${selected.name}'`;
     const lines = [
       `corb run: ${subject} requires confirmation before running. No VM will be started.`,

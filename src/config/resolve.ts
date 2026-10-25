@@ -18,7 +18,7 @@ import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath, expandHome
 import { writeFileSecure } from "../util/secure-write.ts";
 import { agentProviderLayer, applyImpliedHosts, type ImpliedHost } from "./implied.ts";
 import { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
-import { listWorkspaces, selectWorkspace, workspaceSourcePaths, workspaceTrustKey, WorkspaceSelectionError, type WorkspaceListing } from "./workspaces.ts";
+import { listWorkspaces, selectWorkspace, workspaceSourcePaths, workspaceTrustKey, WorkspaceSelectionError, type ListedWorkspace, type WorkspaceListing } from "./workspaces.ts";
 import { resolveLayerHosts } from "./hostpath.ts";
 
 export { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
@@ -204,7 +204,7 @@ function validateTrustStoreShape(value: unknown, storePath: string): TrustStore 
 // No prior trust record at all (`trusted.json` absent) is the normal
 // "never run before" state, not an error — same reasoning as `config.toml`
 // being optional above.
-function readTrustStore(configDir: string): TrustStore {
+export function readTrustStore(configDir: string): TrustStore {
   const storePath = trustStorePath(configDir);
   let text: string;
   try {
@@ -254,12 +254,14 @@ export interface ResolvedWorkspace {
   workspaces: WorkspaceListing;
 }
 
-/** Resolve without writes. Track the provider layer before trust, then guard the final CLI merge. */
-export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer, opts: ResolveWorkspaceOptions = {}): ResolvedWorkspace {
-  if (dir === undefined && opts.workspace === undefined) {
-    throw new WorkspaceSelectionError("a directory or --workspace <name> is required");
-  }
-  const configDir = opts.configDir ?? corbConfigDir();
+export interface WorkspaceContext {
+  configTomlLayer: ConfigLayer;
+  listing: WorkspaceListing;
+  loadLayer: (entry: ListedWorkspace) => ConfigLayer;
+}
+
+/** Read shared source metadata and provide the same raw-layer loader to every inspector. */
+export function loadWorkspaceContext(configDir: string = corbConfigDir()): WorkspaceContext {
   const rawConfigLayer = readConfigTomlLayer(configDir);
   const projectsRoot = rawConfigLayer.workspaces?.["projects-root"] === undefined
     ? undefined : expandHomePrefix(rawConfigLayer.workspaces["projects-root"]);
@@ -269,11 +271,9 @@ export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer,
   if (projectsRoot !== undefined) {
     workspaces.projectsRoot = projectsRoot;
   }
-  const resolvedDir = dir === undefined ? undefined : resolveWorkspaceDirectory(dir);
-  const selected = selectWorkspace({
+  return {
+    configTomlLayer,
     listing: workspaces,
-    ...(opts.workspace === undefined ? {} : { byName: opts.workspace }),
-    ...(resolvedDir === undefined ? {} : { dir: resolvedDir }),
     loadLayer: (entry) => {
       let text: string;
       try {
@@ -285,6 +285,22 @@ export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer,
         ...hostOptions, sourceLabel: entry.corbToml,
       });
     },
+  };
+}
+
+/** Resolve without writes. Track the provider layer before trust, then guard the final CLI merge. */
+export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer, opts: ResolveWorkspaceOptions = {}): ResolvedWorkspace {
+  if (dir === undefined && opts.workspace === undefined) {
+    throw new WorkspaceSelectionError("a directory or --workspace <name> is required");
+  }
+  const configDir = opts.configDir ?? corbConfigDir();
+  const { configTomlLayer, listing: workspaces, loadLayer } = loadWorkspaceContext(configDir);
+  const resolvedDir = dir === undefined ? undefined : resolveWorkspaceDirectory(dir);
+  const selected = selectWorkspace({
+    listing: workspaces,
+    ...(opts.workspace === undefined ? {} : { byName: opts.workspace }),
+    ...(resolvedDir === undefined ? {} : { dir: resolvedDir }),
+    loadLayer,
   });
   const positionalDirAdded = resolvedDir !== undefined && selected?.matchedDir === undefined;
   const layers = [configTomlLayer, ...(selected === undefined ? [] : [selected.layer])];

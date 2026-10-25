@@ -22,6 +22,7 @@ import {
   checkDocker,
   checkRequiredSecrets,
   checkBrokeredLogin,
+  checkWorkspaceBrokeredLogins,
   checkSecretsConfigured,
   checkVerifySecrets,
   classifyCgroupControllers,
@@ -32,6 +33,7 @@ import {
   classifySocketPathBudget,
   classifySshAuthSock,
   classifyWorkspaceSources,
+  classifyWorkspaceTrust,
   compareVersionTuples,
   locateTool,
   parseGoModFloor,
@@ -47,6 +49,8 @@ import {
 import { ConfigParseError } from "../../../src/config/schema.ts";
 import { CREDENTIAL_FILE_VERSION, CredentialFileError, type StoredCredential } from "../../../src/auth/store.ts";
 import type { WorkspaceListing } from "../../../src/config/workspaces.ts";
+import { getBrokeredProvider } from "../../../src/auth/provider.ts";
+import { TrustStoreError } from "../../../src/config/resolve.ts";
 
 describe("commands/doctor: workspace sources", () => {
   function listing(exists = true): WorkspaceListing {
@@ -650,6 +654,7 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
         "required-secrets",
         "secrets-configured",
         "workspace-sources",
+        "workspace-trust",
         "image-resolvable",
         "cgroup-controllers",
         "gondolin-socket-path",
@@ -797,5 +802,89 @@ describe("commands/doctor: checkDocker", () => {
     });
     expect(result.status).toBe("fail");
     expect(result.detail).toContain("ETIMEDOUT");
+  });
+});
+
+describe("commands/doctor: workspace trust and logins", () => {
+  it("counts narrowing as trusted and pending changes as normal", () => {
+    expect(classifyWorkspaceTrust({ kind: "checked", statuses: ["trusted", "narrowed", "changed", "none"] }))
+      .toEqual({ name: "workspace-trust", status: "ok", detail: "4 workspace(s): 2 trusted, 1 with changes waiting for --trust-config, 1 never trusted" });
+    expect(classifyWorkspaceTrust({ kind: "checked", statuses: [] }).status).toBe("ok");
+  });
+
+  it("warns for unavailable workspaces and listings, and fails for a corrupt store", () => {
+    const incomplete = classifyWorkspaceTrust({ kind: "checked", statuses: ["error", "changed"] });
+    expect(incomplete.status).toBe("warn");
+    expect(incomplete.detail).toContain("1 could not be checked; see 'corb workspace ls'");
+    expect(classifyWorkspaceTrust({ kind: "listing-error" }))
+      .toEqual({ name: "workspace-trust", status: "warn", detail: "skipped: workspace sources could not be listed" });
+    expect(classifyWorkspaceTrust({ kind: "store-error", error: new TrustStoreError("trusted.json", "bad shape") }).status).toBe("fail");
+    expect(classifyWorkspaceTrust({ kind: "store-error", error: new Error("unreadable") }).status).toBe("warn");
+  });
+
+  const provider = { ...getBrokeredProvider("openai-codex"), id: "fabricated", displayName: "Test Provider" };
+  const login: StoredCredential = {
+    version: CREDENTIAL_FILE_VERSION, provider: provider.id, type: "oauth", access: "never-show-access",
+    refresh: "never-show-refresh", expires: 1_900_000_000_000, updatedAt: "2026-10-24T00:00:00.000Z",
+  };
+
+  it("skips absent, API-key and global providers without reading credentials", () => {
+    const read = vi.fn(() => login);
+    expect(checkWorkspaceBrokeredLogins(undefined, [], read)).toEqual([]);
+    expect(checkWorkspaceBrokeredLogins(undefined, [{ workspace: "team", provider: "anthropic" }], read)).toEqual([]);
+    expect(checkWorkspaceBrokeredLogins(provider.id, [{ workspace: "team", provider }], read)).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("groups workspace-only providers, reads once and prints counts only", () => {
+    const read = vi.fn(() => login);
+    const checks = checkWorkspaceBrokeredLogins("anthropic", [
+      { workspace: "private-one", provider }, { workspace: "private-two", provider },
+    ], read);
+    expect(checks).toEqual([{ name: "brokered-login:fabricated", status: "ok", detail: "logged in to Test Provider (used by 2 workspace(s))" }]);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(checks)).not.toMatch(/private-one|private-two|never-show/);
+  });
+
+  it("warns instead of failing for missing or unreadable workspace logins", () => {
+    const entries = [{ workspace: "private", provider }];
+    expect(checkWorkspaceBrokeredLogins(undefined, entries, () => undefined)).toEqual([{
+      name: "brokered-login:fabricated", status: "warn",
+      detail: 'no stored login for "fabricated" (used by 1 workspace(s)); run \'corb login fabricated\'',
+    }]);
+    expect(checkWorkspaceBrokeredLogins(undefined, entries, () => { throw new Error("could not read login"); }))
+      .toEqual([{ name: "brokered-login:fabricated", status: "warn", detail: "could not read login" }]);
+  });
+
+  it("checks real workspace-only providers without requiring a hosted directory", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-doctor-workspace-"));
+    const oldConfig = process.env.CORB_CONFIG_DIR;
+    const oldState = process.env.CORB_STATE_DIR;
+    const oldHome = process.env.HOME;
+    process.env.CORB_CONFIG_DIR = path.join(root, "config");
+    process.env.CORB_STATE_DIR = path.join(root, "state");
+    process.env.HOME = root;
+    const workspace = path.join(process.env.CORB_CONFIG_DIR, "workspaces", "team");
+    fs.mkdirSync(workspace, { recursive: true });
+    fs.writeFileSync(path.join(process.env.CORB_CONFIG_DIR, "config.toml"), '[agent]\nprovider = "anthropic"');
+    fs.writeFileSync(path.join(workspace, "corb.toml"), '[agent]\nprovider = "openai-codex"');
+    try {
+      const runCommand: CommandRunner = (command) => command === "go" ? "go version go1.26.0 linux/amd64\n" : "";
+      const report = await runDoctorChecks({ runCommand });
+      expect(report.checks.find((check) => check.name === "brokered-login:openai-codex"))
+        .toMatchObject({ status: "warn", detail: expect.stringContaining("used by 1 workspace(s)") });
+      expect(report.checks.find((check) => check.name === "workspace-trust")?.status).toBe("warn");
+      fs.writeFileSync(path.join(process.env.CORB_CONFIG_DIR, "trusted.json"), "broken");
+      const corrupt = await runDoctorChecks({ runCommand });
+      expect(corrupt.checks.find((check) => check.name === "workspace-trust")?.status).toBe("fail");
+    } finally {
+      if (oldConfig === undefined) delete process.env.CORB_CONFIG_DIR;
+      else process.env.CORB_CONFIG_DIR = oldConfig;
+      if (oldState === undefined) delete process.env.CORB_STATE_DIR;
+      else process.env.CORB_STATE_DIR = oldState;
+      if (oldHome === undefined) delete process.env.HOME;
+      else process.env.HOME = oldHome;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

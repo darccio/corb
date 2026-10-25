@@ -12,7 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseExplainArgs, runExplainCommand } from "../../../src/commands/explain.ts";
 import { PrimaryDirectoryError, buildCliLayer, parseRunArgs } from "../../../src/commands/run.ts";
-import { resolveWorkspace } from "../../../src/config/resolve.ts";
+import { acceptWorkspace, resolveWorkspace } from "../../../src/config/resolve.ts";
 
 describe("commands/explain: parseExplainArgs", () => {
   it("defaults dir to process.cwd() and json to false when no args are given", () => {
@@ -33,7 +33,7 @@ describe("commands/explain: parseExplainArgs", () => {
   });
 
   it("parses an explicit dir together with --json, in either order", () => {
-    const expected = { dir: path.resolve("some/dir"), dirExplicit: true, workspace: undefined, json: true, dirFlags: [], primary: undefined };
+    const expected = { dir: path.resolve("some/dir"), dirExplicit: true, workspace: undefined, json: true, trusted: false, dirFlags: [], primary: undefined };
     expect(parseExplainArgs(["some/dir", "--json"])).toEqual(expected);
     expect(parseExplainArgs(["--json", "some/dir"])).toEqual(expected);
   });
@@ -166,6 +166,26 @@ describe("commands/explain: workspace selection", () => {
   it("parses --workspace and records explicit DIR", () => {
     expect(parseExplainArgs(["--workspace", "team"])).toMatchObject({ workspace: "team", dirExplicit: false, dir: process.cwd() });
     expect(parseExplainArgs([project, "--workspace", "team"])).toMatchObject({ workspace: "team", dirExplicit: true, dir: project });
+  });
+
+  it("parses --trusted with workspace and CLI mount flags", () => {
+    expect(parseExplainArgs(["--workspace", "team", "--trusted", "--dir", `extra=${project}`]))
+      .toMatchObject({ trusted: true, workspace: "team", dirExplicit: false, dirFlags: [`extra=${project}`] });
+  });
+
+  it("prints absent and accepted snapshots by name without DIR", async () => {
+    await runExplainCommand(["--workspace", "team", "--trusted", "--json"]);
+    expect(JSON.parse(log.mock.calls.at(-1)?.[0] as string).acceptedSnapshot).toBeNull();
+    await runExplainCommand(["--workspace", "team", "--trusted"]);
+    expect(log.mock.calls.at(-1)?.[0]).toContain("accepted snapshot: (none; no trust record for this key)");
+    const resolved = resolveWorkspace(undefined, {}, { configDir, workspace: "team" });
+    acceptWorkspace(resolved.trustKey, resolved.persistentConfig, 1234, { configDir });
+    await runExplainCommand(["--workspace", "team", "--trusted", "--json"]);
+    expect(JSON.parse(log.mock.calls.at(-1)?.[0] as string).acceptedSnapshot).toMatchObject({ acceptedAt: 1234, hashMatches: true });
+    await runExplainCommand(["--workspace", "team", "--trusted"]);
+    expect(log.mock.calls.at(-1)?.[0]).toContain("accepted at: 1970-01-01T00:00:01.234Z");
+    await runExplainCommand([project, "--json"]);
+    expect(JSON.parse(log.mock.calls.at(-1)?.[0] as string)).not.toHaveProperty("acceptedSnapshot");
   });
 
   it("shows no DIR and the workspace's primary for named selection", async () => {

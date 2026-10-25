@@ -19,7 +19,7 @@
 // list — never the secret's own value), so there is nothing secret-valued
 // for this module to accidentally leak.
 import type { DirConfig, EffectiveConfig } from "./load.ts";
-import type { ConfigChange, TrustEvaluation } from "./trust.ts";
+import { hashEffectiveConfig, type ConfigChange, type TrustEvaluation, type TrustedWorkspaceRecord } from "./trust.ts";
 import type { ResolvedWorkspace } from "./resolve.ts";
 import type { WorkspaceListing } from "./workspaces.ts";
 import { findBrokeredProvider } from "../auth/provider.ts";
@@ -126,7 +126,8 @@ function renderSecrets(secrets: EffectiveConfig["secrets"]): string[] {
   return lines;
 }
 
-function renderEgress(egress: EffectiveConfig["egress"], impliedHosts: readonly ImpliedHost[]): string[] {
+function renderEgress(egress: EffectiveConfig["egress"] | undefined, impliedHosts: readonly ImpliedHost[]): string[] {
+  if (egress === undefined) return ["egress: (unset)"];
   const lines = [
     "egress:",
     `  allow: ${fmtArray(egress.allow)}`,
@@ -164,7 +165,8 @@ function renderEgress(egress: EffectiveConfig["egress"], impliedHosts: readonly 
   return lines;
 }
 
-function renderGit(git: EffectiveConfig["git"]): string[] {
+function renderGit(git: EffectiveConfig["git"] | undefined): string[] {
+  if (git === undefined) return ["git: (unset)"];
   return [
     "git:",
     `  ssh-agent: ${fmtScalar(git["ssh-agent"])}`,
@@ -176,7 +178,7 @@ function renderGit(git: EffectiveConfig["git"]): string[] {
 
 function renderDirEntry(dir: DirConfig): string[] {
   const lines = [`- ${dir.name} (mode=${fmtScalar(dir.mode)}, host=${fmtScalar(dir.host)}, create=${fmtScalar(dir.create)})`];
-  const builtinRules = dir["builtin-rules"];
+  const builtinRules = dir["builtin-rules"] ?? [];
   if (builtinRules.length === 0) {
     lines.push("  builtin rules (protect-git): (none)");
   } else {
@@ -185,7 +187,7 @@ function renderDirEntry(dir: DirConfig): string[] {
       lines.push(`    - glob=${fmtScalar(rule.glob)} mode=${fmtScalar(rule.mode)} reason=${fmtScalar(rule.reason)}`);
     }
   }
-  if (dir.rules.length === 0) {
+  if ((dir.rules ?? []).length === 0) {
     lines.push("  rules: (none)");
   } else {
     lines.push("  rules:");
@@ -196,7 +198,7 @@ function renderDirEntry(dir: DirConfig): string[] {
   return lines;
 }
 
-function renderDirs(dirs: DirConfig[]): string[] {
+function renderDirs(dirs: DirConfig[] = []): string[] {
   if (dirs.length === 0) {
     return ["dir: (none)"];
   }
@@ -207,7 +209,8 @@ function renderDirs(dirs: DirConfig[]): string[] {
   return lines;
 }
 
-function renderPolicy(policy: EffectiveConfig["policy"]): string[] {
+function renderPolicy(policy: EffectiveConfig["policy"] | undefined): string[] {
+  if (policy === undefined) return ["policy: (unset)"];
   return [
     "policy:",
     `  enabled: ${fmtScalar(policy.enabled)}`,
@@ -264,7 +267,11 @@ function renderConfigChangeList(label: string, changes: readonly ConfigChange[])
  * run` for `requires-confirmation` without `--trust-config` — the error
  * message must not reinvent a second diff format.
  */
-export function renderTrust(trust: TrustEvaluation, trustKey: string, scope?: Pick<ResolvedWorkspace, "selectedWorkspace" | "dir" | "positionalDirAdded">): string[] {
+export function renderTrust(trust: TrustEvaluation, trustKey: string, scope?: {
+  selectedWorkspace: { name: string } | undefined;
+  dir: string | undefined;
+  positionalDirAdded: boolean;
+}, hashMatches?: boolean): string[] {
   const layers = ["config.toml"];
   if (scope?.selectedWorkspace !== undefined) {
     layers.push(`workspace ${scope.selectedWorkspace.name} corb.toml`);
@@ -280,7 +287,7 @@ export function renderTrust(trust: TrustEvaluation, trustKey: string, scope?: Pi
     `  scope: ${layers.join(" + ")} (does not include any --dir-added directories)`,
   ];
   if (isNoOp) {
-    lines.push("  (no changes since the last trusted run)");
+    lines.push(hashMatches === false ? "  (only order differs; no effect on trust)" : "  (no changes since the last trusted run)");
     return lines;
   }
   lines.push(...renderConfigChangeList("widened", trust.widened));
@@ -288,15 +295,41 @@ export function renderTrust(trust: TrustEvaluation, trustKey: string, scope?: Pi
   return lines;
 }
 
-/**
- * Human-readable rendering of `resolved`: the effective config's meaningful
- * sections, then a clearly-labeled trust section. Formatting is deliberately
- * plain (indented key/value lines), not fussy — the goal is that a human can
- * tell at a glance whether running this workspace would require confirmation
- * and why (see module comment).
- */
-export function renderText(resolved: ResolvedWorkspace): string {
-  const { fullConfig: config, trustEvaluation, trustKey, dir } = resolved;
+/** Shared config text for current settings and accepted snapshots. */
+export function renderConfigSections(config: EffectiveConfig, impliedHosts: readonly ImpliedHost[]): string[] {
+  return [
+    `version: ${fmtScalar(config.version)}`,
+    `name: ${fmtScalar(config.name)}`,
+    ...renderVm(config.vm),
+    ...renderAgent(config.agent),
+    ...renderSecrets(config.secrets),
+    ...renderEgress(config.egress, impliedHosts),
+    ...renderGit(config.git),
+    ...renderDirs(config.dir),
+    ...renderPolicy(config.policy),
+    ...renderAudit(config.audit),
+  ];
+}
+
+export function renderTrustedSnapshot(record: TrustedWorkspaceRecord | undefined, hashMatches?: boolean): string[] {
+  if (record === undefined) return ["accepted snapshot: (none; no trust record for this key)"];
+  return [
+    "accepted snapshot:",
+    `  accepted at: ${new Date(record.acceptedAt).toISOString()}`,
+    `  hash: ${record.configHash}${hashMatches === false ? " (differs from current config)" : ""}`,
+    ...indentLines(renderConfigSections(record.acceptedConfig, []), 1),
+    "  implied hosts are not recorded in trust records",
+  ];
+}
+
+export interface RenderOptions {
+  trusted?: boolean;
+}
+
+export function renderText(resolved: ResolvedWorkspace, options: RenderOptions = {}): string {
+  const { trustEvaluation, trustKey, dir } = resolved;
+  const hashMatches = resolved.priorRecord === undefined ? undefined
+    : hashEffectiveConfig(resolved.persistentConfig) === resolved.priorRecord.configHash;
   const lines: string[] = [
     // Neutral header — this rendering is shared by both `corb explain` and
     // `corb run --dry-run` (see `src/commands/run.ts`'s module comment), so
@@ -306,19 +339,11 @@ export function renderText(resolved: ResolvedWorkspace): string {
       : `workspace: ${resolved.selectedWorkspace.name} (selected by ${resolved.selectedWorkspace.selectedBy}; source ${resolved.selectedWorkspace.source.raw}; ${resolved.selectedWorkspace.dir})`,
     `primary: ${resolved.primary}`,
     "",
-    `version: ${fmtScalar(config.version)}`,
-    `name: ${fmtScalar(config.name)}`,
-    ...renderVm(config.vm),
-    ...renderAgent(config.agent),
-    ...renderSecrets(config.secrets),
-    ...renderEgress(config.egress, resolved.impliedHosts),
-    ...renderGit(config.git),
-    ...renderDirs(config.dir),
-    ...renderPolicy(config.policy),
-    ...renderAudit(config.audit),
+    ...renderConfigSections(resolved.fullConfig, resolved.impliedHosts),
     ...renderWorkspaces(resolved.workspaces),
     "",
-    ...renderTrust(trustEvaluation, trustKey, resolved),
+    ...renderTrust(trustEvaluation, trustKey, resolved, options.trusted ? hashMatches : undefined),
+    ...(options.trusted ? ["", ...renderTrustedSnapshot(resolved.priorRecord, hashMatches)] : []),
   ];
   return lines.join("\n");
 }
@@ -333,10 +358,11 @@ export interface ExplainJson {
   impliedHosts: ImpliedHost[];
   trust: TrustEvaluation;
   workspaces: WorkspaceListing;
+  acceptedSnapshot?: { acceptedAt: number; configHash: string; hashMatches: boolean; config: EffectiveConfig } | null;
 }
 
 /** Machine-readable rendering of `resolved`, pretty-printed (this is meant to be read by a human piping through `jq` or eyeballed directly, not a wire format optimized for size). */
-export function renderJson(resolved: ResolvedWorkspace): string {
+export function renderJson(resolved: ResolvedWorkspace, options: RenderOptions = {}): string {
   const payload: ExplainJson = {
     dir: resolved.dir ?? null,
     primary: resolved.primary,
@@ -346,6 +372,12 @@ export function renderJson(resolved: ResolvedWorkspace): string {
     impliedHosts: resolved.impliedHosts,
     trust: resolved.trustEvaluation,
     workspaces: resolved.workspaces,
+    ...(options.trusted ? { acceptedSnapshot: resolved.priorRecord === undefined ? null : {
+      acceptedAt: resolved.priorRecord.acceptedAt,
+      configHash: resolved.priorRecord.configHash,
+      hashMatches: hashEffectiveConfig(resolved.persistentConfig) === resolved.priorRecord.configHash,
+      config: resolved.priorRecord.acceptedConfig,
+    } } : {}),
   };
   return JSON.stringify(payload, null, 2);
 }

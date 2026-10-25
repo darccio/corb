@@ -5,7 +5,8 @@
 import { describe, expect, it } from "vitest";
 import type { EffectiveConfig } from "../../../src/config/load.ts";
 import type { ResolvedWorkspace } from "../../../src/config/resolve.ts";
-import { renderJson, renderText } from "../../../src/config/render.ts";
+import { renderConfigSections, renderJson, renderText, renderTrustedSnapshot } from "../../../src/config/render.ts";
+import { hashEffectiveConfig } from "../../../src/config/trust.ts";
 import { builtinGitRules } from "../../../src/config/gitprotect.ts";
 
 describe("config/render: workspace sources", () => {
@@ -79,6 +80,63 @@ function noChangeWorkspace(): ResolvedWorkspace {
     trustEvaluation: { verdict: "trusted", widened: [], narrowed: [] },
   };
 }
+
+describe("config/render: accepted snapshots", () => {
+  it("shares the existing config sections without changing the default output", () => {
+    const resolved = noChangeWorkspace();
+    const text = renderText(resolved);
+    const middle = text.slice(text.indexOf("version:"), text.indexOf("workspaces:")).trimEnd();
+    expect(renderConfigSections(resolved.fullConfig, []).join("\n")).toBe(middle);
+    expect(text).not.toContain("accepted snapshot:");
+    expect(JSON.parse(renderJson(resolved))).not.toHaveProperty("acceptedSnapshot");
+  });
+
+  it("shows no record only when snapshots are requested", () => {
+    const resolved = noChangeWorkspace();
+    expect(renderTrustedSnapshot(undefined)).toEqual(["accepted snapshot: (none; no trust record for this key)"]);
+    expect(renderText(resolved, { trusted: true })).toContain("accepted snapshot: (none; no trust record for this key)");
+    expect(JSON.parse(renderJson(resolved, { trusted: true })).acceptedSnapshot).toBeNull();
+  });
+
+  it("prints the complete accepted config without implied marks or environment values", () => {
+    const resolved = noChangeWorkspace();
+    resolved.impliedHosts = [{ host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "workspace", workspace: "team" } }];
+    const record = { acceptedAt: 1234, configHash: hashEffectiveConfig(resolved.persistentConfig), acceptedConfig: resolved.persistentConfig };
+    resolved.priorRecord = record;
+    const oldValue = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "never-print-this-value";
+    try {
+      const snapshot = renderTrustedSnapshot(record).join("\n");
+      expect(snapshot).toContain("accepted at: 1970-01-01T00:00:01.234Z");
+      expect(snapshot).toContain(`hash: ${record.configHash}`);
+      expect(snapshot).toContain("ANTHROPIC_API_KEY: hosts=[api.anthropic.com]");
+      expect(snapshot).not.toContain("never-print-this-value");
+      expect(snapshot).not.toContain("implied:");
+      expect(snapshot).toContain("implied hosts are not recorded in trust records");
+      expect(renderText(resolved, { trusted: true })).toContain("implied:");
+      expect(JSON.parse(renderJson(resolved, { trusted: true })).acceptedSnapshot).toEqual({
+        acceptedAt: 1234, configHash: record.configHash, hashMatches: true, config: record.acceptedConfig,
+      });
+    } finally {
+      if (oldValue === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = oldValue;
+    }
+  });
+
+  it("distinguishes an order-only mismatch and handles missing old builtin-rules", () => {
+    const resolved = noChangeWorkspace();
+    const accepted = structuredClone(resolved.persistentConfig);
+    accepted.egress.allow = ["one.test", "two.test"];
+    for (const dir of accepted.dir) delete (dir as Partial<typeof dir>)["builtin-rules"];
+    resolved.priorRecord = { acceptedAt: 1234, acceptedConfig: accepted, configHash: hashEffectiveConfig(accepted) };
+    resolved.persistentConfig.egress.allow = ["two.test", "one.test"];
+    expect(renderText(resolved)).toContain("(no changes since the last trusted run)");
+    const text = renderText(resolved, { trusted: true });
+    expect(text).toContain("(only order differs; no effect on trust)");
+    expect(text).toContain("builtin rules (protect-git): (none)");
+    expect(JSON.parse(renderJson(resolved, { trusted: true })).acceptedSnapshot.hashMatches).toBe(false);
+  });
+});
 
 function wideningWorkspace(): ResolvedWorkspace {
   const persistentConfig = baseConfig();

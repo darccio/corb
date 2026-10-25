@@ -1,8 +1,7 @@
 // `corb doctor` — M3.5: host-side environment inspection. No VM is ever
 // booted here; every check below is a file-existence test, a PATH/fallback
 // binary lookup, a cheap subprocess version query, or a cgroup file read.
-// Doctor has no directory argument. It reads the global config and checks workspace sources.
-// Workspace selection and layering belong to later commands.
+// Doctor has no directory argument. It reads global config, workspace trust, and provider login status.
 //
 // Structured as a list of independent checks (`DoctorCheckResult`) rather
 // than one large imperative function, so each check's classification logic
@@ -23,6 +22,8 @@ import { findBrokeredProvider, type BrokeredProvider } from "../auth/provider.ts
 import { readStoredCredential, type StoredCredential } from "../auth/store.ts";
 import { ConfigParseError, parseConfigLayer, type ConfigLayer, type PartialSecretConfig } from "../config/schema.ts";
 import { listWorkspaces, workspaceSourcePaths, type WorkspaceListing } from "../config/workspaces.ts";
+import { loadWorkspaceContext, readTrustStore, TrustStoreError } from "../config/resolve.ts";
+import { inspectWorkspaceTrust, type WorkspaceTrustStatus } from "../config/inspect.ts";
 import { ImageNotFoundError, resolveRuntimeImage } from "../vm/image.ts";
 import { readCgroupControllersText } from "../vm/cgroup.ts";
 import {
@@ -575,6 +576,7 @@ export function checkSecretsConfigured(configResult: DoctorConfigLoad): DoctorCh
  * `undefined` when `[agent].provider` is not a brokered provider (the check
  * is then left out of the report). Otherwise fails without a usable stored
  * login. Corb adds the provider's API hosts to `egress.allow` automatically.
+ * Workspace-only providers have separate checks below.
  * `read` is injectable for tests.
  */
 export function checkBrokeredLogin(
@@ -598,6 +600,86 @@ export function checkBrokeredLogin(
     return fail("brokered-login", `[agent] provider = "${provider.id}", but there is no stored login. Run 'corb login ${provider.id}'.`);
   }
   return ok("brokered-login", `logged in to ${provider.displayName}${credential.accountId !== undefined ? ` (account ${credential.accountId})` : ""}. Corb allows ${provider.apiHosts.join(", ")} automatically.`);
+}
+
+export type WorkspaceTrustInput =
+  | { kind: "checked"; statuses: readonly WorkspaceTrustStatus[] }
+  | { kind: "listing-error" }
+  | { kind: "store-error"; error: unknown };
+
+export function classifyWorkspaceTrust(input: WorkspaceTrustInput): DoctorCheckResult {
+  if (input.kind === "listing-error") return warn("workspace-trust", "skipped: workspace sources could not be listed");
+  if (input.kind === "store-error") {
+    return input.error instanceof TrustStoreError ? fail("workspace-trust", input.error.message)
+      : warn("workspace-trust", errorMessage(input.error));
+  }
+  const count = (status: WorkspaceTrustStatus) => input.statuses.filter((value) => value === status).length;
+  const detail = `${input.statuses.length} workspace(s): ${count("trusted") + count("narrowed")} trusted, ${count("changed")} with changes waiting for --trust-config, ${count("none")} never trusted`;
+  return count("error") > 0 ? warn("workspace-trust", `${detail}; ${count("error")} could not be checked; see 'corb workspace ls'`)
+    : ok("workspace-trust", detail);
+}
+
+/** Inspect each distinct workspace-only provider without printing workspace names or credentials. */
+export function checkWorkspaceBrokeredLogins(
+  globalProvider: string | undefined,
+  workspaceProviders: readonly { workspace: string; provider: string | BrokeredProvider }[],
+  read: (provider: BrokeredProvider) => StoredCredential | undefined,
+): DoctorCheckResult[] {
+  const grouped = new Map<string, { provider: BrokeredProvider; workspaces: Set<string> }>();
+  for (const entry of workspaceProviders) {
+    const provider = typeof entry.provider === "string" ? findBrokeredProvider(entry.provider) : entry.provider;
+    if (provider === undefined || provider.id === globalProvider) continue;
+    const group = grouped.get(provider.id) ?? { provider, workspaces: new Set<string>() };
+    group.workspaces.add(entry.workspace);
+    grouped.set(provider.id, group);
+  }
+  return [...grouped.values()].map(({ provider, workspaces }) => {
+    const name = `brokered-login:${provider.id}`;
+    const usage = `used by ${workspaces.size} workspace(s)`;
+    try {
+      return read(provider) === undefined
+        ? warn(name, `no stored login for "${provider.id}" (${usage}); run 'corb login ${provider.id}'`)
+        : ok(name, `logged in to ${provider.displayName} (${usage})`);
+    } catch (error) {
+      return warn(name, errorMessage(error));
+    }
+  });
+}
+
+function workspaceTrustCheck(configDir: string, sourcesListed: boolean): DoctorCheckResult {
+  let store;
+  try {
+    store = readTrustStore(configDir);
+  } catch (error) {
+    return classifyWorkspaceTrust({ kind: "store-error", error });
+  }
+  if (!sourcesListed) return classifyWorkspaceTrust({ kind: "listing-error" });
+  try {
+    const { listing } = loadWorkspaceContext(configDir);
+    return classifyWorkspaceTrust({ kind: "checked", statuses: listing.workspaces.map((entry) =>
+      inspectWorkspaceTrust(entry.name, { configDir, store }).status) });
+  } catch {
+    return classifyWorkspaceTrust({ kind: "listing-error" });
+  }
+}
+
+function workspaceProviderSettings(configDir: string): Array<{ workspace: string; provider: string }> {
+  const providers: Array<{ workspace: string; provider: string }> = [];
+  try {
+    const context = loadWorkspaceContext(configDir);
+    for (const entry of context.listing.workspaces) {
+      if (!entry.valid) continue;
+      try {
+        const provider = context.loadLayer(entry).agent?.provider;
+        if (provider !== undefined) providers.push({ workspace: entry.name, provider });
+      } catch {
+        // Workspace source and trust checks report unreadable or invalid definitions.
+      }
+    }
+  } catch {
+    // Workspace source and trust checks report a failed listing.
+  }
+  return providers;
 }
 
 // ---------------------------------------------------------------------------
@@ -945,6 +1027,7 @@ export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Pro
 
   checks.push(checkRequiredSecrets(configResult, process.env));
   checks.push(checkSecretsConfigured(configResult));
+  let sourcesListed = false;
   if (configResult.kind === "parse-error") {
     checks.push(classifyWorkspaceSources({ kind: "config-error", error: configResult.error }));
   } else {
@@ -963,16 +1046,23 @@ export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Pro
         }
       }
       checks.push(classifyWorkspaceSources({ kind: "listed", listing, explicit: layer.workspaces?.paths !== undefined, invalidConfigs }));
+      sourcesListed = true;
     } catch (err) {
       checks.push(classifyWorkspaceSources({ kind: "listing-error", error: err }));
     }
   }
+  checks.push(workspaceTrustCheck(configDir, sourcesListed));
   {
     const credentialsDir = credentialsStateDir();
     const brokered = checkBrokeredLogin(configResult, (provider) => readStoredCredential(credentialsDir, provider.id));
     if (brokered !== undefined) {
       checks.push(brokered);
     }
+    checks.push(...checkWorkspaceBrokeredLogins(
+      configResult.kind === "parsed" ? configResult.layer.agent?.provider : undefined,
+      configResult.kind === "parse-error" ? [] : workspaceProviderSettings(configDir),
+      (provider) => readStoredCredential(credentialsDir, provider.id),
+    ));
   }
   if (options.verifySecrets === true) {
     checks.push(...(await checkVerifySecrets(configResult, process.env, options.fetchImpl)));

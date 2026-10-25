@@ -236,3 +236,16 @@ export function workspaceTrustKey(name: string, dir: string): string {
   assertValidWorkspaceName(name);
   return `workspace:${name}:${dir}`;
 }
+
+/** The directory may contain colons. Only the workspace name ends at the next colon. */
+export function parseWorkspaceTrustKey(key: string): { name: string; dir: string } | undefined {
+  const prefix = "workspace:";
+  if (!key.startsWith(prefix)) {
+    return undefined;
+  }
+  const separator = key.indexOf(":", prefix.length);
+  if (separator <= prefix.length || separator === key.length - 1) {
+    return undefined;
+  }
+  return { name: key.slice(prefix.length, separator), dir: key.slice(separator + 1) };
+}
