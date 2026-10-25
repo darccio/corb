@@ -1,0 +1,39 @@
+debugfs 1.47.4 (6-Mar-2025)
+dump_file: Operation not permitted while changing ownership of /home/dario/.cache/corb/dar-15-layers/trusted/2747a805-7a7e-5798-84ca-077fb5086311/keys/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub
+dump_file: Operation not permitted while changing ownership of /home/dario/.cache/corb/dar-15-layers/trusted/2747a805-7a7e-5798-84ca-077fb5086311/keys/alpine-devel@lists.alpinelinux.org-5261cecb.rsa.pub
+dump_file: Operation not permitted while changing ownership of /home/dario/.cache/corb/dar-15-layers/trusted/2747a805-7a7e-5798-84ca-077fb5086311/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub
+rdump: Operation not permitted while changing ownership of /home/dario/.cache/corb/dar-15-layers/trusted/2747a805-7a7e-5798-84ca-077fb5086311/keys
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz", "bytes": 523586}
+Verified OK
+{"download": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/apk-tools-static-3.0.8-r0.apk", "bytes": 2222120}
+Verified OK
+{
+  "repository": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64",
+  "package": {
+    "C": "Q1TYC5NlmaJJePxA9+zAkNE5CJYMU=",
+    "P": "apk-tools-static",
+    "V": "3.0.8-r0",
+    "A": "x86_64",
+    "S": "2222120",
+    "I": "5467816",
+    "T": "Alpine Package Keeper - static binary",
+    "U": "https://gitlab.alpinelinux.org/alpine/apk-tools",
+    "L": "GPL-2.0-only",
+    "o": "apk-tools",
+    "m": "Natanael Copa <ncopa@alpinelinux.org>",
+    "t": "1788244002",
+    "c": "286502dc74df00f907f93b0563867630dcc139e5",
+    "p": "cmd:apk.static=3.0.8-r0"
+  },
+  "indexSignature": {
+    "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+    "digest": "sha1"
+  },
+  "packageSignature": {
+    "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+    "digest": "sha1"
+  },
+  "payloadSha256": "ee80e3bef6d2c5ea25171de16573f31443282b9f193b370f8fa2f555edcd3594",
+  "binarySha256": "83b45e069fb1d9d2715df34ab9298ad81af9280451d72db944766060bddd92ab",
+  "binaryDir": "/home/dario/.cache/corb/dar-15-layers/bin"
+}

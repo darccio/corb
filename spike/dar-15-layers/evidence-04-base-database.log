@@ -1,0 +1,47 @@
+{
+  "image": {
+    "source": "ref",
+    "selector": "corb:0.1.0",
+    "assetDir": "/home/dario/.cache/gondolin/images/objects/2747a805-7a7e-5798-84ca-077fb5086311",
+    "buildId": "2747a805-7a7e-5798-84ca-077fb5086311",
+    "arch": "x86_64"
+  },
+  "refs": [
+    {
+      "reference": "corb:0.1.0",
+      "targets": {
+        "x86_64": "2747a805-7a7e-5798-84ca-077fb5086311"
+      },
+      "updatedAt": "2026-10-24T20:13:28.511Z"
+    },
+    {
+      "reference": "corb:0.1.0-x86_64-171874b9",
+      "targets": {
+        "x86_64": "2747a805-7a7e-5798-84ca-077fb5086311"
+      },
+      "updatedAt": "2026-10-24T20:13:28.510Z"
+    }
+  ]
+}
+debugfs 1.47.4 (6-Mar-2025)
+{"name":"apk-tools","entry":{"name":"apk-tools","version":"3.0.1-r1","checksum":"Q15KX59Nk4O3o7dE9iYijr09sLz5Q="}}
+{"name":"libapk","entry":{"name":"libapk","version":"3.0.1-r1","checksum":"Q1YUak7P5276X6jM5a7e4aHEddyPI="}}
+{"name":"nodejs","entry":null}
+{"name":"git","entry":null}
+{"name":"curl","entry":null}
+{"name":"bash","entry":null}
+{"name":"fuse3-libs","entry":{"name":"fuse3-libs","version":"3.18.3-r0","checksum":"Q1Y36eFdYEn0QKmWajugai/eA5RFU="}}
+{"name":"libcrypto3","entry":{"name":"libcrypto3","version":"3.5.4-r0","checksum":"Q1rc0AJT9R+c2PdhidlKWVPaaINls="}}
+{"name":"libssl3","entry":{"name":"libssl3","version":"3.5.4-r0","checksum":"Q14yiyTakQtlKq3IckKCjUPbMLrWc="}}
+installed-count 20
+debugfs 1.47.4 (6-Mar-2025)
+world alpine-baselayout
+alpine-keys
+alpine-release
+apk-tools
+busybox
+fuse3-libs
+libgcc
+libstdc++
+musl-utils
+zstd-libs
