@@ -70,7 +70,7 @@ export ANTHROPIC_API_KEY
 The credential entry example uses Bash. Set the same environment variable using
 your shell's private-input equivalent if needed.
 
-Corb reads the real value on the host. Pi receives a placeholder; the host
+Corb reads the real value on the host. Pi receives a placeholder. The host
 substitutes the credential on permitted outbound requests. `pi.dev` allows Pi to
 refresh its model catalog.
 
@@ -79,8 +79,8 @@ variable, and permitted destinations. See [Agent and
 secrets](configuration.md#agent-and-secrets).
 
 To use a ChatGPT Plus or Pro subscription instead of an API key, set
-`provider = "openai-codex"`, allow `chatgpt.com`, and run
-`corb login openai-codex` once. See [Subscription
+`provider = "openai-codex"` and run `corb login openai-codex` once.
+Corb allows `chatgpt.com` automatically. See [Subscription
 logins](configuration.md#subscription-logins).
 
 ## Inspect and start a session

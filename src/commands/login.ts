@@ -174,7 +174,7 @@ export async function runLoginCommand(argv: string[]): Promise<void> {
     console.error(
       `Logged in to ${provider.displayName}${credential.accountId !== undefined ? ` (account ${credential.accountId})` : ""}.\n` +
         `Saved to ${credentialFilePath(dir, provider.id)}.\n` +
-        `To use it, set [agent] provider = "${provider.id}" and add ${provider.apiHosts.map((h) => `"${h}"`).join(", ")} to egress.allow.`,
+        `To use it, set [agent] provider = "${provider.id}".`,
     );
   } catch (err) {
     console.error(`corb login: ${err instanceof Error ? err.message : String(err)}`);

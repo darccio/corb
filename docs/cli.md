@@ -89,8 +89,8 @@ Use a session identifier from its output with `attach` or `kill`.
 `attach` opens a new interactive shell in a running VM. It does not rejoin or
 mirror Pi's terminal.
 
-`kill` sends `SIGTERM` to the host process that owns the session, allowing the
-VM, sidecar, and audit writer to close. There is no force-kill flag.
+`kill` sends `SIGTERM` to the host process that owns the session.
+This allows the VM, sidecar, and audit writer to close. There is no force-kill flag.
 
 `gc` removes stale registry entries and orphaned sidecars. It preserves a
 sidecar while its recorded host process is alive. Inspect proposed removals with
@@ -104,8 +104,8 @@ corb doctor [--verify-secrets]
 
 Check the host environment, dependencies, cgroup delegation, and required
 credential variables. When `[agent].provider` uses a subscription login, it also
-checks that the login exists and that its API host is allowed. `--verify-secrets` additionally sends the configured
-credential-verification requests.
+checks that the login exists and reports the API hosts Corb allows automatically.
+`--verify-secrets` additionally sends the configured credential-verification requests.
 
 ## Image build
 

@@ -66,6 +66,7 @@ import {
 } from "./trust.ts";
 import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath } from "./paths.ts";
 import { writeFileSecure } from "../util/secure-write.ts";
+import { applyImpliedHosts, type ImpliedHost } from "./implied.ts";
 
 /** Thrown before any config is read when the requested workspace directory is unusable. Mirrors `src/vm/session.ts`'s `WorkspaceDirectoryError` in spirit, but is this module's own class — `src/config/` stays decoupled from `src/vm/` (see that file's own module comment). */
 export class WorkspaceDirectoryError extends Error {
@@ -326,6 +327,8 @@ export interface ResolvedWorkspace {
   persistentConfig: EffectiveConfig;
   /** `persistentConfig` with the caller's CLI layer (e.g. `--dir`-derived entries) merged on top. What a real run actually uses, and what a renderer should describe as "what will happen". Equals `persistentConfig` exactly when the CLI layer is `{}`. */
   fullConfig: EffectiveConfig;
+  /** Hosts added to the effective allow list, with their source. */
+  impliedHosts: ImpliedHost[];
   /** Evaluated against `persistentConfig` only — never influenced by CLI-added directories. */
   trustEvaluation: TrustEvaluation;
   /** The trust store key this resolution was evaluated against — the resolved absolute directory path itself (see module comment). */
@@ -335,13 +338,12 @@ export interface ResolvedWorkspace {
 }
 
 /**
- * Resolves `dir` into a `ResolvedWorkspace`: validates the directory exists
- * and is a directory, reads and merges `config.toml` (optional) with a
- * synthesized single-dir layer for `dir` itself into `persistentConfig`,
- * reads the trust store (optional) and evaluates trust for `dir`'s own
- * path-keyed record against `persistentConfig`, then merges `cliLayer` on
- * top of `persistentConfig` into `fullConfig`. Does no writing — see
- * `acceptWorkspace` for recording an acceptance.
+ * Resolves `dir` without writing files. Validates that the directory exists,
+ * then merges the optional `config.toml` with a synthesized single-dir layer.
+ * Adds implied provider hosts to `persistentConfig` before evaluating trust
+ * against the directory's path-keyed record in the optional trust store.
+ * Finally merges `cliLayer` into `fullConfig`.
+ * `acceptWorkspace` records an acceptance separately.
  *
  * `BUILTIN_DEFAULTS` is not passed explicitly here; `mergeConfigLayers`
  * folds it in automatically (see `load.ts`'s own doc comment on
@@ -362,7 +364,7 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
   const dirLayer: ConfigLayer = {
     dir: [{ name: path.basename(resolvedDir), host: resolvedDir, mode: "rw" }],
   };
-  const persistentConfig = mergeConfigLayers([configTomlLayer, dirLayer]);
+  const { config: persistentConfig, implied: impliedHosts } = applyImpliedHosts(mergeConfigLayers([configTomlLayer, dirLayer]));
 
   const trustStore = readTrustStore(configDir);
   const trustKey = resolvedDir;
@@ -372,7 +374,7 @@ export function resolveWorkspace(dir: string, cliLayer: ConfigLayer, opts: Resol
   const fullConfig = mergeConfigLayers([persistentConfig, cliLayer]);
   assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir, fullConfig.audit?.path);
 
-  return { dir: resolvedDir, persistentConfig, fullConfig, trustEvaluation, trustKey, priorRecord };
+  return { dir: resolvedDir, persistentConfig, fullConfig, impliedHosts, trustEvaluation, trustKey, priorRecord };
 }
 
 /**

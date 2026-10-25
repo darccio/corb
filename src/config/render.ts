@@ -22,6 +22,7 @@ import type { DirConfig, EffectiveConfig } from "./load.ts";
 import type { ConfigChange, TrustEvaluation } from "./trust.ts";
 import type { ResolvedWorkspace } from "./resolve.ts";
 import { findBrokeredProvider } from "../auth/provider.ts";
+import { describeImpliedHostSource, type ImpliedHost } from "./implied.ts";
 
 function fmtScalar(value: string | number | boolean | undefined): string {
   return value === undefined ? "(unset)" : String(value);
@@ -100,7 +101,7 @@ function renderBrokeredLogin(providerId: string | undefined): string[] {
   if (provider === undefined) {
     return [];
   }
-  return [`  login: host-brokered, see 'corb login ${provider.id}' (needs ${provider.apiHosts.join(", ")} in egress.allow)`];
+  return [`  login: host-brokered, see 'corb login ${provider.id}' (allows ${provider.apiHosts.join(", ")} automatically)`];
 }
 
 // Names and host-binding metadata only — never a secret value (see module comment).
@@ -124,14 +125,22 @@ function renderSecrets(secrets: EffectiveConfig["secrets"]): string[] {
   return lines;
 }
 
-function renderEgress(egress: EffectiveConfig["egress"]): string[] {
+function renderEgress(egress: EffectiveConfig["egress"], impliedHosts: readonly ImpliedHost[]): string[] {
   const lines = [
     "egress:",
     `  allow: ${fmtArray(egress.allow)}`,
+  ];
+  if (impliedHosts.length > 0) {
+    lines.push("  implied:");
+    for (const { host, source } of impliedHosts) {
+      lines.push(`    - ${host} (implied by ${describeImpliedHostSource(source)})`);
+    }
+  }
+  lines.push(
     `  allow-internal: ${fmtArray(egress["allow-internal"])}`,
     `  block-internal-ranges: ${fmtScalar(egress["block-internal-ranges"])}`,
     `  websockets: ${fmtScalar(egress.websockets)}`,
-  ];
+  );
   const githubApi = egress["github-api"];
   if (githubApi === undefined) {
     lines.push("  github-api: (unset)");
@@ -268,7 +277,7 @@ export function renderText(resolved: ResolvedWorkspace): string {
     ...renderVm(config.vm),
     ...renderAgent(config.agent),
     ...renderSecrets(config.secrets),
-    ...renderEgress(config.egress),
+    ...renderEgress(config.egress, resolved.impliedHosts),
     ...renderGit(config.git),
     ...renderDirs(config.dir),
     ...renderPolicy(config.policy),
@@ -284,6 +293,7 @@ export interface ExplainJson {
   dir: string;
   trustKey: string;
   config: EffectiveConfig;
+  impliedHosts: ImpliedHost[];
   trust: TrustEvaluation;
 }
 
@@ -293,6 +303,7 @@ export function renderJson(resolved: ResolvedWorkspace): string {
     dir: resolved.dir,
     trustKey: resolved.trustKey,
     config: resolved.fullConfig,
+    impliedHosts: resolved.impliedHosts,
     trust: resolved.trustEvaluation,
   };
   return JSON.stringify(payload, null, 2);

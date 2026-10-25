@@ -457,7 +457,7 @@ describe("commands/run: runRunCommand", () => {
         // `BUILTIN_DEFAULTS` and `secrets` stays entirely absent — matching
         // `EffectiveConfig.egress`'s own always-present-but-mostly-default
         // shape and `EffectiveConfig.secrets`'s own optionality.
-        expect(options.egress).toEqual({ "block-internal-ranges": true, websockets: false });
+        expect(options.egress).toEqual({ allow: [], "block-internal-ranges": true, websockets: false });
         expect(options.secrets).toBeUndefined();
         expect(options.audit).toBeDefined();
         expect(typeof options.audit.record).toBe("function");
@@ -814,18 +814,22 @@ describe("commands/run: runRunCommand with a host-brokered provider", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it("warns when the provider's API host is not in egress.allow, and still boots", async () => {
+  it("allows the provider's API host automatically without a warning", async () => {
     writeConfig(["pi.dev"]);
     writeLogin();
     await runRunCommand([workDir, "--trust-config"]);
     expect(runSessionMock).toHaveBeenCalledTimes(1);
-    expect(errorSpy.mock.calls.flat().join("\n")).toMatch(/needs "chatgpt.com" in egress.allow/);
+    const [options] = runSessionMock.mock.calls[0] as [{ egress: { allow: string[] } }];
+    expect(options.egress.allow).toEqual(["pi.dev", "chatgpt.com"]);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it("does not start a broker for an API-key provider", async () => {
     fs.writeFileSync(path.join(configDir, "config.toml"), '[agent]\nprovider = "anthropic"\n');
     await runRunCommand([workDir, "--trust-config"]);
-    const [options] = runSessionMock.mock.calls[0] as [{ brokered?: unknown }];
+    const [options] = runSessionMock.mock.calls[0] as [{ brokered?: unknown; egress: { allow: string[] } }];
     expect(options.brokered).toBeUndefined();
+    expect(options.egress.allow).not.toContain("chatgpt.com");
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });

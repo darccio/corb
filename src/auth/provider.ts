@@ -63,7 +63,7 @@ export interface BrokeredProvider {
   /**
    * Exact hostnames (no wildcards) where the stand-in is swapped for the real
    * access token, over HTTPS only. Never a token endpoint: the guest must not
-   * need one. Each must also be in `egress.allow` for the session to work.
+   * need one. Corb adds these hosts to `egress.allow` in `src/config/implied.ts`.
    */
   apiHosts: readonly string[];
   /** Builds this session's stand-in credential. `marker` is a fresh random string, unique per session. */
@@ -126,7 +126,7 @@ function matchesAllowPattern(hostname: string, pattern: string): boolean {
   return new RegExp(`^${escaped}$`, "i").test(hostname);
 }
 
-/** `provider`'s API hosts that `allow` (`egress.allow`) does not permit. A login does not grant network access. */
+/** API hosts that `allow` does not permit. Corb adds them through `src/config/implied.ts`. */
 export function unreachableApiHosts(provider: BrokeredProvider, allow: readonly string[] | undefined): string[] {
   return provider.apiHosts.filter((host) => !(allow ?? []).some((pattern) => matchesAllowPattern(host, pattern)));
 }
