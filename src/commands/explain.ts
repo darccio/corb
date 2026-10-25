@@ -11,6 +11,7 @@ export interface ExplainCommandArgs {
   dirExplicit: boolean;
   workspace: string | undefined;
   json: boolean;
+  trusted: boolean;
   /** Raw `--dir NAME=HOST[:ro|:rw]` values, in argv order — see `src/commands/run.ts`'s `buildCliLayer`. */
   dirFlags: string[];
   primary: string | undefined;
@@ -21,6 +22,7 @@ export function parseExplainArgs(argv: string[]): ExplainCommandArgs {
     args: argv,
     options: {
       json: { type: "boolean" },
+      trusted: { type: "boolean" },
       dir: { type: "string", multiple: true },
       primary: { type: "string" },
       workspace: { type: "string" },
@@ -34,7 +36,7 @@ export function parseExplainArgs(argv: string[]): ExplainCommandArgs {
   }
 
   const dir = positionals[0] !== undefined ? path.resolve(positionals[0]) : process.cwd();
-  return { dir, dirExplicit: positionals[0] !== undefined, workspace: values.workspace, json: values.json ?? false, dirFlags: values.dir ?? [], primary: values.primary };
+  return { dir, dirExplicit: positionals[0] !== undefined, workspace: values.workspace, json: values.json ?? false, trusted: values.trusted ?? false, dirFlags: values.dir ?? [], primary: values.primary };
 }
 
 export async function runExplainCommand(argv: string[]): Promise<void> {
@@ -45,5 +47,5 @@ export async function runExplainCommand(argv: string[]): Promise<void> {
     ...(args.primary === undefined ? {} : { primary: args.primary }),
   });
   resolved.primary = resolvePrimaryName(resolved.fullConfig, args.primary, resolved.primary);
-  console.log(args.json ? renderJson(resolved) : renderText(resolved));
+  console.log(args.json ? renderJson(resolved, { trusted: args.trusted }) : renderText(resolved, { trusted: args.trusted }));
 }
