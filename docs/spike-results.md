@@ -1687,6 +1687,7 @@ Typecheck, source lint and both changed docs pass.
 All 1,518 unit tests pass across 55 files.
 All 53 serial e2e tests pass across 10 files in 265.07 seconds.
 Seven plan/preimage cases and seven reused gate-verdict cases pass.
+
 The final host process check finds no remaining VM or test process.
 All 11 recorded VM PIDs exited before the slot release.
 The isolated task registry is empty.
