@@ -5,6 +5,7 @@ import {
   findBrokeredProvider,
   getBrokeredProvider,
   listBrokeredProviders,
+  uncoveredHosts,
   unreachableApiHosts,
 } from "../../../src/auth/provider.ts";
 import { assertValidProviderId } from "../../../src/auth/store.ts";
@@ -34,6 +35,30 @@ describe("auth/provider registry", () => {
         expect(host).toMatch(/^[a-z0-9.-]+$/);
       }
     }
+  });
+});
+
+describe("uncoveredHosts", () => {
+  const hosts = ["example.com", "api.example.com", "other.test"];
+
+  it.each([
+    { allow: undefined, expected: hosts },
+    { allow: [], expected: hosts },
+    { allow: ["example.com"], expected: ["api.example.com", "other.test"] },
+    { allow: ["*"], expected: [] },
+    { allow: ["*.example.com"], expected: ["example.com", "other.test"] },
+    { allow: ["  EXAMPLE.COM  ", " API.Example.Com "], expected: ["other.test"] },
+    { allow: [" ", "not-example.com"], expected: hosts },
+  ])("finds uncovered hosts for $allow", ({ allow, expected }) => {
+    expect(uncoveredHosts(hosts, allow)).toEqual(expected);
+  });
+
+  it("matches host case and leaves its inputs unchanged", () => {
+    const input = Object.freeze(["API.Example.Com", "Other.Test"]);
+    const allow = Object.freeze([" *.example.com "]);
+    expect(uncoveredHosts(input, allow)).toEqual(["Other.Test"]);
+    expect(input).toEqual(["API.Example.Com", "Other.Test"]);
+    expect(allow).toEqual([" *.example.com "]);
   });
 });
 

@@ -6,7 +6,7 @@ Accepted
 
 DAR-10 provides workspace sources and the mount guard. DAR-9 provides selection,
 configuration layering, portable hosts, and workspace trust keys.
-DAR-14 provides implied provider hosts. Their source metadata stays global until DAR-17.
+DAR-14 provides implied provider hosts. DAR-17 records the workspace when its file sets the provider.
 Layers and pins remain for DAR-16. The DAR-15 spike will inform their design.
 
 ## Context and Problem Statement
@@ -217,7 +217,7 @@ the guard in that case. The extended guard rejects both overlaps.
 
 Corb adds brokered providers' API hosts to `egress.allow` automatically.
 DAR-14 applies this before trust. DAR-9 includes the workspace layer in that merge.
-Source metadata still says global until DAR-17 adds workspace source reporting.
+DAR-17 names the workspace when its file sets the provider. Other provider sources remain global.
 
 Layers' run-time hosts will also become implied through DAR-16.
 `corb explain` shows each implied host and its source.

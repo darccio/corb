@@ -124,6 +124,8 @@ names its source. If an earlier trusted run did not allow the host, the next
 `corb run` asks for `--trust-config` once. `auth.openai.com` is not needed in
 the guest, because the login and every refresh happen on the host.
 
+The provider can also be set in a workspace's `[agent]` table.
+
 `corb run` stops before it boots the VM if there is no stored login. Pick a
 model from Pi's `/model` list for the provider.
 

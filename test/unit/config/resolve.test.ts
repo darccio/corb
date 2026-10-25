@@ -829,7 +829,7 @@ path = ${JSON.stringify(path.join(root, "new-audit"))}`);
     expect(config.dir[0]).toMatchObject({ name: "global", host: globalMount, mode: "ro" });
     expect(config.dir[1]).toEqual({ name: "app", host: newApp, mode: "rw", create: true, "protect-git": true, rules: [{ glob: "global", mode: "deny-write" }, { glob: "workspace", mode: "hidden" }], "builtin-rules": builtinGitRules() });
     expect(result.fullConfig.dir[1]?.["builtin-rules"]).toEqual(builtinGitRules());
-    expect(result.impliedHosts).toEqual([{ host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "global" } }]);
+    expect(result.impliedHosts).toEqual([{ host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "workspace", workspace: "team" } }]);
     expect(config).not.toHaveProperty("workspaces");
     expect(config).not.toHaveProperty("selectedWorkspace");
     expect(result.selectedWorkspace).toMatchObject({ name: "team", selectedBy: "name", source: { index: 0, raw: source, path: source }, corbToml: path.join(source, "team", "corb.toml") });
@@ -1017,5 +1017,79 @@ path = ${JSON.stringify(path.join(root, "new-audit"))}`);
     expect(result.primary).toBe("app");
     expect(result.persistentConfig.dir.find((entry) => entry.name === "app")?.["builtin-rules"]).toEqual(builtinGitRules());
     expect(result.persistentConfig.dir.find((entry) => entry.name === "child")?.host).toBeUndefined();
+  });
+
+  it.each([undefined, "anthropic", "openai-codex"])("names the workspace provider source over global %s", (provider) => {
+    global(provider === undefined ? "" : `[agent]\nprovider = ${JSON.stringify(provider)}`);
+    workspace('[agent]\nprovider = "openai-codex"');
+    const result = resolve();
+    expect(result.persistentConfig.egress.allow).toEqual(["chatgpt.com"]);
+    expect(result.impliedHosts).toEqual([{
+      host: "chatgpt.com",
+      source: { kind: "agent-provider", provider: "openai-codex", layer: "workspace", workspace: "team" },
+    }]);
+    expect(result.persistentConfig).not.toHaveProperty("impliedHosts");
+  });
+
+  it("retains a global provider source when the workspace only sets a model", () => {
+    global('[agent]\nprovider = "openai-codex"');
+    workspace('[agent]\nmodel = "workspace-model"');
+    expect(resolve().impliedHosts).toEqual([{
+      host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "global" },
+    }]);
+  });
+
+  it("does not imply a global provider's hosts after a workspace API-key override", () => {
+    global('[agent]\nprovider = "openai-codex"');
+    workspace('[agent]\nprovider = "anthropic"');
+    const result = resolve();
+    expect(result.persistentConfig.egress.allow).toEqual([]);
+    expect(result.impliedHosts).toEqual([]);
+  });
+
+  it("keeps explicit workspace allowance trusted without recording or duplicating it as implied", () => {
+    global('[agent]\nprovider = "openai-codex"');
+    workspace("");
+    const initial = resolve();
+    acceptWorkspace(initial.trustKey, initial.persistentConfig, 1, { configDir });
+    workspace('[egress]\nallow = ["chatgpt.com"]');
+    const result = resolve();
+    expect(result.persistentConfig.egress.allow).toEqual(["chatgpt.com"]);
+    expect(result.impliedHosts).toEqual([]);
+    expect(result.trustEvaluation.verdict).toBe("trusted");
+  });
+
+  it("requires trust for provider changes in both directions and reports the implied host change", () => {
+    workspace('[agent]\nprovider = "anthropic"');
+    const initial = resolve();
+    acceptWorkspace(initial.trustKey, initial.persistentConfig, 1, { configDir });
+    workspace('[agent]\nprovider = "openai-codex"');
+    const codex = resolve();
+    expect(codex.trustEvaluation.verdict).toBe("requires-confirmation");
+    expect(codex.trustEvaluation.widened).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: "egress.allow", description: "egress.allow gained 'chatgpt.com'" }),
+      expect.objectContaining({ field: "agent.provider" }),
+    ]));
+    acceptWorkspace(codex.trustKey, codex.persistentConfig, 2, { configDir });
+    workspace('[agent]\nprovider = "anthropic"');
+    const apiKey = resolve();
+    expect(apiKey.trustEvaluation.verdict).toBe("requires-confirmation");
+    expect(apiKey.trustEvaluation.narrowed).toContainEqual(expect.objectContaining({
+      field: "egress.allow", description: "egress.allow lost 'chatgpt.com'",
+    }));
+    expect(apiKey.trustEvaluation.widened).toContainEqual(expect.objectContaining({ field: "agent.provider" }));
+  });
+
+  it("trusts moving an unchanged provider from global to workspace", () => {
+    global('[agent]\nprovider = "openai-codex"');
+    workspace("");
+    const initial = resolve();
+    acceptWorkspace(initial.trustKey, initial.persistentConfig, 1, { configDir });
+    global();
+    workspace('[agent]\nprovider = "openai-codex"');
+    const result = resolve();
+    expect(result.persistentConfig).toEqual(initial.persistentConfig);
+    expect(result.impliedHosts[0]?.source).toEqual({ kind: "agent-provider", provider: "openai-codex", layer: "workspace", workspace: "team" });
+    expect(result.trustEvaluation.verdict).toBe("trusted");
   });
 });

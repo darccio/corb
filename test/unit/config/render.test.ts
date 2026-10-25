@@ -346,6 +346,18 @@ describe("config/render: renderJson", () => {
 });
 
 describe("config/render: selected workspace metadata", () => {
+  it("names a workspace implied-host source in text and JSON without adding sources to config", () => {
+    const resolved = noChangeWorkspace();
+    resolved.selectedWorkspace = { name: "acme", selectedBy: "name", source: { index: 0, raw: "/definitions", path: "/definitions" }, dir: "/definitions/acme", corbToml: "/definitions/acme/corb.toml" };
+    resolved.impliedHosts = [{ host: "chatgpt.com", source: { kind: "agent-provider", provider: "openai-codex", layer: "workspace", workspace: "acme" } }];
+    resolved.fullConfig.egress.allow = ["chatgpt.com"];
+    expect(renderText(resolved)).toContain('- chatgpt.com (implied by [agent] provider = "openai-codex" in workspace "acme")');
+    const json = JSON.parse(renderJson(resolved));
+    expect(json.impliedHosts).toEqual(resolved.impliedHosts);
+    expect(json.config).not.toHaveProperty("impliedHosts");
+    expect(json.config.egress.allow).toEqual(["chatgpt.com"]);
+  });
+
   it.each(["name", "path"] as const)("shows selection by %s in text and JSON", (selectedBy) => {
     const resolved = noChangeWorkspace();
     resolved.selectedWorkspace = { name: "team", selectedBy, source: { index: 0, raw: "~/corbfiles", path: "/home/user/corbfiles" }, dir: "/home/user/corbfiles/team", corbToml: "/home/user/corbfiles/team/corb.toml" };
