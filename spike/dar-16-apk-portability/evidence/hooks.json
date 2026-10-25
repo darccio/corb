@@ -1,0 +1,136 @@
+{
+  "experimentOnly": true,
+  "productionPolicyApproved": false,
+  "duringTransactionOnly": "/sbin/apk -> readonly external apk.static",
+  "strictCaseStderr": "* Setting postgresql16 as the default version\n* /proc/self/fd/6: line 57: apk: not found\n",
+  "installation": {
+    "exitCode": 0,
+    "stdout": "(1/6) Installing postgresql-common (1.2-r2)\n  Executing postgresql-common-1.2-r2.pre-install\n(2/6) Installing lz4-libs (1.10.0-r0)\n(3/6) Installing libpq (18.6-r0)\n(4/6) Installing postgresql16-client (16.15-r0)\n(5/6) Installing redis (8.4.2-r0)\n  Executing redis-8.4.2-r0.pre-install\n  Executing redis-8.4.2-r0.post-install\n(6/6) Installing tree (2.2.1-r0)\nExecuting busybox-1.37.0-r29.trigger\nExecuting postgresql-common-1.2-r2.trigger\nOK: 170.5 MiB in 61 packages\n",
+    "stderr": "* Setting postgresql16 as the default version\n* \n* You are using 'postgresql16'. It's recommended to upgrade to the latest\n* major version provided by package 'postgresql18'.\n* Use command 'pg_versions' to switch between versions.\n* \n"
+  },
+  "additions": [
+    {
+      "name": "postgresql-common",
+      "version": "1.2-r2"
+    },
+    {
+      "name": "lz4-libs",
+      "version": "1.10.0-r0"
+    },
+    {
+      "name": "libpq",
+      "version": "18.6-r0"
+    },
+    {
+      "name": "postgresql16-client",
+      "version": "16.15-r0"
+    },
+    {
+      "name": "redis",
+      "version": "8.4.2-r0"
+    },
+    {
+      "name": "tree",
+      "version": "2.2.1-r0"
+    }
+  ],
+  "native": {
+    "uid": 1000,
+    "tests": 3,
+    "tree": true,
+    "postgresqlLoopbackQuery": "42",
+    "redis": "PING/SET/GET",
+    "loaders": [
+      {
+        "filename": "/usr/bin/tree",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7ff5760ac000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7ff5760ac000)\n"
+      },
+      {
+        "filename": "/usr/libexec/postgresql16/psql",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7fbe412b6000)\n\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7fbe411aa000)\n\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7fbe41160000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7fbe412b6000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7fbe41091000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7fbe40a00000)\n\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7fbe4103c000)\n"
+      },
+      {
+        "filename": "/usr/bin/redis-server",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7feab9b3a000)\n\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7feab9400000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7feab9731000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7feab8e00000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7feab9b3a000)\n\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7feab9705000)\n"
+      }
+    ]
+  },
+  "databaseSha256": "aae45c8d6806d293367d01456eda2e8dd0e14013a2596c7dc0d3cd03037c3795",
+  "checkpoint": {
+    "version": 1,
+    "name": "hooks-apk",
+    "createdAt": "2026-10-25T21:35:40.413Z",
+    "diskFile": "hooks-apk.qcow2",
+    "guestAssetBuildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+    "snapshotKind": "disk",
+    "createdWithVmm": "qemu",
+    "compatibleVmm": [
+      "qemu",
+      "krun"
+    ]
+  },
+  "checkpointSha256": "7698ba0cfc6aac3b9e4f2d903b0fad4cdbfa3bf8e1401ce2a07cbfe743b29636",
+  "resume": {
+    "native": {
+      "uid": 1000,
+      "tests": 3,
+      "tree": true,
+      "postgresqlLoopbackQuery": "42",
+      "redis": "PING/SET/GET",
+      "loaders": [
+        {
+          "filename": "/usr/bin/tree",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7fc5789fc000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7fc5789fc000)\n"
+        },
+        {
+          "filename": "/usr/libexec/postgresql16/psql",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f5460dbd000)\n\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7f5460cb1000)\n\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7f5460c67000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f5460dbd000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7f5460b98000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7f5460600000)\n\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7f5460b43000)\n"
+        },
+        {
+          "filename": "/usr/bin/redis-server",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f6ade514000)\n\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7f6addc00000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7f6ade43d000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7f6add600000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f6ade514000)\n\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7f6ade411000)\n"
+        }
+      ]
+    },
+    "gates": [
+      {
+        "name": "user",
+        "ok": true,
+        "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+      },
+      {
+        "name": "privilege-drop",
+        "ok": true,
+        "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+      },
+      {
+        "name": "suid",
+        "ok": true,
+        "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+      },
+      {
+        "name": "removals",
+        "ok": true,
+        "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+      },
+      {
+        "name": "ca-trust",
+        "ok": false,
+        "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+      },
+      {
+        "name": "git-gh-shimmed",
+        "ok": true,
+        "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+      },
+      {
+        "name": "pi",
+        "ok": true,
+        "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+      }
+    ],
+    "installerAbsent": true,
+    "protectedUnchanged": true,
+    "databaseUnchanged": true
+  }
+}

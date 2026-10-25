@@ -1,0 +1,54 @@
+{
+  "typecheck": {
+    "passed": true
+  },
+  "lint": {
+    "passed": true
+  },
+  "unit": {
+    "passed": 1518,
+    "files": 55,
+    "durationSeconds": 2.92
+  },
+  "e2e": {
+    "passed": 53,
+    "files": 10,
+    "durationSeconds": 265.07,
+    "serial": true
+  },
+  "planAndPreimageHostCases": {
+    "passed": 7
+  },
+  "reusedGateVerdictHostCases": {
+    "passed": 7
+  },
+  "cryptoRejectingCases": {
+    "wrongExpectedControlChecksum": true,
+    "actualSignatureByteMutation": true
+  },
+  "nativeCases": {
+    "primary": 12,
+    "unsafeReplayControl": 3,
+    "temporaryHookVariant": 6
+  },
+  "imageGateReports": {
+    "reports": 6,
+    "gatesEach": 7,
+    "passesEach": 6,
+    "knownGitTlsFailures": 6
+  },
+  "docLint": {
+    "files": [
+      "spike/dar-16-apk-portability/README.md",
+      "docs/spike-results.md"
+    ],
+    "passed": true
+  },
+  "sandboxAttempt": {
+    "unitPassed": 1509,
+    "unitFailed": 9,
+    "cause": "localhost listen EPERM and child-signal timeout; host-context rerun passed"
+  },
+  "priorDocsExactPrefix": true,
+  "goCodeAndEvidenceUnchanged": true
+}

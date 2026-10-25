@@ -1,0 +1,71 @@
+{
+  "capturedAt": "2026-10-25T21:37:30.547Z",
+  "refs": [
+    {
+      "reference": "corb-spike:dar-15-fixed",
+      "targets": {
+        "x86_64": "e8292a0a-0a1a-52d5-959b-9ed372068d54"
+      },
+      "updatedAt": "2026-10-25T16:02:45.169Z"
+    },
+    {
+      "reference": "corb-spike:dar-15-plain",
+      "targets": {
+        "x86_64": "a7e4ca98-2359-516c-8d37-e4607e470e66"
+      },
+      "updatedAt": "2026-10-25T16:00:47.250Z"
+    },
+    {
+      "reference": "corb:0.1.0",
+      "targets": {
+        "x86_64": "2747a805-7a7e-5798-84ca-077fb5086311"
+      },
+      "updatedAt": "2026-10-24T20:13:28.511Z"
+    },
+    {
+      "reference": "corb:0.1.0-x86_64-171874b9",
+      "targets": {
+        "x86_64": "2747a805-7a7e-5798-84ca-077fb5086311"
+      },
+      "updatedAt": "2026-10-24T20:13:28.510Z"
+    }
+  ],
+  "objects": [
+    {
+      "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+      "assetDir": "/home/dario/.cache/gondolin/images/objects/e8292a0a-0a1a-52d5-959b-9ed372068d54",
+      "manifestSha256": "61be6c61156222dc618c8146b7aac481ccbb67311d4104aaf033d879e253bd5a",
+      "checksums": {
+        "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+        "initramfs": "017572642b872439da8f5b5ca12783a3a3abdc4f7b12272b92dac6e0dd7bcdb5",
+        "rootfs": "de13c9757a2aaef4aecbc331bbb54416940e8f0dca4367ffbd7b766e9716cec7",
+        "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+        "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "buildId": "a7e4ca98-2359-516c-8d37-e4607e470e66",
+      "assetDir": "/home/dario/.cache/gondolin/images/objects/a7e4ca98-2359-516c-8d37-e4607e470e66",
+      "manifestSha256": "03f6f2479a7776bec5be70808271b2bb19f5d36c223c0ad2ce9dd503d77e253d",
+      "checksums": {
+        "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+        "initramfs": "b2e61cff1373b85cbf06d36eda1092448a1a98ae1497e3a8abcba32d943f2fbb",
+        "rootfs": "9c6204266a50a31ed24144e6210f9d1f710b22d3bd9474b02123815582d2e01d",
+        "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+        "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "buildId": "2747a805-7a7e-5798-84ca-077fb5086311",
+      "assetDir": "/home/dario/.cache/gondolin/images/objects/2747a805-7a7e-5798-84ca-077fb5086311",
+      "manifestSha256": "75160d7a2ebf9b112ec097f9cf1cc4ba041685268c19733f663aa1d81f64a9b1",
+      "checksums": {
+        "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+        "initramfs": "734d8c75317fdde937bb91d20a6d82bab2b1f844fe6312b0b8759a2210eec38e",
+        "rootfs": "66dcee4cc7bcc04b67f1567a806bc16e8d0c00e0b09763593f72b4841533b5cf",
+        "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+        "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

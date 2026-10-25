@@ -1564,3 +1564,129 @@ All 53 serial e2e tests pass across 10 files.
 Seven host tests cover the gate-report verdict rules.
 Both changed Markdown files pass `se lint`.
 The separate image-gate controls retain their six known Git TLS failures.
+
+## DAR-16: signed APK inputs across different bases
+
+This second validation tests package-input reuse, installed filesystem replay and separate checkpoint caches.
+It adds no production DAR-16 implementation or approved policy.
+The previous Go results and evidence remain unchanged.
+
+### Verdict and compatibility
+
+The same authenticated APK input bundle works on two different measured Alpine 3.23.0 x86_64 Corb bases.
+Each base runs its own solver, install scripts and triggers.
+This preserves consumer accounts and config while allowing different installed dependency state.
+It does not prove arbitrary package portability from the Alpine version string alone.
+
+The [APK format](https://raw.githubusercontent.com/alpinelinux/apk-tools/v3.0.8/doc/apk-package.5.scd) includes architecture, dependency, provider, script and trigger inputs.
+The [solver command](https://raw.githubusercontent.com/alpinelinux/apk-tools/v3.0.8/doc/apk-add.8.scd) also uses installed packages and world constraints.
+Production compatibility must account for those inputs and the trusted keys.
+It also depends on libc ABI, base file state and Corb security policy.
+
+Both positive bases retain the earlier stale OpenSSL database limitation.
+Their records say `3.5.4-r0`, but both libraries match the signed `3.5.9-r0` package bytes.
+The stock metadata control has only 20 records and lacks known installed-tool registrations.
+The trial does not repair these facts or call either positive base fully reconciled.
+
+| Model | Measured result |
+| --- | --- |
+| Signed APK/dependency input bundle | Works for this matrix after a separate validated transaction on each base |
+| Unconditional installed filesystem replay | Fails on different account, database and config state |
+| Conditional installed filesystem delta | Rejects these mismatched preimages before mutation. Wider support remains unimplemented and unproven. |
+| Composed checkpoint cache | Resumes on its own exact base. Wrong-base resume rejects before boot. |
+
+### Bases, transactions and native behavior
+
+Base A is DAR-15 fixed, build `e8292a0a-0a1a-52d5-959b-9ed372068d54`, with 55 package records.
+Base B is a new untagged build, `820396a0-70a9-5772-af9c-c1d3eba7ae8d`, with 56 records and different rootfs bytes.
+B already contains tree, Redis uid/gid 350, consumer uid/gid 351, consumer data and a Redis config.
+It is not a relabelled disk or a claimed Corb 0.2 release.
+B's synthetic config has literal backslash-n sequences and acts as a comment-only preservation marker.
+It does not test an active port setting.
+
+The bundle contains exact signed tree, PostgreSQL 16 client, Redis and their three added dependency archives.
+It also contains the verified installer and both frozen signed repository indexes.
+A adds six packages, while B reuses its existing tree and adds five.
+Existing package identities stay unchanged.
+Both end with 61 records.
+
+Three useful native cases run as uid 1000 through production `dropcap` before and after each checkpoint resume.
+They check tree JSON, a PostgreSQL query against a local protocol fixture, and Redis PING/SET/GET.
+All 12 primary cases pass, with working native loader resolution and generated workspace writes.
+The unsafe replay passes three more native cases, while the hook-context variant passes six.
+
+A's Redis scripts create uid 100/gid 101.
+B's transaction preserves Redis 350 and its consumer account, data and config.
+Redis's `/run/redis` exists after installation but disappears on resume.
+`/var/log/redis` also disappears with the temporary mount.
+The workload uses explicit temporary paths and does not establish default service startup support.
+
+### Replay counterexample and hook context
+
+The producer records every persistent changed path, basic metadata and deleted-path preimages.
+Its transaction changes 66 paths and deletes none.
+The conditional replay check rejects 11 mismatched paths on B before changing anything.
+Those paths include account files, APK database/world, config, tree and the Redis directory.
+
+The controlled unsafe replay then applies all 66 paths, with no account or database exclusions.
+Its postimages match the producer.
+It erases consumer uid 351 from the account database and changes Redis 350 to uid 100/gid 101.
+It overwrites the consumer config and leaves UID 351 data without its account.
+The tools still work and the image gates still match baseline, so those checks alone miss consumer-state loss.
+
+This disproves unconditional replay for these differing states.
+It does not disprove a delta with matching preconditions on every affected path.
+Such a contract can allow unrelated base changes without requiring the same build ID.
+Package-aware merging, xattrs and file-capability handling are not implemented in this experiment.
+
+The primary install keeps `apk.static` outside `PATH` on a read-only mount.
+The PostgreSQL trigger reports `apk: not found`, though installation exits zero and the query works.
+A separate bounded variant exposes a temporary `/sbin/apk` symlink only during the root transaction.
+That removes the missing-command warning and preserves the tested behavior and protected files.
+The symlink and installer mount are absent on resume.
+This hook context remains a production decision, not an approved policy change.
+
+### Authentication, gates and rejection checks
+
+Both bases' keys verify the frozen indexes and consumed packages.
+The checks cover exact package/version, signed control checksum, RSA signature, archive size and signed payload hash.
+A wrong expected control checksum rejects through the normal verifier.
+A signature-byte mutation retains size, control and payload bytes but fails the actual RSA verifier before any VM.
+The signed `postgresql-common` index architecture is x86_64, while its signed payload metadata is compatible `noarch`.
+
+A planned OpenSSL upgrade rejects before installation.
+A throwaway signed sudo install fails the actual SUID gate and restores forbidden `su` and `sudo` names.
+It produces no checkpoint.
+No baseline TLS failure is used to satisfy these negative assertions.
+
+All seven image gates run in six reports across positive baselines, resumed candidates, replay and hook variant.
+Each report retains only the known Git TLS decrypt-alert failure, with six passes.
+Protected Corb hashes and all seven forbidden PATH checks pass for the accepted candidates.
+Any new candidate failure or unrelated baseline failure rejects the verdict.
+Existing refs, canonical base assets, signed inputs and canonical checkpoints remain unchanged.
+
+### OCI, reproduction and limits
+
+The same input bundle roundtrips through local OCI layouts with verified ORAS 1.3.5.
+All nine blob descriptors retain their size and digest.
+The artifact contains no base build ID or installed filesystem state.
+Its manifest digest is `sha256:0a2020acfdf901e5a76485a9ebfb7117ca95ac2c1c836f4570189fbad6b6df80`.
+No remote registry or authentication flow is tested.
+
+The [APK spike README](../spike/dar-16-apk-portability/README.md) gives exact commands, compatibility limits and evidence paths.
+The measured run uses 11 serial VMs with 1 GiB, two CPUs and bounded startup and commands.
+It uses explicit phases, then audits the final report from completed structured results.
+The report labels the phases and does not claim a fresh full rerun.
+Large archives, inventories, layouts and checkpoints stay outside Git.
+
+Choose a per-base package transaction or a stricter conditional delta contract before production work.
+Resolve stale base records, temporary APK hook access, solver changes and package security conflicts explicitly.
+Default service lifecycle, other Alpine patches, other architectures and arbitrary packages remain unverified.
+
+Typecheck, source lint and both changed docs pass.
+All 1,518 unit tests pass across 55 files.
+All 53 serial e2e tests pass across 10 files in 265.07 seconds.
+Seven plan/preimage cases and seven reused gate-verdict cases pass.
+The final host process check finds no remaining VM or test process.
+All 11 recorded VM PIDs exited before the slot release.
+The isolated task registry is empty.

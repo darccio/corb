@@ -1,0 +1,10 @@
+{
+  "orasVersion": "1.3.5",
+  "orasArchiveSha256": "f48a73ea6d026a862c3919fc773da9a8c86fc259c2c737d5baed3b8b9614ad22",
+  "manifestDigest": "sha256:0a2020acfdf901e5a76485a9ebfb7117ca95ac2c1c836f4570189fbad6b6df80",
+  "layerCount": 9,
+  "allDescriptorBytesVerified": true,
+  "baseBuildIdPresent": false,
+  "remoteRegistryTested": false,
+  "copyOutput": "Copying bd0dc5d31d48 indexes/community.tar.gz\nCopying fcd72856ff64 application/vnd.corb.spike.apk.config.v1+json\nCopying af8c1e4af0cd indexes/main.tar.gz\nCopied  fcd72856ff64 application/vnd.corb.spike.apk.config.v1+json\nCopying 2edccd3267ce packages/apk-tools-static-3.0.8-r0.apk\nCopied  af8c1e4af0cd indexes/main.tar.gz\nCopying 770d92f5134d packages/libpq-18.6-r0.apk\nCopied  770d92f5134d packages/libpq-18.6-r0.apk\nCopying 85766b2ab3e9 packages/lz4-libs-1.10.0-r0.apk\nCopied  85766b2ab3e9 packages/lz4-libs-1.10.0-r0.apk\nCopying d88dc9d3e638 packages/postgresql-common-1.2-r2.apk\nCopied  d88dc9d3e638 packages/postgresql-common-1.2-r2.apk\nCopying 502fcf03ced4 packages/postgresql16-client-16.15-r0.apk\nCopied  bd0dc5d31d48 indexes/community.tar.gz\nCopied  2edccd3267ce packages/apk-tools-static-3.0.8-r0.apk\nCopying c3276f8a9d30 packages/redis-8.4.2-r0.apk\nCopying 01bcfc16850e packages/tree-2.2.1-r0.apk\nCopied  01bcfc16850e packages/tree-2.2.1-r0.apk\nCopied  502fcf03ced4 packages/postgresql16-client-16.15-r0.apk\nCopied  c3276f8a9d30 packages/redis-8.4.2-r0.apk\nCopying 0a2020acfdf9 application/vnd.oci.image.manifest.v1+json\nCopied  0a2020acfdf9 application/vnd.oci.image.manifest.v1+json\nCopied [oci-layout] /home/dario/Code/corb/image/build/dar-16-apk-portability/oci-source:apk-bundle => [oci-layout] /home/dario/Code/corb/image/build/dar-16-apk-portability/oci-roundtrip:apk-bundle\nDigest: sha256:0a2020acfdf901e5a76485a9ebfb7117ca95ac2c1c836f4570189fbad6b6df80\n"
+}

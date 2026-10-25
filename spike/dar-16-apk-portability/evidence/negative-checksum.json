@@ -1,0 +1,5 @@
+{
+  "rejected": true,
+  "error": "APK control checksum differs from signed index",
+  "beforeVm": true
+}

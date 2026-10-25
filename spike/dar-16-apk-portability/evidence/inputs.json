@@ -1,0 +1,269 @@
+{
+  "bases": [
+    {
+      "name": "fixed",
+      "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+      "assetDir": "/home/dario/.cache/gondolin/images/objects/e8292a0a-0a1a-52d5-959b-9ed372068d54",
+      "manifest": {
+        "version": 1,
+        "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+        "config": {
+          "arch": "x86_64",
+          "distro": "alpine",
+          "alpine": {
+            "version": "3.23.0",
+            "kernelPackage": "linux-virt",
+            "rootfsPackages": [
+              "linux-virt",
+              "bash",
+              "ca-certificates",
+              "curl",
+              "git",
+              "openssh-client",
+              "ripgrep",
+              "fd",
+              "jq",
+              "less",
+              "nodejs",
+              "npm",
+              "github-cli",
+              "tzdata"
+            ]
+          },
+          "container": {
+            "force": false,
+            "runtime": "docker"
+          },
+          "rootfs": {
+            "label": "corb-root",
+            "sizeMb": 3072
+          },
+          "env": {
+            "LANG": "C.UTF-8",
+            "CORB_IMAGE_KIND": "default",
+            "PI_SKIP_VERSION_CHECK": "1",
+            "PI_TELEMETRY": "0"
+          },
+          "init": {
+            "rootfsInitExtra": "/work/rootfs-init-extra"
+          },
+          "postBuild": {
+            "copy": [
+              {
+                "src": "/work/postbuild-copy-0/dropcap",
+                "dest": "/usr/local/bin/dropcap"
+              },
+              {
+                "src": "/work/postbuild-copy-1/policygate",
+                "dest": "/usr/local/libexec/policygate"
+              },
+              {
+                "src": "/work/postbuild-copy-2/suid-allowlist.txt",
+                "dest": "/etc/corb/suid-allowlist.txt"
+              },
+              {
+                "src": "/work/postbuild-copy-3/image.json",
+                "dest": "/etc/corb/image.json"
+              }
+            ],
+            "commands": [
+              "apk add --no-cache bash ca-certificates curl git openssh-client ripgrep fd jq less nodejs npm github-cli tzdata",
+              "apk add --no-cache build-base linux-headers fuse3-dev fuse3-libs libstdc++ libgcc zstd-libs",
+              "cd /tmp && curl -fsSL -o bindfs.tar.gz https://bindfs.org/downloads/bindfs-1.18.4.tar.gz && echo '1fedfcd082980180ccdd684478cc5308f4ea3fa541af12b5aef0b75fb0ec5b285009c4b783fc3cd5550505a83baf015e243f88eb322540d0f82e1952babc799a  bindfs.tar.gz' | sha512sum -c - && tar xzf bindfs.tar.gz",
+              "cd /tmp/bindfs-1.18.4 && ./configure --prefix=/usr --sysconfdir=/etc --mandir=/usr/share/man --localstatedir=/var && make && make install",
+              "rm -rf /tmp/bindfs.tar.gz /tmp/bindfs-1.18.4",
+              "apk del build-base linux-headers fuse3-dev",
+              "npm i -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@1.4.0",
+              "addgroup -g 1000 agent && adduser -D -u 1000 -G agent -h /home/agent -s /bin/sh agent",
+              "mkdir -p /work /home/agent/sessions && chown -R 1000:1000 /home/agent /work",
+              "apk del apk-tools",
+              "rm -f /usr/bin/npm /usr/bin/npx /bin/su /usr/bin/su /usr/bin/sudo /usr/bin/doas",
+              "mv /usr/bin/git /usr/local/libexec/real-git && ln -s /usr/local/libexec/policygate /usr/local/bin/git",
+              "if [ -x /usr/bin/gh ]; then mv /usr/bin/gh /usr/local/libexec/real-gh && ln -s /usr/local/libexec/policygate /usr/local/bin/gh; fi",
+              "chmod 0755 /usr/local/bin/dropcap /usr/local/libexec/policygate"
+            ]
+          },
+          "sandboxdPath": "/work/sandboxd",
+          "sandboxfsPath": "/work/sandboxfs",
+          "sandboxsshPath": "/work/sandboxssh",
+          "sandboxingressPath": "/work/sandboxingress"
+        },
+        "buildTime": "2026-10-25T16:02:11.758Z",
+        "assets": {
+          "kernel": "vmlinuz-virt",
+          "initramfs": "initramfs.cpio.lz4",
+          "rootfs": "rootfs.ext4",
+          "krunKernel": "krun-kernel",
+          "krunInitrd": "krun-empty-initrd"
+        },
+        "checksums": {
+          "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+          "initramfs": "017572642b872439da8f5b5ca12783a3a3abdc4f7b12272b92dac6e0dd7bcdb5",
+          "rootfs": "de13c9757a2aaef4aecbc331bbb54416940e8f0dca4367ffbd7b766e9716cec7",
+          "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+          "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "manifestSha256": "61be6c61156222dc618c8146b7aac481ccbb67311d4104aaf033d879e253bd5a"
+    },
+    {
+      "name": "variant",
+      "buildId": "820396a0-70a9-5772-af9c-c1d3eba7ae8d",
+      "assetDir": "/home/dario/.cache/gondolin/images/objects/820396a0-70a9-5772-af9c-c1d3eba7ae8d",
+      "manifest": {
+        "version": 1,
+        "buildId": "820396a0-70a9-5772-af9c-c1d3eba7ae8d",
+        "config": {
+          "arch": "x86_64",
+          "distro": "alpine",
+          "alpine": {
+            "version": "3.23.0",
+            "kernelPackage": "linux-virt",
+            "rootfsPackages": [
+              "linux-virt",
+              "bash",
+              "ca-certificates",
+              "curl",
+              "git",
+              "openssh-client",
+              "ripgrep",
+              "fd",
+              "jq",
+              "less",
+              "nodejs",
+              "npm",
+              "github-cli",
+              "tzdata"
+            ]
+          },
+          "container": {
+            "force": false,
+            "runtime": "docker"
+          },
+          "rootfs": {
+            "label": "corb-root",
+            "sizeMb": 3072
+          },
+          "env": {
+            "LANG": "C.UTF-8",
+            "CORB_IMAGE_KIND": "default",
+            "PI_SKIP_VERSION_CHECK": "1",
+            "PI_TELEMETRY": "0"
+          },
+          "init": {
+            "rootfsInitExtra": "/work/rootfs-init-extra"
+          },
+          "postBuild": {
+            "copy": [
+              {
+                "src": "/work/postbuild-copy-0/dropcap",
+                "dest": "/usr/local/bin/dropcap"
+              },
+              {
+                "src": "/work/postbuild-copy-1/policygate",
+                "dest": "/usr/local/libexec/policygate"
+              },
+              {
+                "src": "/work/postbuild-copy-2/suid-allowlist.txt",
+                "dest": "/etc/corb/suid-allowlist.txt"
+              },
+              {
+                "src": "/work/postbuild-copy-3/image.json",
+                "dest": "/etc/corb/image.json"
+              }
+            ],
+            "commands": [
+              "apk add --no-cache bash ca-certificates curl git openssh-client ripgrep fd jq less nodejs npm github-cli tzdata",
+              "apk add --no-cache build-base linux-headers fuse3-dev fuse3-libs libstdc++ libgcc zstd-libs",
+              "cd /tmp && curl -fsSL -o bindfs.tar.gz https://bindfs.org/downloads/bindfs-1.18.4.tar.gz && echo '1fedfcd082980180ccdd684478cc5308f4ea3fa541af12b5aef0b75fb0ec5b285009c4b783fc3cd5550505a83baf015e243f88eb322540d0f82e1952babc799a  bindfs.tar.gz' | sha512sum -c - && tar xzf bindfs.tar.gz",
+              "cd /tmp/bindfs-1.18.4 && ./configure --prefix=/usr --sysconfdir=/etc --mandir=/usr/share/man --localstatedir=/var && make && make install",
+              "rm -rf /tmp/bindfs.tar.gz /tmp/bindfs-1.18.4",
+              "apk del build-base linux-headers fuse3-dev",
+              "npm i -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@1.4.0",
+              "addgroup -g 1000 agent && adduser -D -u 1000 -G agent -h /home/agent -s /bin/sh agent",
+              "mkdir -p /work /home/agent/sessions && chown -R 1000:1000 /home/agent /work",
+              "apk add --no-cache tree=2.2.1-r0",
+              "addgroup -g 350 redis && adduser -D -H -u 350 -G redis -h /var/lib/redis -s /sbin/nologin redis",
+              "addgroup -g 351 apkconsumer && adduser -D -H -u 351 -G apkconsumer -h /var/lib/apkconsumer -s /sbin/nologin apkconsumer",
+              "mkdir -p /var/lib/redis /var/lib/apkconsumer && printf 'consumer redis data\\n' > /var/lib/redis/consumer.txt && chown -R 350:350 /var/lib/redis && printf 'consumer-only account data\\n' > /var/lib/apkconsumer/sentinel && chown -R 351:351 /var/lib/apkconsumer",
+              "printf '# APK portability consumer config\\nport 0\\n' > /etc/redis.conf",
+              "apk del apk-tools",
+              "rm -f /usr/bin/npm /usr/bin/npx /bin/su /usr/bin/su /usr/bin/sudo /usr/bin/doas",
+              "mv /usr/bin/git /usr/local/libexec/real-git && ln -s /usr/local/libexec/policygate /usr/local/bin/git",
+              "if [ -x /usr/bin/gh ]; then mv /usr/bin/gh /usr/local/libexec/real-gh && ln -s /usr/local/libexec/policygate /usr/local/bin/gh; fi",
+              "chmod 0755 /usr/local/bin/dropcap /usr/local/libexec/policygate"
+            ]
+          },
+          "sandboxdPath": "/work/sandboxd",
+          "sandboxfsPath": "/work/sandboxfs",
+          "sandboxsshPath": "/work/sandboxssh",
+          "sandboxingressPath": "/work/sandboxingress"
+        },
+        "buildTime": "2026-10-25T21:24:48.779Z",
+        "assets": {
+          "kernel": "vmlinuz-virt",
+          "initramfs": "initramfs.cpio.lz4",
+          "rootfs": "rootfs.ext4",
+          "krunKernel": "krun-kernel",
+          "krunInitrd": "krun-empty-initrd"
+        },
+        "checksums": {
+          "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+          "initramfs": "ada7b3c3032e53f5e882c5f2be0d191a31a266dd0ba8f36b22159a0e286d1581",
+          "rootfs": "ad9b005397c08fd0e7e5f1d56bcbb719a0bde45e7e79e04f08b2d141a088fb97",
+          "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+          "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "manifestSha256": "21bb08cb352c6df33432d9e6fc409122683f4340157c0d3213b6f0ef8c6afc77",
+      "buildMs": 102389,
+      "configSha256": "f290705c65d378976623f7ed72690f29eb237a68ec010d8c2fe0eea32a1b00d7",
+      "createdRef": false
+    }
+  ],
+  "refsBefore": [
+    {
+      "reference": "corb-spike:dar-15-fixed",
+      "targets": {
+        "x86_64": "e8292a0a-0a1a-52d5-959b-9ed372068d54"
+      },
+      "updatedAt": "2026-10-25T16:02:45.169Z"
+    },
+    {
+      "reference": "corb-spike:dar-15-plain",
+      "targets": {
+        "x86_64": "a7e4ca98-2359-516c-8d37-e4607e470e66"
+      },
+      "updatedAt": "2026-10-25T16:00:47.250Z"
+    },
+    {
+      "reference": "corb:0.1.0",
+      "targets": {
+        "x86_64": "2747a805-7a7e-5798-84ca-077fb5086311"
+      },
+      "updatedAt": "2026-10-24T20:13:28.511Z"
+    },
+    {
+      "reference": "corb:0.1.0-x86_64-171874b9",
+      "targets": {
+        "x86_64": "2747a805-7a7e-5798-84ca-077fb5086311"
+      },
+      "updatedAt": "2026-10-24T20:13:28.510Z"
+    }
+  ],
+  "bundleSha256": "6f742902e1a81a42197dc8ddf6e661b5a0628e7d0ac254fdfb51337649d824b1",
+  "sourceIdentity": {
+    "gateSourceSha256": "d74d56031bc003dd4205010cd891e39b9c49d8d813d28de38fb989e9bfc0ba08",
+    "gateAdapterSha256": "33e8bd797f3d5113612568246ddc72d6805d863f2b2b8611d48e7cebdb646d31"
+  },
+  "harnessSha256": "87c21107df0dc48f4ad6cf027525f8d30da6f53136fc6dd1273f89b3dfdac9b1",
+  "preparationSha256": "b0f58c03dcc2a780e05108a2e27f5946df3f218c39a83715c1c69d5b0fa097fe",
+  "commonSha256": "59632bc7dd41b031b7f7fc53f51b597bd390b78223fc8e2a0e26285fb66877cc",
+  "planSha256": "6f4315f6631f3d5133fa777dedbf42f90217a372f66e797ab9f1e9b71c2dd89b",
+  "fixture": {
+    "native.cjs": "77dd232b137ba94ffd6067804d4fd2f57363d15e443915a8a0e2def500685120",
+    "replay.cjs": "0af4890d30839b34a9ccf48425cafb6f7179604297d6cd34ec8dd61878b2c385",
+    "snapshot.cjs": "3c771680bcf3f7b92aab361fdda8220794cf983a29ab028d8e028af23ea9273f",
+    "state.cjs": "7357333500348ca4ea7d957cabb0f5b7c22930ffda2747e740b7b593d61de346"
+  }
+}

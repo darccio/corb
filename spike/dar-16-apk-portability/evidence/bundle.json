@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "branch": "v3.23",
+  "arch": "x86_64",
+  "indexes": [
+    {
+      "repository": "main",
+      "sha256": "af8c1e4af0cdb9cb18c8bbbc38e557b26051b4e2a312ca2c478fda621d3ac24d",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/APKINDEX.tar.gz"
+    },
+    {
+      "repository": "community",
+      "sha256": "bd0dc5d31d48d6ad044cc654ce6573bf685f08f3b7cde72bd8d681d340378a8f",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/community/x86_64/APKINDEX.tar.gz"
+    }
+  ],
+  "packages": [
+    {
+      "name": "postgresql-common",
+      "version": "1.2-r2",
+      "arch": "noarch",
+      "checksum": "Q1VguvzJDu+rFWlYIbUq3kmXd/66s=",
+      "indexArch": "x86_64",
+      "archiveSha256": "d88dc9d3e638135f335fe2a469fb9de51bbe60bb4d17bb62638aab7d6aa326bc",
+      "payloadSha256": "cb0f3cf68b1cebb2c63580f52b2cd5c67a5632b3ed08166e0b86cbd1bd2e9ec1",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "repository": "main",
+      "dependencies": "/bin/sh",
+      "provides": "cmd:pg_versions=1.2-r2",
+      "scripts": {
+        ".pre-install": "#!/bin/sh\n\n# Fixed GID/UID values as this users was previously included in the\n# default /etc/passwd as shipped by main/alpine-baselayout.\n\naddgroup -g 70 -S postgres 2>/dev/null\nadduser -u 70 -S -D -H -h /var/lib/postgresql -g \"PostgreSQL user\" \\\n\t-s /bin/sh -G postgres postgres 2>/dev/null\n\nexit 0\n",
+        ".pre-deinstall": "#!/bin/sh\n\npg_versions uninstall\n\nexit 0\n",
+        ".trigger": "#!/bin/sh\n\n# Sort dirs in reverse order to prefer a higher version if the user installed\n# multiple versions at once.\nfor dir in $(printf '%s\\n' \"$@\" | sort -r); do\n\t[ -f \"$dir\" ] && continue\n\tpgver=${dir#*postgresql}\n\texpr \"$pgver\" : '[0-9]*$' >/dev/null || continue\n\n\tcase \"$dir\" in\n\t\t# This is needed for creating man pages symlinks after a -doc\n\t\t# package is installed.\n\t\t/usr/share/postgresql[0-9]*)\n\t\t\t\tpg_versions fix\n\t\t\t\tcontinue\n\t\t;;\n\t\t/usr/libexec/postgresql[0-9]*)\n\t\t\t# 1. If the default version is already linked and provides postgres server.\n\t\t\tif [ -f /usr/libexec/postgresql/postgres ]; then\n\t\t\t\tpg_versions fix\n\n\t\t\t# 2. If the default version is already linked and both the default version\n\t\t\t#    and the affected version provides only client programs.\n\t\t\telif [ -f /usr/libexec/postgresql/psql ] && ! [ -f \"$dir\"/postgres ]; then\n\t\t\t\tpg_versions fix\n\n\t\t\t# 3. If a new version has been installed and no default version has been\n\t\t\t#    set yet or the new version provides postgres server while the current\n\t\t\t#    default does not.\n\t\t\telif [ -f \"$dir\"/psql ]; then\n\t\t\t\techo \"* Setting postgresql$pgver as the default version\" >&2\n\t\t\t\tpg_versions set-default \"$pgver\"\n\n\t\t\t# 4. If the default version has not been set yet or it was uninstalled\n\t\t\t#    and there is some postgresql version installed.\n\t\t\telif pg_versions list -q >/dev/null; then\n\t\t\t\tpgver=$(pg_versions list | head -n1)\n\t\t\t\techo \"* Setting postgresql$pgver as the default version\" >&2\n\n\t\t\t# 5. There's no postgresql version installed.\n\t\t\telse\n\t\t\t\tpg_versions uninstall\n\t\t\tfi\n\t\t;;\n\t\t*)\n\t\t\tcontinue\n\t\t;;\n\tesac\ndone\n\n\n# APK cannot offer the user an upgrade to a newer major version because it's\n# provided by a different package. Thus we use this trigger and inform the user\n# about a new major version if the current default version is not the latest.\n\n# Find the latest available major version.\nlatest_ver=$(apk list -Pa postgresql \\\n             \t| sed -En 's/.*\\{postgresql([0-9]+)\\}.*/\\1/p' \\\n             \t| sort | tail -n1) || exit 0\n\ndefault_ver=$(pg_versions get-default -q) || exit 0\n\nif [ \"$latest_ver\" ] && [ \"$default_ver\" -lt \"$latest_ver\" ]; then\n\tcat >&2 <<-EOF\n\t*\n\t* You are using 'postgresql$default_ver'. It's recommended to upgrade to the latest\n\t* major version provided by package 'postgresql$latest_ver'.\n\t* Use command 'pg_versions' to switch between versions.\n\t*\n\tEOF\nfi\n\nexit 0\n"
+      },
+      "filename": "postgresql-common-1.2-r2.apk"
+    },
+    {
+      "name": "lz4-libs",
+      "version": "1.10.0-r0",
+      "arch": "x86_64",
+      "checksum": "Q13VJPS8mK8mBWeEyJcl3cVMVwZdQ=",
+      "archiveSha256": "85766b2ab3e9fdb975e437368af06b22278fbcb1ce935f07cca07fd6611f4c62",
+      "payloadSha256": "e3602adcc2f25021603738b8c554fbb4bf45c3f6cd31557afc0447d76ebc5c56",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "repository": "main",
+      "dependencies": "so:libc.musl-x86_64.so.1",
+      "provides": "so:liblz4.so.1=1.10.0",
+      "scripts": {},
+      "filename": "lz4-libs-1.10.0-r0.apk"
+    },
+    {
+      "name": "libpq",
+      "version": "18.6-r0",
+      "arch": "x86_64",
+      "checksum": "Q1xIUf5C0oc5HRvpi3Rfb3cXHedKI=",
+      "archiveSha256": "770d92f5134d2ee59182eeb3f3b95356c37886fa5ff796c50d8ba515a6b3c6d3",
+      "payloadSha256": "f3738402e37fbd1d8a519604f247e41b80d3b64485cab6e2d02256514fc17dc7",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "repository": "main",
+      "dependencies": "so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3",
+      "provides": "so:libpq.so.5=5.18",
+      "scripts": {},
+      "filename": "libpq-18.6-r0.apk"
+    },
+    {
+      "name": "postgresql16-client",
+      "version": "16.15-r0",
+      "arch": "x86_64",
+      "checksum": "Q1bLlQhTcdCL9ZFu7evtBp06DH4HM=",
+      "archiveSha256": "502fcf03ced4e201acfb1d39cc0a8d32eab2f3e6948708cce491aef192fe2b05",
+      "payloadSha256": "500e6fbe95f3a71764d0929826b015e1642414e4dac1fa884d0ea7f564b73b1e",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "repository": "community",
+      "dependencies": "postgresql-common so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:liblz4.so.1 so:libpq.so.5 so:libreadline.so.8 so:libz.so.1 so:libzstd.so.1",
+      "provides": "postgresql-client cmd:clusterdb cmd:createdb cmd:createuser cmd:dropdb cmd:dropuser cmd:pg_amcheck cmd:pg_basebackup cmd:pg_dump cmd:pg_dumpall cmd:pg_isready cmd:pg_receivewal cmd:pg_recvlogical cmd:pg_restore cmd:pg_verifybackup cmd:pgbench cmd:psql cmd:reindexdb cmd:vacuumdb",
+      "scripts": {},
+      "filename": "postgresql16-client-16.15-r0.apk"
+    },
+    {
+      "name": "redis",
+      "version": "8.4.2-r0",
+      "arch": "x86_64",
+      "checksum": "Q1RNe7g2Ny9n9FvTKhOK3XsNvp1es=",
+      "archiveSha256": "c3276f8a9d309ef21f59a865557401039e595b1664741c7bd757e54cc277fc34",
+      "payloadSha256": "66b67b4985e070208e86db325eb598a1d198dc76a29c2777ef99ad56bc5a7ba4",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "repository": "community",
+      "dependencies": "/bin/sh so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3 so:libstdc++.so.6",
+      "provides": "cmd:redis-benchmark=8.4.2-r0 cmd:redis-check-aof=8.4.2-r0 cmd:redis-check-rdb=8.4.2-r0 cmd:redis-cli=8.4.2-r0 cmd:redis-sentinel=8.4.2-r0 cmd:redis-server=8.4.2-r0",
+      "scripts": {
+        ".pre-install": "#!/bin/sh\n\naddgroup -S redis 2>/dev/null\nadduser -S -D -H -h /var/lib/redis -s /sbin/nologin -G redis -g redis redis 2>/dev/null\n\nexit 0\n",
+        ".post-install": "#!/bin/sh\n\n# Create directory for the socket if OpenRC is not present (e.g. in container).\n# It's conditioned using post-install script specifically to avoid easily\n# overlookable mistakes in the init script (service working until the\n# first restart).\nif ! [ -e /sbin/openrc ]; then\n\tinstall -d -m 755 -o redis -g redis /run/redis\nfi\n\nexit 0\n"
+      },
+      "filename": "redis-8.4.2-r0.apk"
+    },
+    {
+      "name": "tree",
+      "version": "2.2.1-r0",
+      "arch": "x86_64",
+      "checksum": "Q1xSaXNFG/x0FdlOmojCc1OIaalF4=",
+      "archiveSha256": "01bcfc16850edc723c53c27777bad7818a5f0b800b90563c304f14ca3371092e",
+      "payloadSha256": "2ea9e4bca97b173e256ff21b3cf013d52810d73142951cffaed9a0f17b6a16dc",
+      "signature": {
+        "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "digest": "sha1"
+      },
+      "repository": "main",
+      "dependencies": "so:libc.musl-x86_64.so.1",
+      "provides": "cmd:tree=2.2.1-r0",
+      "scripts": {},
+      "filename": "tree-2.2.1-r0.apk"
+    }
+  ],
+  "installer": {
+    "name": "apk-tools-static",
+    "version": "3.0.8-r0",
+    "arch": "x86_64",
+    "checksum": "Q1TYC5NlmaJJePxA9+zAkNE5CJYMU=",
+    "archiveSha256": "2edccd3267ce540f8d2371a0f394e84b40d8348ecc28425309e6d07079ed1259",
+    "payloadSha256": "ee80e3bef6d2c5ea25171de16573f31443282b9f193b370f8fa2f555edcd3594",
+    "signature": {
+      "key": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+      "digest": "sha1"
+    },
+    "repository": "main",
+    "dependencies": "",
+    "provides": "cmd:apk.static=3.0.8-r0",
+    "scripts": {},
+    "filename": "apk-tools-static-3.0.8-r0.apk"
+  },
+  "sha256": "6f742902e1a81a42197dc8ddf6e661b5a0628e7d0ac254fdfb51337649d824b1"
+}

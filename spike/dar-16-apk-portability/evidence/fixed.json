@@ -1,0 +1,1440 @@
+{
+  "base": "fixed",
+  "identity": {
+    "version": 1,
+    "policy": "signed-apk-per-base-v1",
+    "baseBuildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+    "baseManifestSha256": "61be6c61156222dc618c8146b7aac481ccbb67311d4104aaf033d879e253bd5a",
+    "baseAssetChecksums": {
+      "kernel": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+      "initramfs": "017572642b872439da8f5b5ca12783a3a3abdc4f7b12272b92dac6e0dd7bcdb5",
+      "rootfs": "de13c9757a2aaef4aecbc331bbb54416940e8f0dca4367ffbd7b766e9716cec7",
+      "krunKernel": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+      "krunInitrd": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "bundleSha256": "6f742902e1a81a42197dc8ddf6e661b5a0628e7d0ac254fdfb51337649d824b1"
+  },
+  "compositionSha256": "684a75a71ab97373c40d963a1a83785c40f91dee163ddc4c8fe4b71a2ec77ed4",
+  "checkpoint": {
+    "version": 1,
+    "name": "fixed-apk",
+    "createdAt": "2026-10-25T21:32:32.044Z",
+    "diskFile": "fixed-apk.qcow2",
+    "guestAssetBuildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+    "snapshotKind": "disk",
+    "createdWithVmm": "qemu",
+    "compatibleVmm": [
+      "qemu",
+      "krun"
+    ]
+  },
+  "checkpointSha256": "823d15a8239ccabfab0948536c656fa08932000041cde5fe3d231ebc91bbb068",
+  "baseline": {
+    "protectedHashes": "12f899e55a7691225603d6fb3324940fc51cd7f133e7ead788663c2b7eecb00c  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-5261cecb.rsa.pub\n207e4696d3c05f7cb05966aee557307151f1f00217af4143c1bcaf33b8df733f  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub\n20adc060758865899012c328fa679aa01538b453cfd551e609c4542ee73a73f2  /usr/bin/bindfs\n213d3c950f91d425337cd1768e88dc59c0ad77a0c2108e5afab60c164e7ee6f5  /init\n24e937e0de40640bc45573cc7a775f60636b87750409e4fc66b342995f67afc8  /usr/local/libexec/real-git\n4740e913fcffa646991162e48dc82232e1525aa6c9e8575b0bbc0e21f155a0b5  /usr/local/libexec/real-gh\n8e01867c5909b5996d1f41ff0462dd6cf8f363034a7e10e360b9413a19ccc010  /etc/corb/image.json\n9c102bcc376af1498d549b77bdbfa815ae86faa1d2d82f040e616b18ef2df2d4  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub\ne2d9d346e2030725380e81837753e360bbff2732fa7493d503c5625a1dedcc26  /usr/local/libexec/policygate\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /etc/corb/suid-allowlist.txt\nf9b3cfa013a9d0c3d483eb2b4ae41104d6c941632cd5d968ea771ca6351bda2e  /usr/local/bin/dropcap\n",
+    "database": {
+      "sha256": "dfecb486abbffdcf7aa393474705db782d35c5cea9a5f8d0a5ca437dfa38f8d0",
+      "records": [
+        {
+          "C": "Q1c3Mc5F5eryVwPEP5D0NDyA+GDt0=",
+          "P": "ada-libs",
+          "V": "3.3.0-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+          "p": "so:libada.so.3=3.3.0"
+        },
+        {
+          "C": "Q1mhN8PI5zi8q6wTMmyfxUcvpYqvQ=",
+          "P": "alpine-baselayout",
+          "V": "3.7.1-r8",
+          "A": "x86_64",
+          "D": "alpine-baselayout-data=3.7.1-r8 /bin/sh"
+        },
+        {
+          "C": "Q1mmCw7bRVmrJ5zwBLfmhc/XjdDBU=",
+          "P": "alpine-baselayout-data",
+          "V": "3.7.1-r8",
+          "A": "x86_64"
+        },
+        {
+          "C": "Q1XEWoIc1rhNVDu9f/EqfeGFXFzRM=",
+          "P": "alpine-keys",
+          "V": "2.6-r0",
+          "A": "x86_64"
+        },
+        {
+          "C": "Q12F3az3lXdcNjeYmhpeMzLhrdGTo=",
+          "P": "alpine-release",
+          "V": "3.23.0-r0",
+          "A": "x86_64",
+          "D": "alpine-keys"
+        },
+        {
+          "C": "Q1jpqyHU374PqoFRUXvYVbY7TjMBw=",
+          "P": "bash",
+          "V": "5.3.3-r1",
+          "A": "x86_64",
+          "D": "/bin/sh so:libc.musl-x86_64.so.1 so:libreadline.so.8",
+          "p": "cmd:bash=5.3.3-r1"
+        },
+        {
+          "C": "Q19jvU5Ja1fS3MA5klQ5vHfCtfut8=",
+          "P": "brotli-libs",
+          "V": "1.2.1-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libbrotlicommon.so.1=1.2.1 so:libbrotlidec.so.1=1.2.1 so:libbrotlienc.so.1=1.2.1"
+        },
+        {
+          "C": "Q1BUGo5PEcqhtZXz1ThXcm2Bvz11Q=",
+          "P": "busybox",
+          "V": "1.37.0-r29",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "cmd:busybox=1.37.0-r29"
+        },
+        {
+          "C": "Q1BDDHoiCL7mJBgvUMtN7gKUMQMjA=",
+          "P": "busybox-binsh",
+          "V": "1.37.0-r29",
+          "A": "x86_64",
+          "D": "busybox=1.37.0-r29",
+          "p": "/bin/sh cmd:sh=1.37.0-r29"
+        },
+        {
+          "C": "Q1EgKKSAW9t+uljO/j/CaGZPtO9UY=",
+          "P": "c-ares",
+          "V": "1.34.9-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libcares.so.2=2.19.8"
+        },
+        {
+          "C": "Q1NkGIBOtW7uqNiQk/O3d1bd/SYRA=",
+          "P": "ca-certificates",
+          "V": "20261020-r0",
+          "A": "x86_64",
+          "D": "/bin/sh so:libc.musl-x86_64.so.1 so:libcrypto.so.3",
+          "p": "cmd:c_rehash=20261020-r0 cmd:update-ca-certificates=20261020-r0"
+        },
+        {
+          "C": "Q1Y+vnK6efVIts3IqYlOFqkNgPQrA=",
+          "P": "ca-certificates-bundle",
+          "V": "20251003-r0",
+          "A": "x86_64",
+          "p": "ca-certificates-cacert=20251003-r0"
+        },
+        {
+          "C": "Q1+63ItsaqO20RxwNR2bcyWVEQg3s=",
+          "P": "curl",
+          "V": "8.23.0-r0",
+          "A": "x86_64",
+          "D": "libcurl=8.23.0-r0 so:libc.musl-x86_64.so.1 so:libcurl.so.4 so:libz.so.1",
+          "p": "wcurl=8.23.0-r0 cmd:curl=8.23.0-r0 cmd:wcurl=8.23.0-r0"
+        },
+        {
+          "C": "Q1+0yHQH/gynRIpTSSXE5XgfprO4A=",
+          "P": "fd",
+          "V": "10.2.0-r3",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libjemalloc.so.2",
+          "p": "cmd:fd=10.2.0-r3"
+        },
+        {
+          "C": "Q1Y36eFdYEn0QKmWajugai/eA5RFU=",
+          "P": "fuse3-libs",
+          "V": "3.18.3-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libfuse3.so.4=3.18.3"
+        },
+        {
+          "C": "Q1vQso+RiU3HWICiJGhEWi0IS+sAk=",
+          "P": "git",
+          "V": "2.52.0-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libcurl.so.4 so:libexpat.so.1 so:libpcre2-8.so.0 so:libz.so.1",
+          "p": "cmd:git-receive-pack=2.52.0-r0 cmd:git-shell=2.52.0-r0 cmd:git-upload-archive=2.52.0-r0 cmd:git-upload-pack=2.52.0-r0 cmd:git=2.52.0-r0"
+        },
+        {
+          "C": "Q1/xWmfR9JSGGKECIJGuehvzmfNmU=",
+          "P": "git-init-template",
+          "V": "2.52.0-r0",
+          "A": "x86_64"
+        },
+        {
+          "C": "Q1oB1Y4QcAV9HWy9wPjPN9MLHSCR8=",
+          "P": "github-cli",
+          "V": "2.83.0-r6",
+          "A": "x86_64",
+          "D": "git so:libc.musl-x86_64.so.1",
+          "p": "cmd:gh=2.83.0-r6"
+        },
+        {
+          "C": "Q1B3+6pjcFLd2NYgKDHcGaU7X/9w4=",
+          "P": "icu-data-en",
+          "V": "76.1-r1",
+          "A": "x86_64",
+          "D": "/bin/sh",
+          "p": "icu-data=76.1-r1"
+        },
+        {
+          "C": "Q1Wy55i6IPgx1k5UUmQxxS2Y4+35A=",
+          "P": "icu-libs",
+          "V": "76.1-r1",
+          "A": "x86_64",
+          "D": "icu-data=76.1-r1 so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+          "p": "so:libicudata.so.76=76.1 so:libicui18n.so.76=76.1 so:libicuio.so.76=76.1 so:libicuuc.so.76=76.1"
+        },
+        {
+          "C": "Q1icj/A4Fryi3wBD7wTzrC3L0sRA4=",
+          "P": "jemalloc",
+          "V": "5.3.0-r6",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+          "p": "cmd:jemalloc.sh=5.3.0-r6 cmd:jeprof=5.3.0-r6 so:libjemalloc.so.2=2"
+        },
+        {
+          "C": "Q1ahW4edKTHB0NeUAy5L1jpVyaV1s=",
+          "P": "jq",
+          "V": "1.8.2-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libonig.so.5",
+          "p": "cmd:jq=1.8.2-r0 so:libjq.so.1=1.0.4"
+        },
+        {
+          "C": "Q1SsGf3U+08pDuy+321n408QoIRQU=",
+          "P": "less",
+          "V": "685-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libncursesw.so.6",
+          "p": "cmd:less=685-r0 cmd:lessecho=685-r0 cmd:lesskey=685-r0"
+        },
+        {
+          "C": "Q1rc0AJT9R+c2PdhidlKWVPaaINls=",
+          "P": "libcrypto3",
+          "V": "3.5.4-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libcrypto.so.3=3"
+        },
+        {
+          "C": "Q1DLQrtkoWtPiGrkrdimiRkh9NgEs=",
+          "P": "libcurl",
+          "V": "8.23.0-r0",
+          "A": "x86_64",
+          "D": "ca-certificates-bundle so:libbrotlidec.so.1 so:libc.musl-x86_64.so.1 so:libcares.so.2 so:libcrypto.so.3 so:libidn2.so.0 so:libnghttp2.so.14 so:libpsl.so.5 so:libssl.so.3 so:libz.so.1 so:libzstd.so.1",
+          "p": "so:libcurl.so.4=4.8.0"
+        },
+        {
+          "C": "Q1Rj9pM1oyI7HOaFbOO+9cA/7nIb8=",
+          "P": "libedit",
+          "V": "20251016.3.1-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libncursesw.so.6",
+          "p": "so:libedit.so.0=0.0.76"
+        },
+        {
+          "C": "Q1RiVCXcS1QhgNt9xnZpcYRTnjglY=",
+          "P": "libexpat",
+          "V": "2.9.0-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libexpat.so.1=1.13.0"
+        },
+        {
+          "C": "Q1V/zL6e6/I/LE847iok+LC91Qj/c=",
+          "P": "libgcc",
+          "V": "15.2.0-r2",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libgcc_s.so.1=1"
+        },
+        {
+          "C": "Q1uMW/o2XaXDYKASMNtNceZa+Urz0=",
+          "P": "libidn2",
+          "V": "2.3.8-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libunistring.so.5",
+          "p": "so:libidn2.so.0=0.4.0"
+        },
+        {
+          "C": "Q1ZJ0wQcUrgGIPtQqY9ZedJeu+FSM=",
+          "P": "libncursesw",
+          "V": "6.5_p20251123-r0",
+          "A": "x86_64",
+          "D": "ncurses-terminfo-base=6.5_p20251123-r0 so:libc.musl-x86_64.so.1",
+          "p": "so:libncursesw.so.6=6.5"
+        },
+        {
+          "C": "Q1tmPAD5IKk75JyCVVWqGiEuQoc5M=",
+          "P": "libpsl",
+          "V": "0.21.5-r3",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libidn2.so.0 so:libunistring.so.5",
+          "p": "so:libpsl.so.5=5.3.5"
+        },
+        {
+          "C": "Q14yiyTakQtlKq3IckKCjUPbMLrWc=",
+          "P": "libssl3",
+          "V": "3.5.4-r0",
+          "A": "x86_64",
+          "D": "libcrypto3=3.5.4-r0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3",
+          "p": "so:libssl.so.3=3"
+        },
+        {
+          "C": "Q1Uo13QXoWcGRor4UvKFmtAPF24mY=",
+          "P": "libstdc++",
+          "V": "15.2.0-r2",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1",
+          "p": "so:libstdc++.so.6=6.0.34"
+        },
+        {
+          "C": "Q1blZWK95Fa+5ZcXh9PZXDToTO15c=",
+          "P": "libunistring",
+          "V": "1.4.1-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libunistring.so.5=5.2.1"
+        },
+        {
+          "C": "Q1XUI1pl90RATg8vH/H5+0fF2ukao=",
+          "P": "musl",
+          "V": "1.2.5-r24",
+          "A": "x86_64",
+          "p": "so:libc.musl-x86_64.so.1=1"
+        },
+        {
+          "C": "Q12qeVKNLPh39tZWIHqBjUPI3qmjA=",
+          "P": "musl-utils",
+          "V": "1.2.5-r21",
+          "A": "x86_64",
+          "D": "scanelf so:libc.musl-x86_64.so.1",
+          "p": "libc-utils=1.2.5-r21 cmd:getconf=1.2.5-r21 cmd:getent=1.2.5-r21 cmd:iconv=1.2.5-r21 cmd:ldconfig=1.2.5-r21 cmd:ldd=1.2.5-r21"
+        },
+        {
+          "C": "Q1V70dgSTslX7v6iMUvfRbDtEGjO4=",
+          "P": "ncurses-terminfo-base",
+          "V": "6.5_p20251123-r0",
+          "A": "x86_64"
+        },
+        {
+          "C": "Q1a4ZRIn3T+RVd7TDdwXF1en9bkaU=",
+          "P": "nghttp2-libs",
+          "V": "1.69.0-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libnghttp2.so.14=14.29.4"
+        },
+        {
+          "C": "Q1U574g+2RoyzzCyh1ElbiVG0JaFY=",
+          "P": "nodejs",
+          "V": "24.22.1-r0",
+          "A": "x86_64",
+          "D": "ca-certificates /bin/sh so:libada.so.3 so:libbrotlidec.so.1 so:libbrotlienc.so.1 so:libc.musl-x86_64.so.1 so:libcares.so.2 so:libcrypto.so.3 so:libgcc_s.so.1 so:libicui18n.so.76 so:libicuuc.so.76 so:libnghttp2.so.14 so:libsimdjson.so.25 so:libsimdutf.so.27 so:libsqlite3.so.0 so:libssl.so.3 so:libstdc++.so.6 so:libz.so.1 so:libzstd.so.1",
+          "p": "nodejs-lts=24.22.1-r0 cmd:node=24.22.1-r0"
+        },
+        {
+          "C": "Q1kKkHrqA8nzU5Noesg73Py1IFL0c=",
+          "P": "npm",
+          "V": "11.11.0-r0",
+          "A": "x86_64",
+          "D": "nodejs",
+          "p": "cmd:node-gyp=11.11.0-r0 cmd:npm=11.11.0-r0 cmd:npx=11.11.0-r0"
+        },
+        {
+          "C": "Q1nsYKKhc/JUA/iOxKJRDNvm4srCg=",
+          "P": "oniguruma",
+          "V": "6.9.10-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libonig.so.5=5.5.0"
+        },
+        {
+          "C": "Q1ZcQNh1bp4cvmzQ7Y5GLdJ/Sq5Xc=",
+          "P": "openssh-client-common",
+          "V": "10.2_p1-r0",
+          "A": "x86_64",
+          "D": "libcrypto3>=3.1.0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libedit.so.0 so:libz.so.1",
+          "p": "cmd:findssl.sh=10.2_p1-r0 cmd:scp=10.2_p1-r0 cmd:sftp=10.2_p1-r0 cmd:ssh-add=10.2_p1-r0 cmd:ssh-agent=10.2_p1-r0 cmd:ssh-copy-id=10.2_p1-r0 cmd:ssh-keyscan=10.2_p1-r0 cmd:ssh-pkcs11-helper=10.2_p1-r0"
+        },
+        {
+          "C": "Q1VK8JGwPQ8Di/vMFhKI5fes7GY68=",
+          "P": "openssh-client-default",
+          "V": "10.2_p1-r0",
+          "A": "x86_64",
+          "D": "openssh-keygen=10.2_p1-r0 openssh-client-common=10.2_p1-r0 !openssh-client-krb5 so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libz.so.1",
+          "p": "openssh-client=10.2_p1-r0 cmd:ssh=10.2_p1-r0"
+        },
+        {
+          "C": "Q14sDG6FkBbVqoK93GWoFMBiyUwhk=",
+          "P": "openssh-keygen",
+          "V": "10.2_p1-r0",
+          "A": "x86_64",
+          "D": "libcrypto3>=3.1.0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3",
+          "p": "cmd:ssh-keygen=10.2_p1-r0"
+        },
+        {
+          "C": "Q1jy5WKPWTL4Io3M/SP3/2TODtkFc=",
+          "P": "pcre2",
+          "V": "10.49-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libpcre2-8.so.0=0.16.1 so:libpcre2-posix.so.3=3.0.9"
+        },
+        {
+          "C": "Q1iuuBs6R3+SK5tqUzOBEUxj3ZKP4=",
+          "P": "readline",
+          "V": "8.3.1-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libncursesw.so.6",
+          "p": "so:libreadline.so.8=8.3"
+        },
+        {
+          "C": "Q1FQxDqvhFxYyDgANOU/hVlxmimDs=",
+          "P": "ripgrep",
+          "V": "15.1.0-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libpcre2-8.so.0",
+          "p": "cmd:rg=15.1.0-r0"
+        },
+        {
+          "C": "Q1bqNt1E759jZPDN+r4J6hXS/b4ik=",
+          "P": "scanelf",
+          "V": "1.3.8-r2",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "cmd:scanelf=1.3.8-r2"
+        },
+        {
+          "C": "Q14ObbJgQmj75Eezs7jq1GRYT04eo=",
+          "P": "simdjson",
+          "V": "3.12.0-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+          "p": "so:libsimdjson.so.25=25.0.0"
+        },
+        {
+          "C": "Q1Z52lBV0mZZ/SuVGL83baA9pevNw=",
+          "P": "simdutf",
+          "V": "7.5.0-r1",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+          "p": "so:libsimdutf.so.27=27.0.0"
+        },
+        {
+          "C": "Q13TMQqTB64B2rsAGHcL97KWjv8Zk=",
+          "P": "sqlite-libs",
+          "V": "3.53.4-r0",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libsqlite3.so.0=3.53.4"
+        },
+        {
+          "C": "Q1xM71qgMHBMH3oyu7MVdDJoacUdw=",
+          "P": "ssl_client",
+          "V": "1.37.0-r29",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3",
+          "p": "cmd:ssl_client=1.37.0-r29"
+        },
+        {
+          "C": "Q1wS4sAAlg4HLCjh+cO4pJ8DWJjzg=",
+          "P": "tzdata",
+          "V": "2026e-r0",
+          "A": "x86_64"
+        },
+        {
+          "C": "Q1Po6Odt/vtO/SdlitpteS5muid14=",
+          "P": "zlib",
+          "V": "1.3.1-r2",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libz.so.1=1.3.1"
+        },
+        {
+          "C": "Q11Qe4rDxDNaQEBawg5JusnUNkK+Y=",
+          "P": "zstd-libs",
+          "V": "1.5.7-r2",
+          "A": "x86_64",
+          "D": "so:libc.musl-x86_64.so.1",
+          "p": "so:libzstd.so.1=1.5.7"
+        }
+      ]
+    },
+    "state": {
+      "accounts": [
+        {
+          "name": "root",
+          "uid": 0,
+          "gid": 0
+        },
+        {
+          "name": "bin",
+          "uid": 1,
+          "gid": 1
+        },
+        {
+          "name": "daemon",
+          "uid": 2,
+          "gid": 2
+        },
+        {
+          "name": "lp",
+          "uid": 4,
+          "gid": 7
+        },
+        {
+          "name": "sync",
+          "uid": 5,
+          "gid": 0
+        },
+        {
+          "name": "shutdown",
+          "uid": 6,
+          "gid": 0
+        },
+        {
+          "name": "halt",
+          "uid": 7,
+          "gid": 0
+        },
+        {
+          "name": "mail",
+          "uid": 8,
+          "gid": 12
+        },
+        {
+          "name": "news",
+          "uid": 9,
+          "gid": 13
+        },
+        {
+          "name": "uucp",
+          "uid": 10,
+          "gid": 14
+        },
+        {
+          "name": "cron",
+          "uid": 16,
+          "gid": 16
+        },
+        {
+          "name": "ftp",
+          "uid": 21,
+          "gid": 21
+        },
+        {
+          "name": "sshd",
+          "uid": 22,
+          "gid": 22
+        },
+        {
+          "name": "games",
+          "uid": 35,
+          "gid": 35
+        },
+        {
+          "name": "ntp",
+          "uid": 123,
+          "gid": 123
+        },
+        {
+          "name": "guest",
+          "uid": 405,
+          "gid": 100
+        },
+        {
+          "name": "nobody",
+          "uid": 65534,
+          "gid": 65534
+        },
+        {
+          "name": "agent",
+          "uid": 1000,
+          "gid": 1000
+        }
+      ],
+      "paths": {
+        "/etc/redis.conf": null,
+        "/var/lib/redis/consumer.txt": null,
+        "/var/lib/apkconsumer/sentinel": null,
+        "/run/redis": null,
+        "/var/log/redis": null
+      }
+    },
+    "identity": "3.23.0\nx86_64\nmusl libc (x86_64)\nVersion 1.2.5\nDynamic Program Loader\nUsage: /lib/ld-musl-x86_64.so.1 [options] [--] pathname [args]\n",
+    "gates": [
+      {
+        "name": "user",
+        "ok": true,
+        "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+      },
+      {
+        "name": "privilege-drop",
+        "ok": true,
+        "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+      },
+      {
+        "name": "suid",
+        "ok": true,
+        "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+      },
+      {
+        "name": "removals",
+        "ok": true,
+        "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+      },
+      {
+        "name": "ca-trust",
+        "ok": false,
+        "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+      },
+      {
+        "name": "git-gh-shimmed",
+        "ok": true,
+        "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+      },
+      {
+        "name": "pi",
+        "ok": true,
+        "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+      }
+    ]
+  },
+  "additions": [
+    {
+      "name": "postgresql-common",
+      "version": "1.2-r2"
+    },
+    {
+      "name": "lz4-libs",
+      "version": "1.10.0-r0"
+    },
+    {
+      "name": "libpq",
+      "version": "18.6-r0"
+    },
+    {
+      "name": "postgresql16-client",
+      "version": "16.15-r0"
+    },
+    {
+      "name": "redis",
+      "version": "8.4.2-r0"
+    },
+    {
+      "name": "tree",
+      "version": "2.2.1-r0"
+    }
+  ],
+  "installation": {
+    "exitCode": 0,
+    "stdout": "(1/6) Installing postgresql-common (1.2-r2)\n  Executing postgresql-common-1.2-r2.pre-install\n(2/6) Installing lz4-libs (1.10.0-r0)\n(3/6) Installing libpq (18.6-r0)\n(4/6) Installing postgresql16-client (16.15-r0)\n(5/6) Installing redis (8.4.2-r0)\n  Executing redis-8.4.2-r0.pre-install\n  Executing redis-8.4.2-r0.post-install\n(6/6) Installing tree (2.2.1-r0)\nExecuting busybox-1.37.0-r29.trigger\nExecuting postgresql-common-1.2-r2.trigger\nOK: 170.5 MiB in 61 packages\n",
+    "stderr": "* Setting postgresql16 as the default version\n* /proc/self/fd/6: line 57: apk: not found\n"
+  },
+  "installedDatabase": {
+    "sha256": "aae45c8d6806d293367d01456eda2e8dd0e14013a2596c7dc0d3cd03037c3795",
+    "records": [
+      {
+        "C": "Q1c3Mc5F5eryVwPEP5D0NDyA+GDt0=",
+        "P": "ada-libs",
+        "V": "3.3.0-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+        "p": "so:libada.so.3=3.3.0"
+      },
+      {
+        "C": "Q1mhN8PI5zi8q6wTMmyfxUcvpYqvQ=",
+        "P": "alpine-baselayout",
+        "V": "3.7.1-r8",
+        "A": "x86_64",
+        "D": "alpine-baselayout-data=3.7.1-r8 /bin/sh"
+      },
+      {
+        "C": "Q1mmCw7bRVmrJ5zwBLfmhc/XjdDBU=",
+        "P": "alpine-baselayout-data",
+        "V": "3.7.1-r8",
+        "A": "x86_64"
+      },
+      {
+        "C": "Q1XEWoIc1rhNVDu9f/EqfeGFXFzRM=",
+        "P": "alpine-keys",
+        "V": "2.6-r0",
+        "A": "x86_64"
+      },
+      {
+        "C": "Q12F3az3lXdcNjeYmhpeMzLhrdGTo=",
+        "P": "alpine-release",
+        "V": "3.23.0-r0",
+        "A": "x86_64",
+        "D": "alpine-keys"
+      },
+      {
+        "C": "Q1jpqyHU374PqoFRUXvYVbY7TjMBw=",
+        "P": "bash",
+        "V": "5.3.3-r1",
+        "A": "x86_64",
+        "D": "/bin/sh so:libc.musl-x86_64.so.1 so:libreadline.so.8",
+        "p": "cmd:bash=5.3.3-r1"
+      },
+      {
+        "C": "Q19jvU5Ja1fS3MA5klQ5vHfCtfut8=",
+        "P": "brotli-libs",
+        "V": "1.2.1-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libbrotlicommon.so.1=1.2.1 so:libbrotlidec.so.1=1.2.1 so:libbrotlienc.so.1=1.2.1"
+      },
+      {
+        "C": "Q1BUGo5PEcqhtZXz1ThXcm2Bvz11Q=",
+        "P": "busybox",
+        "V": "1.37.0-r29",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "cmd:busybox=1.37.0-r29"
+      },
+      {
+        "C": "Q1BDDHoiCL7mJBgvUMtN7gKUMQMjA=",
+        "P": "busybox-binsh",
+        "V": "1.37.0-r29",
+        "A": "x86_64",
+        "D": "busybox=1.37.0-r29",
+        "p": "/bin/sh cmd:sh=1.37.0-r29"
+      },
+      {
+        "C": "Q1EgKKSAW9t+uljO/j/CaGZPtO9UY=",
+        "P": "c-ares",
+        "V": "1.34.9-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libcares.so.2=2.19.8"
+      },
+      {
+        "C": "Q1NkGIBOtW7uqNiQk/O3d1bd/SYRA=",
+        "P": "ca-certificates",
+        "V": "20261020-r0",
+        "A": "x86_64",
+        "D": "/bin/sh so:libc.musl-x86_64.so.1 so:libcrypto.so.3",
+        "p": "cmd:c_rehash=20261020-r0 cmd:update-ca-certificates=20261020-r0"
+      },
+      {
+        "C": "Q1Y+vnK6efVIts3IqYlOFqkNgPQrA=",
+        "P": "ca-certificates-bundle",
+        "V": "20251003-r0",
+        "A": "x86_64",
+        "p": "ca-certificates-cacert=20251003-r0"
+      },
+      {
+        "C": "Q1+63ItsaqO20RxwNR2bcyWVEQg3s=",
+        "P": "curl",
+        "V": "8.23.0-r0",
+        "A": "x86_64",
+        "D": "libcurl=8.23.0-r0 so:libc.musl-x86_64.so.1 so:libcurl.so.4 so:libz.so.1",
+        "p": "wcurl=8.23.0-r0 cmd:curl=8.23.0-r0 cmd:wcurl=8.23.0-r0"
+      },
+      {
+        "C": "Q1+0yHQH/gynRIpTSSXE5XgfprO4A=",
+        "P": "fd",
+        "V": "10.2.0-r3",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libjemalloc.so.2",
+        "p": "cmd:fd=10.2.0-r3"
+      },
+      {
+        "C": "Q1Y36eFdYEn0QKmWajugai/eA5RFU=",
+        "P": "fuse3-libs",
+        "V": "3.18.3-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libfuse3.so.4=3.18.3"
+      },
+      {
+        "C": "Q1vQso+RiU3HWICiJGhEWi0IS+sAk=",
+        "P": "git",
+        "V": "2.52.0-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libcurl.so.4 so:libexpat.so.1 so:libpcre2-8.so.0 so:libz.so.1",
+        "p": "cmd:git-receive-pack=2.52.0-r0 cmd:git-shell=2.52.0-r0 cmd:git-upload-archive=2.52.0-r0 cmd:git-upload-pack=2.52.0-r0 cmd:git=2.52.0-r0"
+      },
+      {
+        "C": "Q1/xWmfR9JSGGKECIJGuehvzmfNmU=",
+        "P": "git-init-template",
+        "V": "2.52.0-r0",
+        "A": "x86_64"
+      },
+      {
+        "C": "Q1oB1Y4QcAV9HWy9wPjPN9MLHSCR8=",
+        "P": "github-cli",
+        "V": "2.83.0-r6",
+        "A": "x86_64",
+        "D": "git so:libc.musl-x86_64.so.1",
+        "p": "cmd:gh=2.83.0-r6"
+      },
+      {
+        "C": "Q1B3+6pjcFLd2NYgKDHcGaU7X/9w4=",
+        "P": "icu-data-en",
+        "V": "76.1-r1",
+        "A": "x86_64",
+        "D": "/bin/sh",
+        "p": "icu-data=76.1-r1"
+      },
+      {
+        "C": "Q1Wy55i6IPgx1k5UUmQxxS2Y4+35A=",
+        "P": "icu-libs",
+        "V": "76.1-r1",
+        "A": "x86_64",
+        "D": "icu-data=76.1-r1 so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+        "p": "so:libicudata.so.76=76.1 so:libicui18n.so.76=76.1 so:libicuio.so.76=76.1 so:libicuuc.so.76=76.1"
+      },
+      {
+        "C": "Q1icj/A4Fryi3wBD7wTzrC3L0sRA4=",
+        "P": "jemalloc",
+        "V": "5.3.0-r6",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+        "p": "cmd:jemalloc.sh=5.3.0-r6 cmd:jeprof=5.3.0-r6 so:libjemalloc.so.2=2"
+      },
+      {
+        "C": "Q1ahW4edKTHB0NeUAy5L1jpVyaV1s=",
+        "P": "jq",
+        "V": "1.8.2-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libonig.so.5",
+        "p": "cmd:jq=1.8.2-r0 so:libjq.so.1=1.0.4"
+      },
+      {
+        "C": "Q1SsGf3U+08pDuy+321n408QoIRQU=",
+        "P": "less",
+        "V": "685-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libncursesw.so.6",
+        "p": "cmd:less=685-r0 cmd:lessecho=685-r0 cmd:lesskey=685-r0"
+      },
+      {
+        "C": "Q1rc0AJT9R+c2PdhidlKWVPaaINls=",
+        "P": "libcrypto3",
+        "V": "3.5.4-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libcrypto.so.3=3"
+      },
+      {
+        "C": "Q1DLQrtkoWtPiGrkrdimiRkh9NgEs=",
+        "P": "libcurl",
+        "V": "8.23.0-r0",
+        "A": "x86_64",
+        "D": "ca-certificates-bundle so:libbrotlidec.so.1 so:libc.musl-x86_64.so.1 so:libcares.so.2 so:libcrypto.so.3 so:libidn2.so.0 so:libnghttp2.so.14 so:libpsl.so.5 so:libssl.so.3 so:libz.so.1 so:libzstd.so.1",
+        "p": "so:libcurl.so.4=4.8.0"
+      },
+      {
+        "C": "Q1Rj9pM1oyI7HOaFbOO+9cA/7nIb8=",
+        "P": "libedit",
+        "V": "20251016.3.1-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libncursesw.so.6",
+        "p": "so:libedit.so.0=0.0.76"
+      },
+      {
+        "C": "Q1RiVCXcS1QhgNt9xnZpcYRTnjglY=",
+        "P": "libexpat",
+        "V": "2.9.0-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libexpat.so.1=1.13.0"
+      },
+      {
+        "C": "Q1V/zL6e6/I/LE847iok+LC91Qj/c=",
+        "P": "libgcc",
+        "V": "15.2.0-r2",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libgcc_s.so.1=1"
+      },
+      {
+        "C": "Q1uMW/o2XaXDYKASMNtNceZa+Urz0=",
+        "P": "libidn2",
+        "V": "2.3.8-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libunistring.so.5",
+        "p": "so:libidn2.so.0=0.4.0"
+      },
+      {
+        "C": "Q1ZJ0wQcUrgGIPtQqY9ZedJeu+FSM=",
+        "P": "libncursesw",
+        "V": "6.5_p20251123-r0",
+        "A": "x86_64",
+        "D": "ncurses-terminfo-base=6.5_p20251123-r0 so:libc.musl-x86_64.so.1",
+        "p": "so:libncursesw.so.6=6.5"
+      },
+      {
+        "C": "Q1xIUf5C0oc5HRvpi3Rfb3cXHedKI=",
+        "P": "libpq",
+        "V": "18.6-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3",
+        "p": "so:libpq.so.5=5.18"
+      },
+      {
+        "C": "Q1tmPAD5IKk75JyCVVWqGiEuQoc5M=",
+        "P": "libpsl",
+        "V": "0.21.5-r3",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libidn2.so.0 so:libunistring.so.5",
+        "p": "so:libpsl.so.5=5.3.5"
+      },
+      {
+        "C": "Q14yiyTakQtlKq3IckKCjUPbMLrWc=",
+        "P": "libssl3",
+        "V": "3.5.4-r0",
+        "A": "x86_64",
+        "D": "libcrypto3=3.5.4-r0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3",
+        "p": "so:libssl.so.3=3"
+      },
+      {
+        "C": "Q1Uo13QXoWcGRor4UvKFmtAPF24mY=",
+        "P": "libstdc++",
+        "V": "15.2.0-r2",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1",
+        "p": "so:libstdc++.so.6=6.0.34"
+      },
+      {
+        "C": "Q1blZWK95Fa+5ZcXh9PZXDToTO15c=",
+        "P": "libunistring",
+        "V": "1.4.1-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libunistring.so.5=5.2.1"
+      },
+      {
+        "C": "Q13VJPS8mK8mBWeEyJcl3cVMVwZdQ=",
+        "P": "lz4-libs",
+        "V": "1.10.0-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:liblz4.so.1=1.10.0"
+      },
+      {
+        "C": "Q1XUI1pl90RATg8vH/H5+0fF2ukao=",
+        "P": "musl",
+        "V": "1.2.5-r24",
+        "A": "x86_64",
+        "p": "so:libc.musl-x86_64.so.1=1"
+      },
+      {
+        "C": "Q12qeVKNLPh39tZWIHqBjUPI3qmjA=",
+        "P": "musl-utils",
+        "V": "1.2.5-r21",
+        "A": "x86_64",
+        "D": "scanelf so:libc.musl-x86_64.so.1",
+        "p": "libc-utils=1.2.5-r21 cmd:getconf=1.2.5-r21 cmd:getent=1.2.5-r21 cmd:iconv=1.2.5-r21 cmd:ldconfig=1.2.5-r21 cmd:ldd=1.2.5-r21"
+      },
+      {
+        "C": "Q1V70dgSTslX7v6iMUvfRbDtEGjO4=",
+        "P": "ncurses-terminfo-base",
+        "V": "6.5_p20251123-r0",
+        "A": "x86_64"
+      },
+      {
+        "C": "Q1a4ZRIn3T+RVd7TDdwXF1en9bkaU=",
+        "P": "nghttp2-libs",
+        "V": "1.69.0-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libnghttp2.so.14=14.29.4"
+      },
+      {
+        "C": "Q1U574g+2RoyzzCyh1ElbiVG0JaFY=",
+        "P": "nodejs",
+        "V": "24.22.1-r0",
+        "A": "x86_64",
+        "D": "ca-certificates /bin/sh so:libada.so.3 so:libbrotlidec.so.1 so:libbrotlienc.so.1 so:libc.musl-x86_64.so.1 so:libcares.so.2 so:libcrypto.so.3 so:libgcc_s.so.1 so:libicui18n.so.76 so:libicuuc.so.76 so:libnghttp2.so.14 so:libsimdjson.so.25 so:libsimdutf.so.27 so:libsqlite3.so.0 so:libssl.so.3 so:libstdc++.so.6 so:libz.so.1 so:libzstd.so.1",
+        "p": "nodejs-lts=24.22.1-r0 cmd:node=24.22.1-r0"
+      },
+      {
+        "C": "Q1kKkHrqA8nzU5Noesg73Py1IFL0c=",
+        "P": "npm",
+        "V": "11.11.0-r0",
+        "A": "x86_64",
+        "D": "nodejs",
+        "p": "cmd:node-gyp=11.11.0-r0 cmd:npm=11.11.0-r0 cmd:npx=11.11.0-r0"
+      },
+      {
+        "C": "Q1nsYKKhc/JUA/iOxKJRDNvm4srCg=",
+        "P": "oniguruma",
+        "V": "6.9.10-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libonig.so.5=5.5.0"
+      },
+      {
+        "C": "Q1ZcQNh1bp4cvmzQ7Y5GLdJ/Sq5Xc=",
+        "P": "openssh-client-common",
+        "V": "10.2_p1-r0",
+        "A": "x86_64",
+        "D": "libcrypto3>=3.1.0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libedit.so.0 so:libz.so.1",
+        "p": "cmd:findssl.sh=10.2_p1-r0 cmd:scp=10.2_p1-r0 cmd:sftp=10.2_p1-r0 cmd:ssh-add=10.2_p1-r0 cmd:ssh-agent=10.2_p1-r0 cmd:ssh-copy-id=10.2_p1-r0 cmd:ssh-keyscan=10.2_p1-r0 cmd:ssh-pkcs11-helper=10.2_p1-r0"
+      },
+      {
+        "C": "Q1VK8JGwPQ8Di/vMFhKI5fes7GY68=",
+        "P": "openssh-client-default",
+        "V": "10.2_p1-r0",
+        "A": "x86_64",
+        "D": "openssh-keygen=10.2_p1-r0 openssh-client-common=10.2_p1-r0 !openssh-client-krb5 so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libz.so.1",
+        "p": "openssh-client=10.2_p1-r0 cmd:ssh=10.2_p1-r0"
+      },
+      {
+        "C": "Q14sDG6FkBbVqoK93GWoFMBiyUwhk=",
+        "P": "openssh-keygen",
+        "V": "10.2_p1-r0",
+        "A": "x86_64",
+        "D": "libcrypto3>=3.1.0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3",
+        "p": "cmd:ssh-keygen=10.2_p1-r0"
+      },
+      {
+        "C": "Q1jy5WKPWTL4Io3M/SP3/2TODtkFc=",
+        "P": "pcre2",
+        "V": "10.49-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libpcre2-8.so.0=0.16.1 so:libpcre2-posix.so.3=3.0.9"
+      },
+      {
+        "C": "Q1VguvzJDu+rFWlYIbUq3kmXd/66s=",
+        "P": "postgresql-common",
+        "V": "1.2-r2",
+        "A": "x86_64",
+        "D": "/bin/sh",
+        "p": "cmd:pg_versions=1.2-r2"
+      },
+      {
+        "C": "Q1bLlQhTcdCL9ZFu7evtBp06DH4HM=",
+        "P": "postgresql16-client",
+        "V": "16.15-r0",
+        "A": "x86_64",
+        "D": "postgresql-common so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:liblz4.so.1 so:libpq.so.5 so:libreadline.so.8 so:libz.so.1 so:libzstd.so.1",
+        "p": "postgresql-client cmd:clusterdb cmd:createdb cmd:createuser cmd:dropdb cmd:dropuser cmd:pg_amcheck cmd:pg_basebackup cmd:pg_dump cmd:pg_dumpall cmd:pg_isready cmd:pg_receivewal cmd:pg_recvlogical cmd:pg_restore cmd:pg_verifybackup cmd:pgbench cmd:psql cmd:reindexdb cmd:vacuumdb"
+      },
+      {
+        "C": "Q1iuuBs6R3+SK5tqUzOBEUxj3ZKP4=",
+        "P": "readline",
+        "V": "8.3.1-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libncursesw.so.6",
+        "p": "so:libreadline.so.8=8.3"
+      },
+      {
+        "C": "Q1RNe7g2Ny9n9FvTKhOK3XsNvp1es=",
+        "P": "redis",
+        "V": "8.4.2-r0",
+        "A": "x86_64",
+        "D": "/bin/sh so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3 so:libstdc++.so.6",
+        "p": "cmd:redis-benchmark=8.4.2-r0 cmd:redis-check-aof=8.4.2-r0 cmd:redis-check-rdb=8.4.2-r0 cmd:redis-cli=8.4.2-r0 cmd:redis-sentinel=8.4.2-r0 cmd:redis-server=8.4.2-r0"
+      },
+      {
+        "C": "Q1FQxDqvhFxYyDgANOU/hVlxmimDs=",
+        "P": "ripgrep",
+        "V": "15.1.0-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libpcre2-8.so.0",
+        "p": "cmd:rg=15.1.0-r0"
+      },
+      {
+        "C": "Q1bqNt1E759jZPDN+r4J6hXS/b4ik=",
+        "P": "scanelf",
+        "V": "1.3.8-r2",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "cmd:scanelf=1.3.8-r2"
+      },
+      {
+        "C": "Q14ObbJgQmj75Eezs7jq1GRYT04eo=",
+        "P": "simdjson",
+        "V": "3.12.0-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+        "p": "so:libsimdjson.so.25=25.0.0"
+      },
+      {
+        "C": "Q1Z52lBV0mZZ/SuVGL83baA9pevNw=",
+        "P": "simdutf",
+        "V": "7.5.0-r1",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6",
+        "p": "so:libsimdutf.so.27=27.0.0"
+      },
+      {
+        "C": "Q13TMQqTB64B2rsAGHcL97KWjv8Zk=",
+        "P": "sqlite-libs",
+        "V": "3.53.4-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libsqlite3.so.0=3.53.4"
+      },
+      {
+        "C": "Q1xM71qgMHBMH3oyu7MVdDJoacUdw=",
+        "P": "ssl_client",
+        "V": "1.37.0-r29",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3",
+        "p": "cmd:ssl_client=1.37.0-r29"
+      },
+      {
+        "C": "Q1xSaXNFG/x0FdlOmojCc1OIaalF4=",
+        "P": "tree",
+        "V": "2.2.1-r0",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "cmd:tree=2.2.1-r0"
+      },
+      {
+        "C": "Q1wS4sAAlg4HLCjh+cO4pJ8DWJjzg=",
+        "P": "tzdata",
+        "V": "2026e-r0",
+        "A": "x86_64"
+      },
+      {
+        "C": "Q1Po6Odt/vtO/SdlitpteS5muid14=",
+        "P": "zlib",
+        "V": "1.3.1-r2",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libz.so.1=1.3.1"
+      },
+      {
+        "C": "Q11Qe4rDxDNaQEBawg5JusnUNkK+Y=",
+        "P": "zstd-libs",
+        "V": "1.5.7-r2",
+        "A": "x86_64",
+        "D": "so:libc.musl-x86_64.so.1",
+        "p": "so:libzstd.so.1=1.5.7"
+      }
+    ]
+  },
+  "installedState": {
+    "accounts": [
+      {
+        "name": "root",
+        "uid": 0,
+        "gid": 0
+      },
+      {
+        "name": "bin",
+        "uid": 1,
+        "gid": 1
+      },
+      {
+        "name": "daemon",
+        "uid": 2,
+        "gid": 2
+      },
+      {
+        "name": "lp",
+        "uid": 4,
+        "gid": 7
+      },
+      {
+        "name": "sync",
+        "uid": 5,
+        "gid": 0
+      },
+      {
+        "name": "shutdown",
+        "uid": 6,
+        "gid": 0
+      },
+      {
+        "name": "halt",
+        "uid": 7,
+        "gid": 0
+      },
+      {
+        "name": "mail",
+        "uid": 8,
+        "gid": 12
+      },
+      {
+        "name": "news",
+        "uid": 9,
+        "gid": 13
+      },
+      {
+        "name": "uucp",
+        "uid": 10,
+        "gid": 14
+      },
+      {
+        "name": "cron",
+        "uid": 16,
+        "gid": 16
+      },
+      {
+        "name": "ftp",
+        "uid": 21,
+        "gid": 21
+      },
+      {
+        "name": "sshd",
+        "uid": 22,
+        "gid": 22
+      },
+      {
+        "name": "games",
+        "uid": 35,
+        "gid": 35
+      },
+      {
+        "name": "ntp",
+        "uid": 123,
+        "gid": 123
+      },
+      {
+        "name": "guest",
+        "uid": 405,
+        "gid": 100
+      },
+      {
+        "name": "nobody",
+        "uid": 65534,
+        "gid": 65534
+      },
+      {
+        "name": "agent",
+        "uid": 1000,
+        "gid": 1000
+      },
+      {
+        "name": "postgres",
+        "uid": 70,
+        "gid": 70
+      },
+      {
+        "name": "redis",
+        "uid": 100,
+        "gid": 101
+      }
+    ],
+    "paths": {
+      "/etc/redis.conf": {
+        "uid": 0,
+        "gid": 0,
+        "mode": 420,
+        "sha256": "3a928d392a6223df1632b65bd6106d3dfd357491f0df42a1b5a5711cee154b05"
+      },
+      "/var/lib/redis/consumer.txt": null,
+      "/var/lib/apkconsumer/sentinel": null,
+      "/run/redis": {
+        "uid": 100,
+        "gid": 101,
+        "mode": 493
+      },
+      "/var/log/redis": {
+        "uid": 100,
+        "gid": 101,
+        "mode": 493
+      }
+    }
+  },
+  "native": {
+    "uid": 1000,
+    "tests": 3,
+    "tree": true,
+    "postgresqlLoopbackQuery": "42",
+    "redis": "PING/SET/GET",
+    "loaders": [
+      {
+        "filename": "/usr/bin/tree",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7fe3365db000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7fe3365db000)\n"
+      },
+      {
+        "filename": "/usr/libexec/postgresql16/psql",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7fd075e2f000)\n\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7fd075d23000)\n\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7fd075cd9000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7fd075e2f000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7fd075c0a000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7fd075600000)\n\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7fd075bb5000)\n"
+      },
+      {
+        "filename": "/usr/bin/redis-server",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f49214a3000)\n\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7f4920c00000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7f49213cc000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7f4920600000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f49214a3000)\n\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7f49213a0000)\n"
+      }
+    ]
+  },
+  "changedPaths": 66,
+  "deletedPaths": 0,
+  "resume": {
+    "native": {
+      "uid": 1000,
+      "tests": 3,
+      "tree": true,
+      "postgresqlLoopbackQuery": "42",
+      "redis": "PING/SET/GET",
+      "loaders": [
+        {
+          "filename": "/usr/bin/tree",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f26f22cd000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f26f22cd000)\n"
+        },
+        {
+          "filename": "/usr/libexec/postgresql16/psql",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7fcb4d897000)\n\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7fcb4d78b000)\n\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7fcb4d741000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7fcb4d897000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7fcb4d672000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7fcb4d000000)\n\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7fcb4d61d000)\n"
+        },
+        {
+          "filename": "/usr/bin/redis-server",
+          "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f07b386b000)\n\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7f07b3000000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7f07b3794000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7f07b2a00000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f07b386b000)\n\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7f07b3768000)\n"
+        }
+      ]
+    },
+    "state": {
+      "accounts": [
+        {
+          "name": "root",
+          "uid": 0,
+          "gid": 0
+        },
+        {
+          "name": "bin",
+          "uid": 1,
+          "gid": 1
+        },
+        {
+          "name": "daemon",
+          "uid": 2,
+          "gid": 2
+        },
+        {
+          "name": "lp",
+          "uid": 4,
+          "gid": 7
+        },
+        {
+          "name": "sync",
+          "uid": 5,
+          "gid": 0
+        },
+        {
+          "name": "shutdown",
+          "uid": 6,
+          "gid": 0
+        },
+        {
+          "name": "halt",
+          "uid": 7,
+          "gid": 0
+        },
+        {
+          "name": "mail",
+          "uid": 8,
+          "gid": 12
+        },
+        {
+          "name": "news",
+          "uid": 9,
+          "gid": 13
+        },
+        {
+          "name": "uucp",
+          "uid": 10,
+          "gid": 14
+        },
+        {
+          "name": "cron",
+          "uid": 16,
+          "gid": 16
+        },
+        {
+          "name": "ftp",
+          "uid": 21,
+          "gid": 21
+        },
+        {
+          "name": "sshd",
+          "uid": 22,
+          "gid": 22
+        },
+        {
+          "name": "games",
+          "uid": 35,
+          "gid": 35
+        },
+        {
+          "name": "ntp",
+          "uid": 123,
+          "gid": 123
+        },
+        {
+          "name": "guest",
+          "uid": 405,
+          "gid": 100
+        },
+        {
+          "name": "nobody",
+          "uid": 65534,
+          "gid": 65534
+        },
+        {
+          "name": "agent",
+          "uid": 1000,
+          "gid": 1000
+        },
+        {
+          "name": "postgres",
+          "uid": 70,
+          "gid": 70
+        },
+        {
+          "name": "redis",
+          "uid": 100,
+          "gid": 101
+        }
+      ],
+      "paths": {
+        "/etc/redis.conf": {
+          "uid": 0,
+          "gid": 0,
+          "mode": 420,
+          "sha256": "3a928d392a6223df1632b65bd6106d3dfd357491f0df42a1b5a5711cee154b05"
+        },
+        "/var/lib/redis/consumer.txt": null,
+        "/var/lib/apkconsumer/sentinel": null,
+        "/run/redis": null,
+        "/var/log/redis": null
+      }
+    },
+    "gates": [
+      {
+        "name": "user",
+        "ok": true,
+        "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+      },
+      {
+        "name": "privilege-drop",
+        "ok": true,
+        "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+      },
+      {
+        "name": "suid",
+        "ok": true,
+        "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+      },
+      {
+        "name": "removals",
+        "ok": true,
+        "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+      },
+      {
+        "name": "ca-trust",
+        "ok": false,
+        "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+      },
+      {
+        "name": "git-gh-shimmed",
+        "ok": true,
+        "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+      },
+      {
+        "name": "pi",
+        "ok": true,
+        "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+      }
+    ],
+    "protectedUnchanged": true,
+    "databaseUnchanged": true
+  }
+}

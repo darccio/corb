@@ -1,0 +1,16 @@
+{
+  "rejected": true,
+  "intendedSecurityFailures": [
+    {
+      "name": "suid",
+      "ok": false,
+      "detail": "live SUID/SGID set does not match /etc/corb/suid-allowlist.txt: unexpected=[/usr/bin/sudo]"
+    },
+    {
+      "name": "removals",
+      "ok": false,
+      "detail": "still reachable on PATH: su, sudo"
+    }
+  ],
+  "checkpointPublished": false
+}

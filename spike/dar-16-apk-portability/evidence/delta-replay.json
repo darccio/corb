@@ -1,0 +1,317 @@
+{
+  "conditionalRejected": "Error: filesystem delta preconditions differ: /etc/apk/world, /etc/group, /etc/group-, /etc/passwd, /etc/passwd-, /etc/redis.conf, /etc/shadow, /etc/shadow-, /lib/apk/db/installed, /usr/bin/tree, /var/lib/redis",
+  "unconditionalReplayCounterexample": true,
+  "before": {
+    "accounts": [
+      {
+        "name": "root",
+        "uid": 0,
+        "gid": 0
+      },
+      {
+        "name": "bin",
+        "uid": 1,
+        "gid": 1
+      },
+      {
+        "name": "daemon",
+        "uid": 2,
+        "gid": 2
+      },
+      {
+        "name": "lp",
+        "uid": 4,
+        "gid": 7
+      },
+      {
+        "name": "sync",
+        "uid": 5,
+        "gid": 0
+      },
+      {
+        "name": "shutdown",
+        "uid": 6,
+        "gid": 0
+      },
+      {
+        "name": "halt",
+        "uid": 7,
+        "gid": 0
+      },
+      {
+        "name": "mail",
+        "uid": 8,
+        "gid": 12
+      },
+      {
+        "name": "news",
+        "uid": 9,
+        "gid": 13
+      },
+      {
+        "name": "uucp",
+        "uid": 10,
+        "gid": 14
+      },
+      {
+        "name": "cron",
+        "uid": 16,
+        "gid": 16
+      },
+      {
+        "name": "ftp",
+        "uid": 21,
+        "gid": 21
+      },
+      {
+        "name": "sshd",
+        "uid": 22,
+        "gid": 22
+      },
+      {
+        "name": "games",
+        "uid": 35,
+        "gid": 35
+      },
+      {
+        "name": "ntp",
+        "uid": 123,
+        "gid": 123
+      },
+      {
+        "name": "guest",
+        "uid": 405,
+        "gid": 100
+      },
+      {
+        "name": "nobody",
+        "uid": 65534,
+        "gid": 65534
+      },
+      {
+        "name": "agent",
+        "uid": 1000,
+        "gid": 1000
+      },
+      {
+        "name": "redis",
+        "uid": 350,
+        "gid": 350
+      },
+      {
+        "name": "apkconsumer",
+        "uid": 351,
+        "gid": 351
+      }
+    ],
+    "paths": {
+      "/etc/redis.conf": {
+        "uid": 0,
+        "gid": 0,
+        "mode": 420,
+        "sha256": "c72ba60ebc357fc63255c317609fbe108c663975773e0eb559160c2b32887a82"
+      },
+      "/var/lib/redis/consumer.txt": {
+        "uid": 350,
+        "gid": 350,
+        "mode": 420,
+        "sha256": "89a211cdeb612fa64295050f60c30ba5901c5454f2c569329bd8c14dbf37642b"
+      },
+      "/var/lib/apkconsumer/sentinel": {
+        "uid": 351,
+        "gid": 351,
+        "mode": 420,
+        "sha256": "4c458cbe2dee7e077239f0ca2d78343eb504fcd75f227d70fd3d61fc4853811d"
+      },
+      "/run/redis": null,
+      "/var/log/redis": null
+    }
+  },
+  "after": {
+    "accounts": [
+      {
+        "name": "root",
+        "uid": 0,
+        "gid": 0
+      },
+      {
+        "name": "bin",
+        "uid": 1,
+        "gid": 1
+      },
+      {
+        "name": "daemon",
+        "uid": 2,
+        "gid": 2
+      },
+      {
+        "name": "lp",
+        "uid": 4,
+        "gid": 7
+      },
+      {
+        "name": "sync",
+        "uid": 5,
+        "gid": 0
+      },
+      {
+        "name": "shutdown",
+        "uid": 6,
+        "gid": 0
+      },
+      {
+        "name": "halt",
+        "uid": 7,
+        "gid": 0
+      },
+      {
+        "name": "mail",
+        "uid": 8,
+        "gid": 12
+      },
+      {
+        "name": "news",
+        "uid": 9,
+        "gid": 13
+      },
+      {
+        "name": "uucp",
+        "uid": 10,
+        "gid": 14
+      },
+      {
+        "name": "cron",
+        "uid": 16,
+        "gid": 16
+      },
+      {
+        "name": "ftp",
+        "uid": 21,
+        "gid": 21
+      },
+      {
+        "name": "sshd",
+        "uid": 22,
+        "gid": 22
+      },
+      {
+        "name": "games",
+        "uid": 35,
+        "gid": 35
+      },
+      {
+        "name": "ntp",
+        "uid": 123,
+        "gid": 123
+      },
+      {
+        "name": "guest",
+        "uid": 405,
+        "gid": 100
+      },
+      {
+        "name": "nobody",
+        "uid": 65534,
+        "gid": 65534
+      },
+      {
+        "name": "agent",
+        "uid": 1000,
+        "gid": 1000
+      },
+      {
+        "name": "postgres",
+        "uid": 70,
+        "gid": 70
+      },
+      {
+        "name": "redis",
+        "uid": 100,
+        "gid": 101
+      }
+    ],
+    "paths": {
+      "/etc/redis.conf": {
+        "uid": 0,
+        "gid": 0,
+        "mode": 420,
+        "sha256": "3a928d392a6223df1632b65bd6106d3dfd357491f0df42a1b5a5711cee154b05"
+      },
+      "/var/lib/redis/consumer.txt": {
+        "uid": 350,
+        "gid": 350,
+        "mode": 420,
+        "sha256": "89a211cdeb612fa64295050f60c30ba5901c5454f2c569329bd8c14dbf37642b"
+      },
+      "/var/lib/apkconsumer/sentinel": {
+        "uid": 351,
+        "gid": 351,
+        "mode": 420,
+        "sha256": "4c458cbe2dee7e077239f0ca2d78343eb504fcd75f227d70fd3d61fc4853811d"
+      },
+      "/run/redis": null,
+      "/var/log/redis": null
+    }
+  },
+  "native": {
+    "uid": 1000,
+    "tests": 3,
+    "tree": true,
+    "postgresqlLoopbackQuery": "42",
+    "redis": "PING/SET/GET",
+    "loaders": [
+      {
+        "filename": "/usr/bin/tree",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f6183c2e000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f6183c2e000)\n"
+      },
+      {
+        "filename": "/usr/libexec/postgresql16/psql",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7f4089f38000)\n\tlibpq.so.5 => /usr/lib/libpq.so.5 (0x7f4089e2c000)\n\tlibreadline.so.8 => /usr/lib/libreadline.so.8 (0x7f4089de2000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f4089f38000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7f4089d13000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7f4089800000)\n\tlibncursesw.so.6 => /usr/lib/libncursesw.so.6 (0x7f40897ab000)\n"
+      },
+      {
+        "filename": "/usr/bin/redis-server",
+        "libraries": "\t/lib/ld-musl-x86_64.so.1 (0x7ff973de8000)\n\tlibstdc++.so.6 => /usr/lib/libstdc++.so.6 (0x7ff973600000)\n\tlibssl.so.3 => /usr/lib/libssl.so.3 (0x7ff973931000)\n\tlibcrypto.so.3 => /usr/lib/libcrypto.so.3 (0x7ff973000000)\n\tlibc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7ff973de8000)\n\tlibgcc_s.so.1 => /usr/lib/libgcc_s.so.1 (0x7ff973db4000)\n"
+      }
+    ]
+  },
+  "gates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk"
+    },
+    {
+      "name": "ca-trust",
+      "ok": false,
+      "detail": "git: ls-remote over https to github.com failed, exit 128: error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error\nfatal: expected flush after ref listing"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "replayedPaths": 66,
+  "deletedPaths": 0,
+  "deltaTarSha256": "6e92e41e18f9e2ef6f968d7813466a49c8174579981707c5039d7b7036c8fe2f"
+}

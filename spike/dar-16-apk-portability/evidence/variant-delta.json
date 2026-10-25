@@ -1,0 +1,892 @@
+{
+  "changed": [
+    {
+      "path": "/etc/apk/world",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 253,
+      "sha256": "c8f5a3a241450544fb7d67111e5dc84f459163b163037bc1b26a90ed5047e32e"
+    },
+    {
+      "path": "/etc/group",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 600,
+      "sha256": "df145b935b75408b147b76607729c84f60c20a19d92f058a430b6ecf13d7634b"
+    },
+    {
+      "path": "/etc/group-",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 592,
+      "sha256": "fd0aec8cfb92b930e1b005016389d0ed2794307a228b8adde721d8b7b6115ef7"
+    },
+    {
+      "path": "/etc/logrotate.d/redis",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 52,
+      "sha256": "07b96ef6d16e7be1612c3af210e685b62a062ae235d2872985aa4fed8643c257"
+    },
+    {
+      "path": "/etc/passwd",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 906,
+      "sha256": "37d37f899cd281aaed6813717a49e0ce6fef1b98677b3d13b3770d481b43303f"
+    },
+    {
+      "path": "/etc/passwd-",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 845,
+      "sha256": "e49f9a6417075cee38e32e195c0207aac709f80aba838fbc926cb835109bb332"
+    },
+    {
+      "path": "/etc/redis.conf.apk-new",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 113622,
+      "sha256": "3a928d392a6223df1632b65bd6106d3dfd357491f0df42a1b5a5711cee154b05"
+    },
+    {
+      "path": "/etc/sentinel.conf",
+      "mode": 420,
+      "uid": 350,
+      "gid": 350,
+      "type": "file",
+      "size": 14860,
+      "sha256": "fb908447060b5c91fae418b01ec7e99efcab42e2105f84fe9284402a8244c4cb"
+    },
+    {
+      "path": "/etc/shadow",
+      "mode": 416,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 377,
+      "sha256": "13c2907ce9a83547e1ca54e899566628ed7c86228f25a3c01c784955d796702d"
+    },
+    {
+      "path": "/etc/shadow-",
+      "mode": 416,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 347,
+      "sha256": "649644c7b666c37d4211f97f407eb86754bfa9c1e9b36429c482c9aace58f2a1"
+    },
+    {
+      "path": "/lib/apk/db/installed",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 179053,
+      "sha256": "a14baa001e5b9b0465b3860801d0afc72264b2ebf161f6bd7ab56cd79b55cb5d"
+    },
+    {
+      "path": "/lib/apk/db/scripts.tar.gz",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 4172,
+      "sha256": "0d3e91b8f6bc75aab1f2ea3335a7e0f052a67e797d6c1c709e56b19bc646ffb4"
+    },
+    {
+      "path": "/lib/apk/db/triggers",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 310,
+      "sha256": "278793033e2477adae29b9d7e6b599f30a5c0a52c7f4327b5c41633baba33dd9"
+    },
+    {
+      "path": "/usr/bin/PG_VERSION",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/PG_VERSION"
+    },
+    {
+      "path": "/usr/bin/clusterdb",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/clusterdb"
+    },
+    {
+      "path": "/usr/bin/createdb",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/createdb"
+    },
+    {
+      "path": "/usr/bin/createuser",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/createuser"
+    },
+    {
+      "path": "/usr/bin/dropdb",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/dropdb"
+    },
+    {
+      "path": "/usr/bin/dropuser",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/dropuser"
+    },
+    {
+      "path": "/usr/bin/pg_amcheck",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_amcheck"
+    },
+    {
+      "path": "/usr/bin/pg_basebackup",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_basebackup"
+    },
+    {
+      "path": "/usr/bin/pg_dump",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_dump"
+    },
+    {
+      "path": "/usr/bin/pg_dumpall",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_dumpall"
+    },
+    {
+      "path": "/usr/bin/pg_isready",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_isready"
+    },
+    {
+      "path": "/usr/bin/pg_receivewal",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_receivewal"
+    },
+    {
+      "path": "/usr/bin/pg_recvlogical",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_recvlogical"
+    },
+    {
+      "path": "/usr/bin/pg_restore",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_restore"
+    },
+    {
+      "path": "/usr/bin/pg_verifybackup",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pg_verifybackup"
+    },
+    {
+      "path": "/usr/bin/pgbench",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/pgbench"
+    },
+    {
+      "path": "/usr/bin/psql",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/psql"
+    },
+    {
+      "path": "/usr/bin/redis-benchmark",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 277096,
+      "sha256": "7edf3eac6491b76f6e33ff19c4642e25c4e75c6286955427ee3de7495d4d05ba"
+    },
+    {
+      "path": "/usr/bin/redis-check-aof",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "redis-server"
+    },
+    {
+      "path": "/usr/bin/redis-check-rdb",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "redis-server"
+    },
+    {
+      "path": "/usr/bin/redis-cli",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 566048,
+      "sha256": "bdcf5765f1cc0e310d2fa03159ecbc35a19614423449e471e0eedab7bcaa6633"
+    },
+    {
+      "path": "/usr/bin/redis-sentinel",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "redis-server"
+    },
+    {
+      "path": "/usr/bin/redis-server",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 3164424,
+      "sha256": "6757f9316c757904150fd1f42d1f09831443470557a1a85cf58d080faa7fd78e"
+    },
+    {
+      "path": "/usr/bin/reindexdb",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/reindexdb"
+    },
+    {
+      "path": "/usr/bin/vacuumdb",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "/usr/libexec/postgresql/vacuumdb"
+    },
+    {
+      "path": "/usr/lib/liblz4.so.1",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "liblz4.so.1.10.0"
+    },
+    {
+      "path": "/usr/lib/liblz4.so.1.10.0",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 169664,
+      "sha256": "78a71fdcb0d0d54c204f909120efc2caf9835c326a2803ddbf993de2f7cbc2d0"
+    },
+    {
+      "path": "/usr/lib/libpq.so.5",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "libpq.so.5.18"
+    },
+    {
+      "path": "/usr/lib/libpq.so.5.18",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 358736,
+      "sha256": "9aaffd9347fa9968cf08e24d73201947014a146c7ba6ce60f2542dd4bec66a4d"
+    },
+    {
+      "path": "/usr/libexec/postgresql",
+      "mode": 511,
+      "uid": 0,
+      "gid": 0,
+      "type": "symlink",
+      "target": "postgresql16"
+    },
+    {
+      "path": "/usr/libexec/postgresql16",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "directory"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/PG_VERSION",
+      "mode": 420,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 3,
+      "sha256": "e6c21e8d260fe71882debdb339d2402a2ca7648529bc2303f48649bce0380017"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/clusterdb",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 92504,
+      "sha256": "47c5dde61b8ddbd7be4e1b3d0d2ec90f5923d7b6a4d92a2e614b6f875c475273"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/createdb",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 96792,
+      "sha256": "18bfb989dfc65153cf51fe0cca9ea597da6cc6a1882d27afcbfe0dfbf666f84b"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/createuser",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 97144,
+      "sha256": "bb7e61a3a82b63cda18d86cbf69b1ebd231de29f54215f58613b3c32533f5e6d"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/dropdb",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 88344,
+      "sha256": "9b464068fe6e6dad9a171c517c55fd0caac3d072e848623ccfc83c9762207251"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/dropuser",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 88280,
+      "sha256": "2f08d06346d371f75d7138d7e6004531fed64c7903189a7c6ef9ea114d719828"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_amcheck",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 117848,
+      "sha256": "b882af6ea96bb5dda650e5d409a747d68723458d4cb6285828dec14cf69a0000"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_basebackup",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 187440,
+      "sha256": "b01dd880a573261179fd63337de48f088104356ee07d561661cfa47b55564b7d"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_dump",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 463096,
+      "sha256": "d88b11c3d987cde3017925aa6fcfc7c35d774630ba6b2155312446dc2f8b2a5e"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_dumpall",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 151136,
+      "sha256": "eeb602c4ef7df91cff2f72cc5f9e5a2bc2188f82874a2482ccda924520c94f1d"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_isready",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 88216,
+      "sha256": "d0336662de32f122b986a7b82492b4737d9812d71799f000a4b598b43aff946b"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_receivewal",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 113240,
+      "sha256": "d87b06d14f8c2215ddc337f4646c4c02e8b44664919bac8bac61ed9e359ddfbd"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_recvlogical",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 109248,
+      "sha256": "372557f1a86981676ad52bd6720f151e41325f897037d21c09177dd5e1df3baa"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_restore",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 237048,
+      "sha256": "11a166c6335083127ac1fe67adc93185f510bd6770ced9b7538ccab7e59812c2"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_verifybackup",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 100720,
+      "sha256": "e0a18429ff7ac15c4a87d6d30ab456d2a18d0dbaadb8fca9aabcd66ccec1a006"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pgbench",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 220632,
+      "sha256": "4434ce5b3dfe64c3ff431deb0eafbcd1c4dc9bb64243aee570cfdd28bb9217e2"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/psql",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 699512,
+      "sha256": "0f68c77095937d9509fbb45a68adb2ab4e8a15a3b17a81ed01be80e530901ad4"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/reindexdb",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 100888,
+      "sha256": "92e9434bbbd284df767aecaea46f9a14dad197361f0e3617c5bae157f0414a77"
+    },
+    {
+      "path": "/usr/libexec/postgresql16/vacuumdb",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 105400,
+      "sha256": "0dbdd5cc24a30a3cdf88657f32ddabf044b96ab680f2aefda83f1bde8b07b92a"
+    },
+    {
+      "path": "/usr/sbin/pg_versions",
+      "mode": 493,
+      "uid": 0,
+      "gid": 0,
+      "type": "file",
+      "size": 4577,
+      "sha256": "605bcf560e9b016c25c0c4c49cf994eb31bc599f42a7d4b82d1ce0e006f2140a"
+    }
+  ],
+  "deleted": [],
+  "preimages": [
+    {
+      "path": "/etc/apk/world",
+      "before": {
+        "path": "/etc/apk/world",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 209,
+        "sha256": "5230f85ade6e851179e76faaa3d7b1fea0c7fdad00ed54adc8890202ee6fb48b"
+      }
+    },
+    {
+      "path": "/etc/group",
+      "before": {
+        "path": "/etc/group",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 577,
+        "sha256": "f044f8689cadd8276c2ce8071a4818b627b1b538b6bfaba6763520fcd0a3ffb4"
+      }
+    },
+    {
+      "path": "/etc/group-",
+      "before": {
+        "path": "/etc/group-",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 566,
+        "sha256": "06717cc65cef689f5c71f4bdff5f0ffd225a4b2c015b535b2716e2606ba24e0e"
+      }
+    },
+    {
+      "path": "/etc/logrotate.d/redis",
+      "before": null
+    },
+    {
+      "path": "/etc/passwd",
+      "before": {
+        "path": "/etc/passwd",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 845,
+        "sha256": "e49f9a6417075cee38e32e195c0207aac709f80aba838fbc926cb835109bb332"
+      }
+    },
+    {
+      "path": "/etc/passwd-",
+      "before": {
+        "path": "/etc/passwd-",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 787,
+        "sha256": "68b2b7ad0ef4a2c4f06feffdd13ea530f64ab02404ff0e883038a18ef5ff2d93"
+      }
+    },
+    {
+      "path": "/etc/redis.conf.apk-new",
+      "before": null
+    },
+    {
+      "path": "/etc/sentinel.conf",
+      "before": null
+    },
+    {
+      "path": "/etc/shadow",
+      "before": {
+        "path": "/etc/shadow",
+        "mode": 416,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 347,
+        "sha256": "649644c7b666c37d4211f97f407eb86754bfa9c1e9b36429c482c9aace58f2a1"
+      }
+    },
+    {
+      "path": "/etc/shadow-",
+      "before": {
+        "path": "/etc/shadow-",
+        "mode": 416,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 314,
+        "sha256": "725ed92883cfbe83f70e6ae8fe1be2215e925d35334c7e89ec98ccf57d84fb10"
+      }
+    },
+    {
+      "path": "/lib/apk/db/installed",
+      "before": {
+        "path": "/lib/apk/db/installed",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 174721,
+        "sha256": "844b8d6e5d43b95acda06b0deee152a31885160feb1b496bd2118b7a58ad0db8"
+      }
+    },
+    {
+      "path": "/lib/apk/db/scripts.tar.gz",
+      "before": {
+        "path": "/lib/apk/db/scripts.tar.gz",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 2831,
+        "sha256": "8308774495b2368f742bb86169952e991a85c606c64e095c70e44dd74370082f"
+      }
+    },
+    {
+      "path": "/lib/apk/db/triggers",
+      "before": {
+        "path": "/lib/apk/db/triggers",
+        "mode": 420,
+        "uid": 0,
+        "gid": 0,
+        "type": "file",
+        "size": 231,
+        "sha256": "a10198e75527ce0b117d59667403192d6b05ed7d7da32896db3f0abee01f1c12"
+      }
+    },
+    {
+      "path": "/usr/bin/PG_VERSION",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/clusterdb",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/createdb",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/createuser",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/dropdb",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/dropuser",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_amcheck",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_basebackup",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_dump",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_dumpall",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_isready",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_receivewal",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_recvlogical",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_restore",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pg_verifybackup",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/pgbench",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/psql",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/redis-benchmark",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/redis-check-aof",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/redis-check-rdb",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/redis-cli",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/redis-sentinel",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/redis-server",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/reindexdb",
+      "before": null
+    },
+    {
+      "path": "/usr/bin/vacuumdb",
+      "before": null
+    },
+    {
+      "path": "/usr/lib/liblz4.so.1",
+      "before": null
+    },
+    {
+      "path": "/usr/lib/liblz4.so.1.10.0",
+      "before": null
+    },
+    {
+      "path": "/usr/lib/libpq.so.5",
+      "before": null
+    },
+    {
+      "path": "/usr/lib/libpq.so.5.18",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/PG_VERSION",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/clusterdb",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/createdb",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/createuser",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/dropdb",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/dropuser",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_amcheck",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_basebackup",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_dump",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_dumpall",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_isready",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_receivewal",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_recvlogical",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_restore",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pg_verifybackup",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/pgbench",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/psql",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/reindexdb",
+      "before": null
+    },
+    {
+      "path": "/usr/libexec/postgresql16/vacuumdb",
+      "before": null
+    },
+    {
+      "path": "/usr/sbin/pg_versions",
+      "before": null
+    }
+  ]
+}

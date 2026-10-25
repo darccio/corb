@@ -1,0 +1,9 @@
+{
+  "rejected": true,
+  "error": "Command ['openssl', 'dgst', '-sha1', '-verify', '/home/dario/Code/corb/image/build/dar-16-apk-portability/input/trusted/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub', '-signature', '/home/dario/Code/corb/image/build/dar-16-apk-portability/signature.bin', '/home/dario/Code/corb/image/build/dar-16-apk-portability/signed.gz'] returned non-zero exit status 1.",
+  "beforeVm": true,
+  "originalSha256": "01bcfc16850edc723c53c27777bad7818a5f0b800b90563c304f14ca3371092e",
+  "tamperedSha256": "1d5887e420328456899146cec612b2692d3e8afc21d534b60cce4cdb605a0b09",
+  "sizeUnchanged": true,
+  "controlAndPayloadUnchanged": true
+}

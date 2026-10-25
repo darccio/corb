@@ -1,0 +1,17 @@
+{
+  "spike/dar-16-apk-portability/build-base.mjs": "f4f1779946c1f123312ef0d0c747f83a610470c7c7bf8046c6bc72683daa21e1",
+  "spike/dar-16-apk-portability/common.mjs": "59632bc7dd41b031b7f7fc53f51b597bd390b78223fc8e2a0e26285fb66877cc",
+  "spike/dar-16-apk-portability/fixture/native.cjs": "77dd232b137ba94ffd6067804d4fd2f57363d15e443915a8a0e2def500685120",
+  "spike/dar-16-apk-portability/fixture/replay.cjs": "0af4890d30839b34a9ccf48425cafb6f7179604297d6cd34ec8dd61878b2c385",
+  "spike/dar-16-apk-portability/fixture/snapshot.cjs": "3c771680bcf3f7b92aab361fdda8220794cf983a29ab028d8e028af23ea9273f",
+  "spike/dar-16-apk-portability/fixture/state.cjs": "7357333500348ca4ea7d957cabb0f5b7c22930ffda2747e740b7b593d61de346",
+  "spike/dar-16-apk-portability/inspect-bases.py": "33e8140918b1d8a7d22fbb8be698e5f432bf95be120e9793d836cbaeda2a2214",
+  "spike/dar-16-apk-portability/oci.py": "6d36de7acb22071040ef93db10e1fc31bcd495c89549f9e62e0e2f4cb660a583",
+  "spike/dar-16-apk-portability/plan.mjs": "6f4315f6631f3d5133fa777dedbf42f90217a372f66e797ab9f1e9b71c2dd89b",
+  "spike/dar-16-apk-portability/plan.test.mjs": "1345dd6e336e0bcba0dd7b5aafb41b0416e5953e668b696a0339faab4d8769bd",
+  "spike/dar-16-apk-portability/prepare.py": "b0f58c03dcc2a780e05108a2e27f5946df3f218c39a83715c1c69d5b0fa097fe",
+  "spike/dar-16-apk-portability/resolve.mjs": "c4e35e5c872e42819e57606ee818114cf55914524eed07cb859970e7cec50611",
+  "spike/dar-16-apk-portability/run.mjs": "87c21107df0dc48f4ad6cf027525f8d30da6f53136fc6dd1273f89b3dfdac9b1",
+  "spike/dar-15-layers/fetch-apk.py": "6cc7f4d86ae0d6c5c8d3f61cb227e390cc1409c9c425f06c3728cc1895fcfa1e",
+  "spike/dar-16-portable-go/gate-report.mjs": "adca49d56361b3574e1b0e34ad07696e4f3c872841a62a93bf4614c3613866d3"
+}

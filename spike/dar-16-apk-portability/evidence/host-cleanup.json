@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-10-25T21:43:15.212212+00:00",
+  "context": "host require_escalated",
+  "ownedPids": [
+    227772,
+    233183,
+    233317,
+    233519,
+    233826,
+    233932,
+    234164,
+    234557,
+    234848,
+    235195,
+    235396
+  ],
+  "survivingOwnedPids": [],
+  "matchingHostProcesses": [],
+  "isolatedTaskSessions": [],
+  "allObservedVmCommandsSerial": true,
+  "vmBootsInEvents": 11
+}

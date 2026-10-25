@@ -1,0 +1,100 @@
+[
+  {
+    "name": "stock-control",
+    "buildId": "2747a805-7a7e-5798-84ca-077fb5086311",
+    "alpineRelease": "3.23.0",
+    "databaseSha256": "9d4b040c7a4572dcb1f225398f532cfa7d0a4bca7ad8d5086cc22784b24bd96e",
+    "recordCount": 20,
+    "missingKnownInstalledTools": [
+      "bash",
+      "curl",
+      "git",
+      "openssh-client-default",
+      "nodejs",
+      "ripgrep",
+      "jq"
+    ],
+    "libraries": [
+      {
+        "name": "libssl3",
+        "recordedVersion": "3.5.4-r0",
+        "filename": "/usr/lib/libssl.so.3",
+        "signedVersion": "3.5.9-r0",
+        "signedChecksum": "Q170vxHAYRS4o+qEErxLLXW0A7BuU=",
+        "sha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+        "actualFileSha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+        "matchesSignedCurrentBytes": true
+      },
+      {
+        "name": "libcrypto3",
+        "recordedVersion": "3.5.4-r0",
+        "filename": "/usr/lib/libcrypto.so.3",
+        "signedVersion": "3.5.9-r0",
+        "signedChecksum": "Q1Ubt/ZmhM+YWFhgwtitzD8qoPZ3I=",
+        "sha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+        "actualFileSha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+        "matchesSignedCurrentBytes": true
+      }
+    ]
+  },
+  {
+    "name": "fixed",
+    "buildId": "e8292a0a-0a1a-52d5-959b-9ed372068d54",
+    "alpineRelease": "3.23.0",
+    "databaseSha256": "dfecb486abbffdcf7aa393474705db782d35c5cea9a5f8d0a5ca437dfa38f8d0",
+    "recordCount": 55,
+    "missingKnownInstalledTools": [],
+    "libraries": [
+      {
+        "name": "libssl3",
+        "recordedVersion": "3.5.4-r0",
+        "filename": "/usr/lib/libssl.so.3",
+        "signedVersion": "3.5.9-r0",
+        "signedChecksum": "Q170vxHAYRS4o+qEErxLLXW0A7BuU=",
+        "sha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+        "actualFileSha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+        "matchesSignedCurrentBytes": true
+      },
+      {
+        "name": "libcrypto3",
+        "recordedVersion": "3.5.4-r0",
+        "filename": "/usr/lib/libcrypto.so.3",
+        "signedVersion": "3.5.9-r0",
+        "signedChecksum": "Q1Ubt/ZmhM+YWFhgwtitzD8qoPZ3I=",
+        "sha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+        "actualFileSha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+        "matchesSignedCurrentBytes": true
+      }
+    ]
+  },
+  {
+    "name": "variant",
+    "buildId": "820396a0-70a9-5772-af9c-c1d3eba7ae8d",
+    "alpineRelease": "3.23.0",
+    "databaseSha256": "844b8d6e5d43b95acda06b0deee152a31885160feb1b496bd2118b7a58ad0db8",
+    "recordCount": 56,
+    "missingKnownInstalledTools": [],
+    "libraries": [
+      {
+        "name": "libssl3",
+        "recordedVersion": "3.5.4-r0",
+        "filename": "/usr/lib/libssl.so.3",
+        "signedVersion": "3.5.9-r0",
+        "signedChecksum": "Q170vxHAYRS4o+qEErxLLXW0A7BuU=",
+        "sha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+        "actualFileSha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+        "matchesSignedCurrentBytes": true
+      },
+      {
+        "name": "libcrypto3",
+        "recordedVersion": "3.5.4-r0",
+        "filename": "/usr/lib/libcrypto.so.3",
+        "signedVersion": "3.5.9-r0",
+        "signedChecksum": "Q1Ubt/ZmhM+YWFhgwtitzD8qoPZ3I=",
+        "sha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+        "actualFileSha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+        "matchesSignedCurrentBytes": true
+      }
+    ]
+  }
+]
