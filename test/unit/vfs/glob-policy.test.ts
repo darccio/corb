@@ -325,6 +325,49 @@ describe("withGlobPolicy: link()/symlink() gated at creation time, both endpoint
 });
 
 describe("withGlobPolicy: directory rename subtree coverage", () => {
+  describe.each(["rename", "renameSync"] as const)("%s destination checks", (method) => {
+    it.each(["deny-write", "deny-read", "hidden", "shadow-write"] as const)(
+      "denies moving a directory into a %s subtree",
+      async (mode) => {
+        const { backend, wrapped, denies } = setup([{ glob: "config/*.json", mode, reason: "protected config" }]);
+        await backend.mkdir("/prepared");
+        await backend.writeFile("/prepared/settings.json", "{}");
+        await expectErrno(Promise.resolve().then(() => wrapped[method]("/prepared", "/config")), "EACCES");
+        expect(backend.existsSync("/prepared/settings.json")).toBe(true);
+        expect(backend.existsSync("/config")).toBe(false);
+        expect(denies.at(-1)?.reason).toContain("destination");
+      },
+    );
+
+    it("checks destinations through a symlinked parent", async () => {
+      const { backend, wrapped } = setup([{ glob: "real/config/*.json", mode: "deny-write", reason: "protected config" }]);
+      await backend.mkdir("/prepared");
+      await backend.writeFile("/prepared/settings.json", "{}");
+      await backend.mkdir("/real");
+      await backend.symlink("/real", "/alias");
+      await expectErrno(Promise.resolve().then(() => wrapped[method]("/prepared", "/alias/config")), "EACCES");
+      expect(backend.existsSync("/prepared/settings.json")).toBe(true);
+    });
+
+    it("checks the literal destination even when its parent is a symlink", async () => {
+      const { backend, wrapped } = setup([{ glob: "alias/config/*.json", mode: "deny-write", reason: "protected config" }]);
+      await backend.mkdir("/prepared");
+      await backend.mkdir("/real");
+      await backend.symlink("/real", "/alias");
+      await expectErrno(Promise.resolve().then(() => wrapped[method]("/prepared", "/alias/config")), "EACCES");
+    });
+
+    it("allows unrelated directory renames and regular files", async () => {
+      const { backend, wrapped } = setup([{ glob: "config/*.json", mode: "deny-write", reason: "protected config" }]);
+      await backend.mkdir("/src");
+      await Promise.resolve().then(() => wrapped[method]("/src", "/lib"));
+      expect(backend.existsSync("/lib")).toBe(true);
+      await backend.writeFile("/file", "ordinary file");
+      await Promise.resolve().then(() => wrapped[method]("/file", "/config"));
+      expect(backend.existsSync("/config")).toBe(true);
+    });
+  });
+
   it("denies renaming a directory that contains a rule-matched path, even when the directory's own exact path matches no rule", async () => {
     const rules: GlobRule[] = [{ glob: "**/secret.txt", mode: "hidden", reason: "hidden anywhere" }];
     const { backend, wrapped, denies } = setup(rules);

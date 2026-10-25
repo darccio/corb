@@ -739,14 +739,14 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   // ---------------------------------------------------------------------
 
   /**
-   * `true` if `oldNorm` both (a) names a real directory on the backend and
-   * (b) could contain a rule-matched descendant. A `stat`/`lstat` failure
+   * `true` if `oldNorm` names a directory and a rule could match under either endpoint.
+   * A `stat`/`lstat` failure
    * other than `ENOENT` fails closed (cannot rule out the risk); `ENOENT`
    * means the source doesn't exist at all, in which case the real
    * `rename()` call below will fail on its own with the correct error, and
    * there is no subtree to protect.
    */
-  async function isDeniedDirectoryRename(oldNorm: string, syscall: string): Promise<boolean> {
+  async function isDeniedDirectoryRename(oldNorm: string, newNorm: string, resolvedNew: string, syscall: string): Promise<boolean> {
     const rulePath = toRulePath(oldNorm);
     let isDirectory: boolean;
     try {
@@ -758,10 +758,11 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
       auditAndThrow("rename", syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "could not stat the rename source to check for a rule-matched subtree; failing closed");
     }
-    return isDirectory && ruleMayMatchUnderDirectory(rules, rulePath);
+    return isDirectory && [rulePath, toRulePath(newNorm), toRulePath(resolvedNew)]
+      .some((candidate) => ruleMayMatchUnderDirectory(rules, candidate));
   }
 
-  function isDeniedDirectoryRenameSync(oldNorm: string, syscall: string): boolean {
+  function isDeniedDirectoryRenameSync(oldNorm: string, newNorm: string, resolvedNew: string, syscall: string): boolean {
     const rulePath = toRulePath(oldNorm);
     let isDirectory: boolean;
     try {
@@ -773,12 +774,13 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
       auditAndThrow("rename", syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "could not stat the rename source to check for a rule-matched subtree; failing closed");
     }
-    return isDirectory && ruleMayMatchUnderDirectory(rules, rulePath);
+    return isDirectory && [rulePath, toRulePath(newNorm), toRulePath(resolvedNew)]
+      .some((candidate) => ruleMayMatchUnderDirectory(rules, candidate));
   }
 
   function denyDirectoryRenameSubtree(oldNorm: string, syscall: string): never {
     const rulePath = toRulePath(oldNorm);
-    auditAndThrow("rename", syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "renaming this directory would relocate a rule-matched subtree out from under its rule");
+    auditAndThrow("rename", syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "renaming this directory would relocate a rule-matched subtree at the source or destination");
   }
 
   // ---------------------------------------------------------------------
@@ -962,7 +964,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     // the concerning case regardless of whether the leaf itself pre-exists.
     const oldDecision = await decide("rename", "rename", oldNorm, false);
     const newDecision = await decide("rename", "rename", newNorm, true);
-    if (await isDeniedDirectoryRename(oldNorm, "rename")) {
+    if (await isDeniedDirectoryRename(oldNorm, newNorm, newDecision.resolvedAbs, "rename")) {
       denyDirectoryRenameSubtree(oldNorm, "rename");
     }
     if (oldDecision.mode === "shadowed" || newDecision.mode === "shadowed") {
@@ -984,7 +986,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
     const newNorm = normalizeGuestPath(rawNew);
     const oldDecision = decideSync("rename", "renameSync", oldNorm, false);
     const newDecision = decideSync("rename", "renameSync", newNorm, true);
-    if (isDeniedDirectoryRenameSync(oldNorm, "renameSync")) {
+    if (isDeniedDirectoryRenameSync(oldNorm, newNorm, newDecision.resolvedAbs, "renameSync")) {
       denyDirectoryRenameSubtree(oldNorm, "renameSync");
     }
     if (oldDecision.mode === "shadowed" || newDecision.mode === "shadowed") {
