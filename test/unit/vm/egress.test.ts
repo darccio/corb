@@ -454,3 +454,63 @@ describe("vm/egress buildEgressConfig", () => {
     expect((result as Request).method).toBe("POST");
   });
 });
+
+describe("vm/egress buildEgressConfig with a host-brokered login", () => {
+  type Hook = (req: Request) => Promise<Request | Response | undefined>;
+  type ResponseHook = (res: Response, req: Request) => unknown;
+
+  const egress: EffectiveEgressConfig = {
+    "block-internal-ranges": true,
+    websockets: false,
+    allow: ["chatgpt.com", "api.github.com"],
+    "github-api": { methods: ["GET"] },
+  };
+  const audit: AuditWriter = { record: vi.fn(), addRedactedSecrets: vi.fn(), flush: vi.fn() };
+
+  function hooks(brokered: Parameters<typeof buildEgressConfig>[8]): { onRequest: Hook; onResponse: ResponseHook } {
+    createHttpHooksMock.mockReset();
+    createHttpHooksMock.mockReturnValue({ httpHooks: {}, env: {}, allowedHosts: [], secretManager: {} });
+    buildEgressConfig(egress, undefined, {}, audit, "s", undefined, [], undefined, brokered);
+    return createHttpHooksMock.mock.calls[0]?.[0] as { onRequest: Hook; onResponse: ResponseHook };
+  }
+
+  it("runs the broker's rewrite after the identity-encoding rewrite and returns its result", async () => {
+    const seen: Request[] = [];
+    const { onRequest } = hooks({
+      rewrite: async (req) => {
+        seen.push(req);
+        const headers = new Headers(req.headers);
+        headers.set("authorization", "Bearer real");
+        return new Request(req, { headers });
+      },
+      noteResponse: () => {},
+    });
+    const result = (await onRequest(new Request("https://chatgpt.com/backend-api/x", { headers: { authorization: "Bearer stand-in" } }))) as Request;
+    expect(seen[0]?.headers.get("accept-encoding")).toBe("identity");
+    expect(result.headers.get("authorization")).toBe("Bearer real");
+    expect(result.headers.get("accept-encoding")).toBe("identity");
+  });
+
+  it("returns a broker Response (login could not be refreshed) as the short-circuit", async () => {
+    const { onRequest } = hooks({ rewrite: async () => new Response("login", { status: 401 }), noteResponse: () => {} });
+    const result = await onRequest(new Request("https://chatgpt.com/x"));
+    expect((result as Response).status).toBe(401);
+  });
+
+  it("never hands a request a policy hook short-circuited to the broker", async () => {
+    const rewrite = vi.fn(async (req: Request) => req);
+    const { onRequest } = hooks({ rewrite, noteResponse: () => {} });
+    const result = await onRequest(new Request("https://api.github.com/repos/dario/corb", { method: "DELETE" }));
+    expect((result as Response).status).toBe(403);
+    expect(rewrite).not.toHaveBeenCalled();
+  });
+
+  it("passes every response to the broker before auditing it", async () => {
+    const noteResponse = vi.fn();
+    const { onResponse } = hooks({ rewrite: async (req) => req, noteResponse });
+    const res = new Response("", { status: 401 });
+    const req = new Request("https://chatgpt.com/x");
+    await onResponse(res, req);
+    expect(noteResponse).toHaveBeenCalledWith(res, req);
+  });
+});

@@ -89,6 +89,14 @@ describe("config/render: renderText", () => {
     expect(text).toContain("verdict: TRUSTED");
   });
 
+  it("says a host-brokered provider logs in with corb login, and stays silent for API-key providers", () => {
+    expect(renderText(noChangeWorkspace())).not.toContain("login:");
+    const workspace = noChangeWorkspace();
+    const config: EffectiveConfig = { ...workspace.fullConfig, agent: { provider: "openai-codex" } };
+    const text = renderText({ ...workspace, persistentConfig: config, fullConfig: config });
+    expect(text).toContain("  login: host-brokered, see 'corb login openai-codex' (needs chatgpt.com in egress.allow)");
+  });
+
   it("never prints a secret value, only the secret's name and host-binding metadata", () => {
     const text = renderText(noChangeWorkspace());
     // Only 'hosts'/'optional' metadata should appear next to the secret name — no room for a value field to leak, since EffectiveConfig itself never carries one.

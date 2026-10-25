@@ -21,7 +21,9 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { corbConfigDir, configTomlPath } from "../config/paths.ts";
+import { corbConfigDir, configTomlPath, credentialsStateDir } from "../config/paths.ts";
+import { findBrokeredProvider, unreachableApiHosts, type BrokeredProvider } from "../auth/provider.ts";
+import { readStoredCredential, type StoredCredential } from "../auth/store.ts";
 import { ConfigParseError, parseConfigLayer, type ConfigLayer, type PartialSecretConfig } from "../config/schema.ts";
 import { ImageNotFoundError, resolveRuntimeImage } from "../vm/image.ts";
 import { readCgroupControllersText } from "../vm/cgroup.ts";
@@ -502,6 +504,12 @@ export function checkSecretsConfigured(configResult: DoctorConfigLoad): DoctorCh
     // fail for the same root cause under a different check name.
     return warn("secrets-configured", `config.toml could not be parsed (see the required-secrets check): ${configResult.error.message}`);
   }
+  // A host-brokered provider (ADR 0012) authenticates with `corb login`, not
+  // an API key; the brokered-login check below reports on that instead.
+  const brokered = configResult.kind === "parsed" ? findBrokeredProvider(configResult.layer.agent?.provider) : undefined;
+  if (brokered !== undefined) {
+    return ok("secrets-configured", `[agent] provider = "${brokered.id}" uses 'corb login', so no API key secret is needed.`);
+  }
   const hasAny = configResult.kind === "parsed" && Object.keys(configResult.layer.secrets ?? {}).length > 0;
   if (hasAny) {
     return ok("secrets-configured", "at least one [secrets.*] entry is configured.");
@@ -514,6 +522,47 @@ export function checkSecretsConfigured(configResult: DoctorConfigLoad): DoctorCh
       "Run 'corb explain' to see the current effective config, and see Pi's own provider docs for the env var " +
       "table it supports — corb does not assume any one provider.",
   );
+}
+
+// ---------------------------------------------------------------------------
+// Host-brokered login (ADR 0012): only relevant when `[agent].provider` names
+// a provider in `src/auth/provider.ts`'s registry. Never prints a token.
+// ---------------------------------------------------------------------------
+
+/**
+ * `undefined` when `[agent].provider` is not a brokered provider (the check
+ * is then left out of the report). Otherwise fails without a usable stored
+ * login, warns when the provider's API host is not in `egress.allow`, and is
+ * ok when both hold. `read` is injectable for tests.
+ */
+export function checkBrokeredLogin(
+  configResult: DoctorConfigLoad,
+  read: (provider: BrokeredProvider) => StoredCredential | undefined,
+): DoctorCheckResult | undefined {
+  if (configResult.kind !== "parsed") {
+    return undefined;
+  }
+  const provider = findBrokeredProvider(configResult.layer.agent?.provider);
+  if (provider === undefined) {
+    return undefined;
+  }
+  let credential: StoredCredential | undefined;
+  try {
+    credential = read(provider);
+  } catch (err) {
+    return fail("brokered-login", err instanceof Error ? err.message : String(err));
+  }
+  if (credential === undefined) {
+    return fail("brokered-login", `[agent] provider = "${provider.id}", but there is no stored login. Run 'corb login ${provider.id}'.`);
+  }
+  const unreachable = unreachableApiHosts(provider, configResult.layer.egress?.allow);
+  if (unreachable.length > 0) {
+    return warn(
+      "brokered-login",
+      `logged in to ${provider.displayName}, but egress.allow does not include ${unreachable.map((h) => `"${h}"`).join(", ")}; Pi's requests will be blocked.`,
+    );
+  }
+  return ok("brokered-login", `logged in to ${provider.displayName}${credential.accountId !== undefined ? ` (account ${credential.accountId})` : ""}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -857,6 +906,13 @@ export async function runDoctorChecks(options: RunDoctorChecksOptions = {}): Pro
 
   checks.push(checkRequiredSecrets(configResult, process.env));
   checks.push(checkSecretsConfigured(configResult));
+  {
+    const credentialsDir = credentialsStateDir();
+    const brokered = checkBrokeredLogin(configResult, (provider) => readStoredCredential(credentialsDir, provider.id));
+    if (brokered !== undefined) {
+      checks.push(brokered);
+    }
+  }
   if (options.verifySecrets === true) {
     checks.push(...(await checkVerifySecrets(configResult, process.env, options.fetchImpl)));
   }

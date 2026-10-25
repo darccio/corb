@@ -91,6 +91,7 @@ code.
 | `corb attach <session>` | Opens a new interactive shell inside a running session (a *new* shell — not a way to rejoin Pi's own TUI; see `src/vm/attach.ts`). |
 | `corb kill <session>` | Sends `SIGTERM` to a session's host process so it tears down cleanly (closes the VM, removes its sidecar, flushes its audit log). No `--force`/`SIGKILL` path, by design. |
 | `corb gc [--older-than DURATION] [--dry-run\|-n]` | Prunes Gondolin's own stale registry entries and Corb's orphaned session sidecars. Never prunes a sidecar whose recorded host pid is still alive. |
+| `corb login [PROVIDER] [--device-code]` / `corb logout PROVIDER` | Logs in to a subscription provider on the host (`openai-codex`, ChatGPT Plus/Pro, is the only one so far) and keeps the tokens there; the guest only ever gets a stand-in. With no provider, lists login status. See [Subscription logins](docs/configuration.md#subscription-logins). |
 | `corb doctor [--verify-secrets]` | Checks the host environment (KVM, QEMU, Docker, Node/Go versions, e2fsprogs, cgroup delegation, required secrets, and a couple of Gondolin-specific sharp edges) and prints a report. `--verify-secrets` additionally makes a real HTTP request per `[secrets.NAME.verify]` entry (see Configuration below) to catch a syntactically-present-but-invalid credential — off by default since it's a real network call using the real secret value. |
 | `corb image build [--config FILE] [--tag REF] [--arch x86_64\|aarch64]` | Builds, verifies, and tags the guest VM image. |
 

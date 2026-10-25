@@ -82,9 +82,11 @@ import {
   WorkspaceDirectoryError,
   assertNoDuplicateNames,
   assertValidWorkspaceName,
+  buildBrokeredGuestFiles,
   buildGateConfigMount,
   buildGuestEnv,
   findPrimaryEntry,
+  guestPiAgentDir,
   parseCorbImageJson,
   publicWorkspacePath,
   rawWorkspacePath,
@@ -97,6 +99,8 @@ import {
 } from "../../../src/vm/session.ts";
 import type { EffectiveEgressConfig, EffectiveGitConfig, EffectivePolicyConfig } from "../../../src/config/load.ts";
 import type { AuditWriter } from "../../../src/policy/audit.ts";
+import { openaiCodexProvider } from "../../../src/auth/providers/openai-codex.ts";
+import { CREDENTIAL_FILE_VERSION } from "../../../src/auth/store.ts";
 import type { ProcessLike } from "../../../src/vm/shutdown.ts";
 
 describe("vm/session: buildGateConfigMount", () => {
@@ -590,5 +594,45 @@ describe("vm/session: runSession catch-block error reporting (mocked VM.create)"
     // `controller.trigger("error", 1, err)` call inside the catch block must
     // not re-run steps or call exit a second time with its own code (1).
     expect(exit).toHaveBeenCalledExactlyOnceWith(143);
+  });
+});
+
+describe("vm/session: host-brokered guest files", () => {
+  const brokered = {
+    provider: openaiCodexProvider,
+    guest: openaiCodexProvider.buildGuestCredential(
+      {
+        version: CREDENTIAL_FILE_VERSION,
+        provider: "openai-codex",
+        type: "oauth",
+        access: "real-access-token",
+        refresh: "real-refresh-token",
+        expires: 1_900_000_000_000,
+        accountId: "acct-1",
+        updatedAt: "2026-10-24T00:00:00.000Z",
+      },
+      "marker",
+    ),
+  };
+
+  it("puts the stand-in under the provider's key in auth.json, never a real token", () => {
+    const files = buildBrokeredGuestFiles(brokered, false);
+    const auth = JSON.parse(files["auth.json"] ?? "") as Record<string, Record<string, unknown>>;
+    expect(Object.keys(auth)).toEqual(["openai-codex"]);
+    expect(auth["openai-codex"]?.access).toBe(brokered.guest.standIn);
+    expect(auth["openai-codex"]?.type).toBe("oauth");
+    expect(JSON.stringify(files)).not.toContain("real-access-token");
+    expect(JSON.stringify(files)).not.toContain("real-refresh-token");
+  });
+
+  it("writes Pi settings only when the provider asks for some", () => {
+    expect(JSON.parse(buildBrokeredGuestFiles(brokered, false)["settings.json"] ?? "")).toEqual({ transport: "sse" });
+    expect(buildBrokeredGuestFiles(brokered, true)["settings.json"]).toBeUndefined();
+  });
+
+  it("uses Pi's default agent directory under the image's home", () => {
+    expect(
+      guestPiAgentDir({ user: "agent", uid: 1000, gid: 1000, paths: { dropcapPath: "/d", home: "/home/agent", sessionsDir: "/s" } }),
+    ).toBe("/home/agent/.pi/agent");
   });
 });

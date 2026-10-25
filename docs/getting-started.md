@@ -78,6 +78,11 @@ Other providers need their own Pi provider identifier, model, credential
 variable, and permitted destinations. See [Agent and
 secrets](configuration.md#agent-and-secrets).
 
+To use a ChatGPT Plus or Pro subscription instead of an API key, set
+`provider = "openai-codex"`, allow `chatgpt.com`, and run
+`corb login openai-codex` once. See [Subscription
+logins](configuration.md#subscription-logins).
+
 ## Inspect and start a session
 
 ```bash

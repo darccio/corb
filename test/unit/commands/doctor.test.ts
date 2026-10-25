@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildDoctorReport,
   checkRequiredSecrets,
+  checkBrokeredLogin,
   checkSecretsConfigured,
   checkVerifySecrets,
   classifyCgroupControllers,
@@ -38,6 +39,7 @@ import {
   type DoctorConfigLoad,
 } from "../../../src/commands/doctor.ts";
 import { ConfigParseError } from "../../../src/config/schema.ts";
+import { CREDENTIAL_FILE_VERSION, CredentialFileError, type StoredCredential } from "../../../src/auth/store.ts";
 
 describe("commands/doctor: buildDoctorReport", () => {
   it("ok is true when no check failed, even with warnings", () => {
@@ -620,5 +622,58 @@ describe("commands/doctor: runDoctorChecks (real-environment smoke test)", () =>
     } finally {
       delete process.env.FOO;
     }
+  });
+});
+
+describe("commands/doctor: checkBrokeredLogin", () => {
+  const codexLayer = (allow?: string[]): DoctorConfigLoad => ({
+    kind: "parsed",
+    layer: { agent: { provider: "openai-codex" }, ...(allow !== undefined ? { egress: { allow } } : {}) },
+  });
+  const login: StoredCredential = {
+    version: CREDENTIAL_FILE_VERSION,
+    provider: "openai-codex",
+    type: "oauth",
+    access: "secret-access",
+    refresh: "secret-refresh",
+    expires: 1_900_000_000_000,
+    accountId: "acct-1",
+    updatedAt: "2026-10-24T00:00:00.000Z",
+  };
+
+  it("is left out for API-key providers, an absent config, or a parse error", () => {
+    expect(checkBrokeredLogin({ kind: "parsed", layer: { agent: { provider: "anthropic" } } }, () => login)).toBeUndefined();
+    expect(checkBrokeredLogin({ kind: "absent" }, () => login)).toBeUndefined();
+  });
+
+  it("fails without a stored login, naming corb login", () => {
+    const result = checkBrokeredLogin(codexLayer(["chatgpt.com"]), () => undefined);
+    expect(result?.status).toBe("fail");
+    expect(result?.detail).toContain("corb login openai-codex");
+  });
+
+  it("fails for an unusable credential file", () => {
+    const result = checkBrokeredLogin(codexLayer(["chatgpt.com"]), () => {
+      throw new CredentialFileError("/x.json", "not valid JSON", "openai-codex");
+    });
+    expect(result?.status).toBe("fail");
+    expect(result?.detail).toContain("not valid JSON");
+  });
+
+  it("warns when the API host is not in egress.allow", () => {
+    const result = checkBrokeredLogin(codexLayer(["pi.dev"]), () => login);
+    expect(result?.status).toBe("warn");
+    expect(result?.detail).toContain('"chatgpt.com"');
+  });
+
+  it("is ok when logged in with the API host allowed, and never prints a token", () => {
+    const result = checkBrokeredLogin(codexLayer(["chatgpt.com"]), () => login);
+    expect(result?.status).toBe("ok");
+    expect(result?.detail).toContain("acct-1");
+    expect(JSON.stringify(result)).not.toContain("secret-");
+  });
+
+  it("stops checkSecretsConfigured from asking for an API key", () => {
+    expect(checkSecretsConfigured(codexLayer(["chatgpt.com"])).status).toBe("ok");
   });
 });
