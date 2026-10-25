@@ -11,6 +11,7 @@
 // `../vm/session.ts`'s `runSession` is mocked at the module level (not a
 // real VM boot) precisely so this suite can assert non-invocation without
 // depending on KVM/Docker being available.
+import { builtinGitRules } from "../../../src/config/gitprotect.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -216,7 +217,7 @@ describe("commands/run: buildCliLayer", () => {
       { name: "a", host: "/tmp/second", mode: "rw" },
     ]);
     const merged = mergeConfigLayers([layer]);
-    expect(merged.dir).toEqual([{ name: "a", host: "/tmp/second", mode: "rw", rules: [] }]);
+    expect(merged.dir).toEqual([{ name: "a", host: "/tmp/second", mode: "rw", "builtin-rules": builtinGitRules(), rules: [] }]);
   });
 });
 
@@ -444,7 +445,7 @@ describe("commands/run: runRunCommand", () => {
           },
         ];
         expect(options.dirs).toEqual([
-          { name: path.basename(fs.realpathSync(workDir)), hostPath: fs.realpathSync(workDir), mode: "rw", rules: [] },
+          { name: path.basename(fs.realpathSync(workDir)), hostPath: fs.realpathSync(workDir), mode: "rw", rules: builtinGitRules() },
           { name: "extra", hostPath: extraDir, mode: "ro", rules: [] },
         ]);
         expect(options.primary).toBe(path.basename(fs.realpathSync(workDir)));
@@ -604,6 +605,32 @@ describe("commands/run: runRunCommand", () => {
   });
 
   describe("config.toml [[dir]].rules wiring into runSession (M5.4)", () => {
+    it("places built-in rules before user rules that match Git metadata", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      fs.writeFileSync(path.join(configDir, "config.toml"), [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        'rules = [{ glob = ".git/config*", mode = "shadow-write" }]',
+      ].join("\n"));
+      await runRunCommand([workDir, "--trust-config"]);
+      const [options] = runSessionMock.mock.calls[0] as [{ dirs: { rules: unknown[] }[] }];
+      expect(options.dirs[0]?.rules).toEqual([
+        ...builtinGitRules(),
+        { glob: ".git/config*", mode: "shadow-write" },
+      ]);
+    });
+
+    it("keeps malformed user rule indexes independent of built-in rules", async () => {
+      const dirName = path.basename(fs.realpathSync(workDir));
+      fs.writeFileSync(path.join(configDir, "config.toml"), [
+        "[[dir]]",
+        `name = "${dirName}"`,
+        'rules = [{ glob = "valid", mode = "hidden" }, { glob = "missing-mode" }]',
+      ].join("\n"));
+      await expect(runRunCommand([workDir, "--trust-config"])).rejects.toThrow("rules[1] is missing required field 'mode'");
+      expect(runSessionMock).not.toHaveBeenCalled();
+    });
+
     it("a [[dir]].rules entry reaches runSession as part of the resolved WorkspaceDirSpec", async () => {
       const dirName = path.basename(fs.realpathSync(workDir));
       const configToml = [
@@ -625,7 +652,7 @@ describe("commands/run: runRunCommand", () => {
           name: dirName,
           hostPath: fs.realpathSync(workDir),
           mode: "rw",
-          rules: [{ glob: "secrets/**", mode: "hidden", reason: "keep secrets out of view" }],
+          rules: [...builtinGitRules(), { glob: "secrets/**", mode: "hidden", reason: "keep secrets out of view" }],
         },
       ]);
     });

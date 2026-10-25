@@ -7,11 +7,11 @@ and scratch space.
 To start a new workspace, prepare a directory on the host and run `corb run DIR`.
 There is no creation or registration command. Corb does not read repository-local
 policy files or run setup scripts. Follow the [development
-walkthrough](walkthrough.md) for a complete example, including project-specific
+walkthrough](walkthrough.md) for a complete example. It covers project-specific
 host configuration and Pi's repository instructions.
 
 Each run starts a fresh VM and one Pi process. Multiple mounts belong to that
-same session and agent. Mounted host files persist; guest-only files and default
+same session and agent. Mounted host files persist. Guest-only files and default
 Pi history do not. The walkthrough shows how to mount persistent history.
 
 ## Directory mounts
@@ -39,7 +39,7 @@ directory defaults to your current directory and is automatically mounted
 read/write. Each additional directory gets a guest path based on its name.
 
 Pi starts in the positional directory's mount. `--primary scratch` changes its
-working directory to `/work/scratch`; all configured mounts remain available.
+working directory to `/work/scratch`. All configured mounts remain available.
 
 To make the positional directory read only, override its generated mount by
 name:
@@ -65,8 +65,8 @@ built-in defaults
 Every `[[dir]]` in the global configuration participates in every run. Corb does
 not select global mounts according to the project you pass.
 
-Directories merge by name. A later entry overrides fields it sets, including the
-host path and access mode. Rules for the same directory append across layers.
+Directories merge by name. A later entry overrides the fields it sets. These
+include the host path and access mode. Rules for the same directory append across layers.
 
 The positional directory is added after the global file. Its generated `rw` mode
 overrides a global `ro` entry with the same name. Use an explicit CLI override
@@ -96,6 +96,18 @@ and writes. `deny-write` preserves reads while refusing edits.
 These restrictions apply through the host filesystem provider to shell commands
 and other guest processes, as well as Pi's own file tools.
 
+Even without a repository at startup, every read/write mount gets built-in
+Git protection. These `deny-write` rules run before user rules. They
+protect the root `.git` entry, config files and locks, hooks, and `commondir`.
+They also cover metadata under `.git/modules/**` and `.git/worktrees/*`.
+Read-only mounts already block writes and need no built-in rules.
+
+Set `protect-git = false` in a `[[dir]]` entry to disable this protection for
+that mount. For the positional directory, use a host-less entry with its
+basename, as in the example above. See the [rule list and side effects](configuration.md#built-in-git-protection)
+and the [security limits](security.md#git-metadata-protection). Nested
+repositories and a submodule's own `.git` file remain outside this protection.
+
 ## Trust and inspection
 
 ```bash
@@ -107,9 +119,14 @@ Corb records accepted persistent configuration in `~/.config/corb/trusted.json`,
 keyed by the positional directory's resolved absolute path.
 
 A first run, or a change that widens policy, requires `--trust-config`. Examples
-include adding a permitted host, changing a mount from `ro` to `rw`, enabling
-Git pushes, and removing a filesystem rule. Narrowing changes apply without
+include a new permitted host, a mount change from `ro` to `rw`, Git push
+permission, and removal of a filesystem rule. Narrowing changes apply without
 confirmation.
+
+Disabling Git protection requires confirmation. Mode changes between `rw` and `ro` also
+require confirmation for protected mounts. Adding protection to an older trust record needs no new
+acceptance. `corb explain` lists built-in rules separately from user rules,
+and its JSON output includes `builtin-rules` on each directory.
 
 CLI overrides are treated as explicit user choices. They affect the running
 session but are excluded from the stored trust snapshot.
@@ -119,7 +136,7 @@ session but are excluded from the stored trust snapshot.
 **NOT IMPLEMENTED**
 
 The intended design stores named workspace files under
-`~/.config/corb/workspaces/<name>.toml`, adding a workspace-specific layer
+`~/.config/corb/workspaces/<name>.toml`. They add a workspace-specific layer
 between global configuration and CLI overrides.
 
 Today, `corb run` takes a directory path. It does not look up a saved workspace

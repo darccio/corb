@@ -190,6 +190,76 @@ function sameRuleKeyMultiset(a: string[], b: string[]): boolean {
   return sortedA.every((key, i) => key === sortedB[i]);
 }
 
+function compareDirRules(
+  name: string,
+  field: "rules" | "builtin-rules",
+  previous: DirRuleConfig[],
+  current: DirRuleConfig[],
+): RuleResult {
+  const widened: ConfigChange[] = [];
+  const narrowed: ConfigChange[] = [];
+  const label = field === "rules" ? "rule" : "built-in rule";
+  const prevRuleKeyList = previous.map(ruleKey);
+  const currRuleKeyList = current.map(ruleKey);
+  const currRuleKeys = new Set(currRuleKeyList);
+  for (const rule of previous) {
+    if (!currRuleKeys.has(ruleKey(rule))) {
+      widened.push({
+        field: `dir.${name}.${field}`,
+        description: `dir '${name}' lost ${label} '${rule.glob ?? "?"}' (${rule.mode ?? "?"})`,
+      });
+    }
+  }
+
+  // Enforcement (`src/vfs/policy.ts` / `src/vfs/glob-policy.ts`) walks
+  // `rules` first-match-wins, so a rule's *position* is just as
+  // security-relevant as its presence. Diffing `rules` as a plain Set for
+  // gained entries (as this used to do) misses that inserting a new,
+  // broader rule *ahead of* an existing narrower one can shadow the
+  // narrower rule at enforcement time while looking like pure narrowing
+  // (only an addition, nothing lost) to a membership diff. The one
+  // invariant that is actually safe: the previous rule list, in its
+  // original order, must remain an untouched *prefix* of the current
+  // list.
+  //
+  //  - A pure append (new rules added only at the very end, everything
+  //    before them unchanged) keeps the old list as a prefix of the new
+  //    one -> safe; only the genuinely-new tail past the preserved
+  //    prefix is reported as narrowing, same wording as a plain gained-
+  //    rule diff would use.
+  //  - Anything else — a pure reorder (same ruleKeys, same counts,
+  //    different sequence), an insertion ahead of/between existing
+  //    rules, or a reorder combined with an add/remove — breaks the
+  //    prefix at some index before the end, so it is treated as
+  //    widening, matching this module's existing bias of failing toward
+  //    requiring confirmation whenever it cannot positively rule out a
+  //    widening. The pure-reorder sub-case keeps its own, more specific
+  //    wording; every other non-safe-prefix change shares a generic one.
+  const isSafePrefix =
+    currRuleKeyList.length >= prevRuleKeyList.length &&
+    prevRuleKeyList.every((key, i) => key === currRuleKeyList[i]);
+
+  if (isSafePrefix) {
+    for (const rule of current.slice(prevRuleKeyList.length)) {
+      narrowed.push({
+        field: `dir.${name}.${field}`,
+        description: `dir '${name}' gained ${label} '${rule.glob ?? "?"}' (${rule.mode ?? "?"})`,
+      });
+    }
+  } else if (sameRuleKeyMultiset(prevRuleKeyList, currRuleKeyList)) {
+    widened.push({
+      field: `dir.${name}.${field}`,
+      description: `dir '${name}' ${field} reordered (first-match-wins order changed; treated as widening)`,
+    });
+  } else {
+    widened.push({
+      field: `dir.${name}.${field}`,
+      description: `dir '${name}' ${field} changed in a way that is not a safe append (first-match-wins order may have changed; treated as widening)`,
+    });
+  }
+  return { widened, narrowed };
+}
+
 const dirRule: Rule = {
   field: "dir",
   evaluate(previous, current): RuleResult {
@@ -227,63 +297,19 @@ const dirRule: Rule = {
         narrowed.push({ field: `dir.${name}.mode`, description: `dir '${name}' mode changed from 'rw' to 'ro'` });
       }
 
-      const prevRuleKeyList = prevDir.rules.map(ruleKey);
-      const currRuleKeyList = currDir.rules.map(ruleKey);
-      const currRuleKeys = new Set(currRuleKeyList);
-      for (const rule of prevDir.rules) {
-        if (!currRuleKeys.has(ruleKey(rule))) {
-          widened.push({
-            field: `dir.${name}.rules`,
-            description: `dir '${name}' lost rule '${rule.glob ?? "?"}' (${rule.mode ?? "?"})`,
-          });
-        }
+      const prevProtectGit = prevDir["protect-git"] ?? true;
+      const currProtectGit = currDir["protect-git"] ?? true;
+      if (prevProtectGit !== currProtectGit) {
+        const change = {
+          field: `dir.${name}.protect-git`,
+          description: `dir '${name}' protect-git changed from ${prevProtectGit} to ${currProtectGit}`,
+        };
+        (prevProtectGit ? widened : narrowed).push(change);
       }
-
-      // Enforcement (`src/vfs/policy.ts` / `src/vfs/glob-policy.ts`) walks
-      // `rules` first-match-wins, so a rule's *position* is just as
-      // security-relevant as its presence. Diffing `rules` as a plain Set for
-      // gained entries (as this used to do) misses that inserting a new,
-      // broader rule *ahead of* an existing narrower one can shadow the
-      // narrower rule at enforcement time while looking like pure narrowing
-      // (only an addition, nothing lost) to a membership diff. The one
-      // invariant that is actually safe: the previous rule list, in its
-      // original order, must remain an untouched *prefix* of the current
-      // list.
-      //
-      //  - A pure append (new rules added only at the very end, everything
-      //    before them unchanged) keeps the old list as a prefix of the new
-      //    one -> safe; only the genuinely-new tail past the preserved
-      //    prefix is reported as narrowing, same wording as a plain gained-
-      //    rule diff would use.
-      //  - Anything else — a pure reorder (same ruleKeys, same counts,
-      //    different sequence), an insertion ahead of/between existing
-      //    rules, or a reorder combined with an add/remove — breaks the
-      //    prefix at some index before the end, so it is treated as
-      //    widening, matching this module's existing bias of failing toward
-      //    requiring confirmation whenever it cannot positively rule out a
-      //    widening. The pure-reorder sub-case keeps its own, more specific
-      //    wording; every other non-safe-prefix change shares a generic one.
-      const isSafePrefix =
-        currRuleKeyList.length >= prevRuleKeyList.length &&
-        prevRuleKeyList.every((key, i) => key === currRuleKeyList[i]);
-
-      if (isSafePrefix) {
-        for (const rule of currDir.rules.slice(prevRuleKeyList.length)) {
-          narrowed.push({
-            field: `dir.${name}.rules`,
-            description: `dir '${name}' gained rule '${rule.glob ?? "?"}' (${rule.mode ?? "?"})`,
-          });
-        }
-      } else if (sameRuleKeyMultiset(prevRuleKeyList, currRuleKeyList)) {
-        widened.push({
-          field: `dir.${name}.rules`,
-          description: `dir '${name}' rules reordered (first-match-wins order changed; treated as widening)`,
-        });
-      } else {
-        widened.push({
-          field: `dir.${name}.rules`,
-          description: `dir '${name}' rules changed in a way that is not a safe append (first-match-wins order may have changed; treated as widening)`,
-        });
+      for (const field of ["builtin-rules", "rules"] as const) {
+        const result = compareDirRules(name, field, prevDir[field] ?? [], currDir[field] ?? []);
+        widened.push(...result.widened);
+        narrowed.push(...result.narrowed);
       }
     }
 
@@ -438,7 +464,7 @@ function maskDirEntries(previousDirs: DirConfig[], currentDirs: DirConfig[]): { 
   const current: Record<string, unknown> = {};
   // Entries added/removed entirely are already classified by `dirRule`
   // above (regardless of their other field values), so only entries present
-  // on both sides are compared here. `mode` and `rules` are deleted from a
+  // on both sides are compared here. Classified fields are deleted from a
   // full clone of the entry (rather than rebuilding a `{host, create}`
   // allow-list, as an earlier version did) since `dirRule` already
   // classifies them — everything else on the entry, including any field
@@ -450,6 +476,8 @@ function maskDirEntries(previousDirs: DirConfig[], currentDirs: DirConfig[]): { 
       const masked = structuredClone(d) as unknown as Record<string, unknown>;
       delete masked.mode;
       delete masked.rules;
+      delete masked["builtin-rules"];
+      delete masked["protect-git"];
       previous[d.name] = masked;
     }
   }
@@ -458,6 +486,8 @@ function maskDirEntries(previousDirs: DirConfig[], currentDirs: DirConfig[]): { 
       const masked = structuredClone(d) as unknown as Record<string, unknown>;
       delete masked.mode;
       delete masked.rules;
+      delete masked["builtin-rules"];
+      delete masked["protect-git"];
       current[d.name] = masked;
     }
   }

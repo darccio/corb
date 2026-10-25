@@ -8,6 +8,7 @@
 // itemized), a malformed trusted.json surfacing a clear error rather than
 // silently defaulting to an empty store — plus M2.6's persistent/full
 // config split and `acceptWorkspace`'s write behavior.
+import { builtinGitRules } from "../../../src/config/gitprotect.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -53,7 +54,7 @@ describe("config/resolve: resolveWorkspace", () => {
     const resolved = resolveWorkspace(workDir, {}, { configDir });
     expect(resolved.dir).toBe(fs.realpathSync(workDir));
     expect(resolved.persistentConfig.dir).toEqual([
-      { name: path.basename(workDir), host: resolved.dir, mode: "rw", rules: [] },
+      { name: path.basename(workDir), host: resolved.dir, mode: "rw", "builtin-rules": builtinGitRules(), rules: [] },
     ]);
     // BUILTIN_DEFAULTS structural defaults are present.
     expect(resolved.persistentConfig.egress["block-internal-ranges"]).toBe(true);
@@ -82,7 +83,7 @@ describe("config/resolve: resolveWorkspace", () => {
     expect(resolved.persistentConfig.vm).toEqual({ image: "corb:0.1.0", memory: "4G" });
     expect(resolved.persistentConfig.egress.allow).toEqual(["api.anthropic.com"]);
     expect(resolved.persistentConfig.dir).toEqual([
-      { name: path.basename(workDir), host: resolved.dir, mode: "rw", rules: [] },
+      { name: path.basename(workDir), host: resolved.dir, mode: "rw", "builtin-rules": builtinGitRules(), rules: [] },
     ]);
   });
 
@@ -199,7 +200,7 @@ describe("config/resolve: resolveWorkspace", () => {
         const resolved = resolveWorkspace(workDir, { dir: [{ name: "extra", host: otherDir, mode: "ro" }] }, { configDir });
         expect(resolved.fullConfig.dir).toEqual([
           ...resolved.persistentConfig.dir,
-          { name: "extra", host: otherDir, mode: "ro", rules: [] },
+          { name: "extra", host: otherDir, mode: "ro", "builtin-rules": [], rules: [] },
         ]);
         // Trust is unaffected by the CLI-added 'extra' dir: still trusted, no changes.
         expect(resolved.trustEvaluation.verdict).toBe("trusted");

@@ -1,18 +1,15 @@
 # Corb design
 
 Corb is a command-line tool that boots a [Gondolin](https://earendil-works.github.io/gondolin/)
-micro-VM, mounts one or more host directories into it as a restricted workspace,
-and runs the Pi coding agent (`@earendil-works/pi-coding-agent`) interactively
-inside it.
+micro-VM. It mounts host directories as a restricted workspace and runs the Pi
+coding agent (`@earendil-works/pi-coding-agent`) interactively inside the guest.
 
 The properties Corb exists to provide:
 
 - The model API key never enters the guest.
-- Network egress is restricted to an explicit allowlist.
-- Git and GitHub access are mediated by policy, with credentials staying on the
-  host.
-- Per-path filesystem rules are enforced below the guest kernel, so no guest
-  process can route around them.
+- Network egress follows an explicit allowlist.
+- Host-side policy mediates Git and GitHub access. Credentials stay on the host.
+- Per-path filesystem rules run below the guest kernel. Guest processes cannot bypass them.
 - Every policy decision lands in one audit log.
 
 This file describes Corb's own architecture and the reasoning behind it. The
@@ -25,30 +22,28 @@ and are not repeated here.
 
 ## 1. Why the architecture is shaped this way
 
-Five rules constrain everything below. They are not style preferences; each one
-closes a specific class of failure, and the design is what falls out of taking
-them seriously.
+Five rules constrain everything below. Each rule closes a specific class of
+failure. These rules determine the design.
 
 ### No host process ever executes a guest-chosen command
 
-Repository content is guest-authored. Git hooks (`.git/hooks/pre-commit`) and
-`[alias]` entries in `.git/config` prefixed with `!` are both arbitrary shell,
-and both are stored *inside* a repository the guest can write to. So any
-host-side `git` invocation against a guest-writable repository is arbitrary code
-execution on the host, with whatever credentials that host process happens to
-hold. No argument-vector filter can prevent this, because the payload is not in
-the argument vector.
+Repository content can come from the guest. Git hooks (`.git/hooks/pre-commit`)
+and `[alias]` entries in `.git/config` prefixed with `!` can execute arbitrary
+shell commands. Both live inside a repository the guest can write. Host-side
+`git` against that repository can therefore execute code with the host process's
+credentials. Argument-vector filters cannot prevent this because the payload
+lives outside the arguments.
 
 The consequence: git and `gh` run **in the guest**, unmodified. Only the wire
 protocol crosses to the host.
 
 ### No general guest→host RPC channel
 
-A general socket transport from guest to host becomes a generic tunnel by
-accident, which is why the SDK deliberately does not provide one. Corb does not
-rebuild one. Where a host callback is genuinely needed, the sanctioned mechanism
-is an `onRequest` short-circuit against a sentinel hostname: purpose-built,
-never touches the network, full request and response available.
+A general socket transport from guest to host can become a generic tunnel by
+accident. The SDK deliberately provides no such transport, and Corb does not
+add one. Host callbacks use an `onRequest` short-circuit against a sentinel
+hostname. This purpose-built mechanism exposes the full request and response
+without network traffic.
 
 The invariant that keeps this from re-becoming the previous rule's problem: the
 host executes only its own fixed, versioned check functions. It may feed
@@ -57,37 +52,34 @@ supplies as code, in any form, over any transport.
 
 ### Allowlist, never blocklist, for anything with a CLI-sized surface
 
-A blocklist over a tool the size of `git` or `gh` cannot be completed. Blocking
-five git subcommands leaves `--git-dir`, `--work-tree`, `remote add`, `push` to
-an arbitrary URL, `svn`, `daemon`; blocking `gh auth` leaves `gh api` with the
-entire REST surface including `PUT` and `DELETE`. Enumerating what is permitted
-is finite; enumerating what is forbidden is not.
+A blocklist cannot cover the full surface of `git` or `gh`. Blocking five git
+subcommands still leaves `--git-dir`, `--work-tree`, `remote add`, and `push` to
+an arbitrary URL. It also leaves `svn` and `daemon`. Blocking `gh auth` leaves
+`gh api` and its REST surface, such as `PUT` and `DELETE`. An allowlist names
+the finite permitted set.
 
-Wherever Corb must be non-exhaustive (see the local command gate in §4), it is
-because the failure mode of a miss is bounded to "the guest does something to
-itself", never "the host does something on the guest's behalf".
+Corb can use incomplete checks only when a miss affects the guest itself (§4).
+A miss must never make the host act on the guest's behalf.
 
 ### Credentials never enter the guest
 
-The model API key, the GitHub token and any SSH private key stay on the host.
-Secrets are bound host-side via `createHttpHooks({ secrets })`, so the guest's
-environment holds only an opaque placeholder and the substitution happens on the
-wire, for allowed hosts only. The real value is not in guest environment,
-memory, or disk, so a compromised guest cannot read it out and prompt injection
-cannot exfiltrate it.
+The model API key, the GitHub token and SSH private keys stay on the host.
+`createHttpHooks({ secrets })` binds secrets host-side. The guest environment
+holds only opaque placeholders. The host substitutes each real value on the
+wire for allowed hosts only.
 
-This is the property that mapped raw TCP would forfeit, which is why Corb does
-not use it.
+The real value never enters guest environment, memory, or disk. A compromised
+guest therefore cannot read or exfiltrate it through prompt injection.
+
+Mapped raw TCP forfeits this property, so Corb does not use it.
 
 ### Guest paths are validated host-side after normalisation
 
-Translating a guest path to a host path by string-prefix substitution, without
-re-checking containment on the result, is a traversal bug:
-`/work/repo/../../../../etc` prefixes cleanly and resolves to `/etc`. Every
-guest-supplied path that reaches host code is normalised first and then
-re-checked for containment in its mount root, and the same discipline applies
-inside the filesystem policy layer, where the check must run against the
-resolved path and not the requested one (§3).
+String-prefix substitution alone cannot safely translate a guest path to a host
+path. `/work/repo/../../../../etc` has the expected prefix but resolves to
+`/etc`. Corb normalises every guest-supplied path before host code uses it.
+It then checks that the result stays within its mount root. Filesystem policy
+also checks the resolved path (§3).
 
 ---
 
@@ -96,11 +88,10 @@ resolved path and not the requested one (§3).
 The SDK provides no in-guest hardening of any kind and assumes a root guest
 throughout. That makes the guest's privilege posture entirely Corb's problem.
 
-Corb runs the agent as **`agent`, uid 1000, gid 1000, home `/home/agent`**, with
-`NoNewPrivs=1` and no supplementary groups. The mechanism is a small setuid-free
-helper installed in the image and used as the `vm.exec` target, so that the drop
-happens in the exec'd process itself rather than depending on any in-guest init
-script cooperating.
+Corb runs the agent as **`agent`, uid 1000, gid 1000, home `/home/agent`**.
+The process has `NoNewPrivs=1` and no supplementary groups. A small setuid-free
+helper in the image serves as the `vm.exec` target. The helper drops privileges
+in the target process itself. It does not depend on a guest init script.
 
 ```go
 // cmd/dropcap/main.go — the exec target for the agent process.
@@ -181,17 +172,9 @@ func main() {
 
 Three details in that listing are the whole point of it:
 
-- **`setgroups(nil)` is not optional.** Without it the drop is cosmetic for any
-  group root belongs to.
-- **The failure path must exit non-zero.** `syscall.Exec` only returns on
-  failure. A helper that ignores the return value and falls off the end of
-  `main` exits 0, so a target binary that does not exist looks like a session
-  that ran and succeeded. 127 for not-found and 126 otherwise matches shell
-  convention.
-- **The group and id calls come from the `syscall` package**, whose Linux
-  implementations apply the change across every OS thread, rather than the raw
-  single-thread variants in `golang.org/x/sys/unix`. Go programs are
-  multi-threaded before `main` runs, so the distinction is real.
+- **`setgroups(nil)` is required.** Without it, the process keeps root's supplementary group memberships.
+- **The failure path must exit non-zero.** `syscall.Exec` returns only on failure. Exit 127 means not found, and 126 means another execution failure.
+- **The group and id calls come from `syscall`.** Its Linux implementations apply the change across every OS thread. The raw `golang.org/x/sys/unix` variants affect one thread, but Go creates several before `main`.
 
 Wiring:
 
@@ -205,42 +188,31 @@ proc.attach(process.stdin, process.stdout, process.stderr);
 
 ### What this does and does not bound
 
-It bounds **the agent's process tree** — the exec'd process and everything it
-spawns. It is not "the only process in the image that runs as root", and
-claiming so would be wrong: the SDK's own `/init` (PID 1), `sandboxd`,
-`sandboxfs`, `sandboxssh` and `sandboxingress` all run as root for the entire
-lifetime of the VM, and the host control plane depends on them doing so. There
-is no supported way to change that.
+The helper drops privileges for **the agent's process tree**: the target process
+and all its children. The SDK's `/init` (PID 1), `sandboxd`, `sandboxfs`,
+`sandboxssh` and `sandboxingress` stay root for the VM's lifetime. The host control plane depends
+on them, and the SDK provides no supported way to change this.
 
-So the guarantee is precise but narrow: nothing the agent runs holds
-capabilities or can regain them via a setuid binary. Anything that escalates
-would have to first find a bug in the SDK's guest daemons.
+Nothing the agent runs holds capabilities or can regain privileges through a
+setuid binary. Escalation requires a bug in the SDK's guest daemons.
 
 ### Supporting measures in the image
 
-- Remove `su` and `sudo` from the image at build time. Cheap, and a second layer
-  if the privilege drop is ever bypassed.
-- **Build-time SUID gate**: fail the image build if the rootfs contains any SUID
-  binary outside an explicit expected set. `NoNewPrivs=1` already neuters SUID
-  for the agent's tree, but the gate catches an unexpected one arriving via a
-  base-image bump.
-- Make `npm` and `npx` non-executable. The agent does not need them at runtime
-  and they are a package-execution surface.
+- Remove `su` and `sudo` at image build time. If privilege dropping fails, their absence provides another barrier.
+- **Build-time SUID gate**: reject unexpected SUID binaries. If the rootfs contains a SUID binary outside the expected set, fail the build. `NoNewPrivs=1` already blocks SUID elevation for the agent's tree. The gate catches unexpected additions after a base-image bump.
+- Make `npm` and `npx` non-executable. The agent needs neither at runtime, and both can execute packages.
 
 ---
 
 ## 3. Filesystem policy
 
-Workspace directories are mounted at `/work/<name>`, one mount-table entry per
-directory. There is no symlink shuffling and no in-guest setup step; the mount
-table is the whole story.
+Each workspace directory has one mount-table entry at `/work/<name>`. The mount
+table supplies this layout without symlink shuffling or a guest setup step.
 
-Policy is enforced by a custom `VirtualProvider` that decorates the real
-provider. It has to be a provider rather than a VFS hook, because the SDK's VFS
-hooks return `void` and cannot deny anything. `ShadowProvider` is close but not
-sufficient: it is a redirect-or-deny-writes primitive with no way to hide a path
-or deny a read, and the predicate helper it ships with supports only exact-path
-and prefix matching.
+A custom `VirtualProvider` decorates the real provider and enforces policy.
+VFS hooks return `void` and cannot deny an operation. `ShadowProvider` can
+redirect or deny writes but cannot hide paths or deny reads. Its predicate
+helper supports only exact-path and prefix matching.
 
 ### Rule model
 
@@ -256,6 +228,24 @@ export interface GlobRule {
 
 Rules are evaluated in order and first match wins.
 
+Every read/write mount gets built-in Git `deny-write` rules before user rules,
+even when no repository exists at startup. The computed `builtin-rules` field
+on `DirConfig` holds them separately from `rules`. The merge rebuilds this
+field from the final mode and `protect-git` flag. TOML cannot set it.
+Read-only mounts get an empty list because `ReadonlyProvider` already blocks
+writes. `protect-git` defaults to true and can be disabled per `[[dir]]`.
+
+The rules cover the root `.git` entry, config files and locks, hooks, and
+`commondir`, plus metadata under `.git/modules/**` and `.git/worktrees/*`.
+They do not start with `**/`, so unrelated directory renames remain available.
+See the [exact rule list](configuration.md#built-in-git-protection) and
+[security limits](security.md#git-metadata-protection).
+
+Trust compares built-in rules like user rules, with an absent list treated as
+empty. Adding these rules preserves old trust records. Removing them or
+disabling `protect-git` requires confirmation. User rules keep their own
+append-only comparison. `corb explain` shows the two lists separately.
+
 ```ts
 new GlobPolicyProvider(new RealFSProvider(hostPath), [
   { glob: "**/.env",       mode: "hidden",     reason: "local secrets file" },
@@ -266,15 +256,11 @@ new GlobPolicyProvider(new RealFSProvider(hostPath), [
 ], onDeny)
 ```
 
-A glob is always matched against a path relative to its own directory's
-root, with no leading or trailing `/` — every example above follows that
-convention. That is not a style preference, it is the contract a compiled
-glob is tested against (`src/vfs/policy.ts`'s `matchRule`), so a
-`[[dir]].rules[]` glob spelled with a leading `/`, a trailing `/`, or an
-embedded `//` can never match a real path. `toGlobRules` (`src/vm/
-session.ts`) rejects such a glob at config-validation time, before any VM
-boots, rather than silently mounting a rule that looks active — `corb
-explain` would show it — while matching nothing.
+Corb matches each glob against a path relative to its directory's root, without
+leading or trailing `/`. `matchRule` in `src/vfs/policy.ts` requires this form.
+A glob with leading `/` or trailing `/` cannot match a real path. Embedded `//` also prevents matches.
+`toGlobRules` in `src/vm/session.ts` rejects them before any VM boots.
+Otherwise `corb explain` can show an apparently active rule that matches nothing.
 
 ### Semantics matrix
 
@@ -288,100 +274,80 @@ explain` would show it — while matching nothing.
 | `writeFile` / `appendFile` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
 | `mkdir` / `rmdir` / `unlink` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
 | `rename`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
-| `rename` of a directory containing a matched path | allow | `EACCES` | `EACCES` | `EACCES` | `EACCES` |
+| directory `rename` from or into a subtree a rule may match | allow | `EACCES` | `EACCES` | `EACCES` | `EACCES` |
 | `copyFile` source | allow | allow | `EACCES` | `ENOENT` | allow |
 | `copyFile` destination | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
 | `link` / `symlink`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
 
-`deny-read` implies deny-write. A path the agent must not read but may
-overwrite is worse than useless: it is blind-clobberable, and losing the content
-is a worse outcome than reading it. There is no mode that denies reads while
+`deny-read` also denies writes. Allowing blind overwrites of unreadable files
+lets the agent destroy content it cannot inspect. No mode denies reads while
 permitting writes.
 
-`hidden` reports `ENOENT` rather than `EACCES` everywhere, and is filtered out
-of directory listings, so the path does not merely fail to open — it does not
-appear to exist.
+`hidden` reports `ENOENT` rather than `EACCES` and removes paths from directory
+listings. A hidden path appears absent.
 
-`shadow-write` lets every operation appear to succeed from the guest's point of
-view, but anything that would mutate the real backend — a write, a create, a
-directory removal, a rename endpoint, a copy destination, a link or symlink
-endpoint — is redirected instead to ephemeral, session-scoped storage
-(`ShadowProvider(writeMode: "tmpfs")`) and never reaches the real file. Reads,
-`stat`, and directory listings keep reflecting the real backend unchanged.
-`link`/`symlink` are shadowed rather than merely allowed even though one of
-`link`'s two arguments is nominally a read: letting the call reach the real
-backend would create a second, real name for the same inode that no rule
-covers, and a write through that name would land on the real backend for real,
-defeating the redirect. Renaming a directory that contains a shadow-write path
-is denied outright, not shadowed, for the same reason it is denied under every
-other mode: relocating the subtree would move it out from under its own rule,
-so the next write to it would no longer be shadowed at all.
+`shadow-write` redirects mutations into ephemeral, session-scoped storage
+(`ShadowProvider(writeMode: "tmpfs")`). It covers writes, creates, directory
+removals, rename endpoints, copy destinations, links and symlinks. These
+operations do not change the real file. Reads, `stat`, and listings still
+reflect the unchanged real backend.
 
-`deny-write` still permits reads, deliberately. The agent can read a test file
-to understand what is expected of the code; it just cannot edit or create one.
+Both link endpoints need shadowing. A real link creates another name for a
+protected inode, so a write through that name can bypass the redirect.
+Directory renames that affect possible rule matches fail with `EACCES` under
+every mode. Otherwise the rename can move a subtree beyond its rule and expose
+it to later writes.
+
+`deny-write` permits reads. The agent can read a test file to understand the
+expected behavior, but cannot edit or create one.
 
 ### The three things that make it actually hold
 
-Path-shaped policy is easy to write and easy to write *wrong*. Three
-requirements, each closing a bypass:
+Path rules need three checks to prevent bypasses.
 
-**1. Check the resolved path, not just the requested one.** Every check runs
-twice: once against the normalised request path, and once against
-`realpath()` of that path (or of its parent, for operations that create). Without
-this, `ln -s .env decoy && cat decoy` defeats every rule in the table, because
-`decoy` matches nothing. `ShadowProvider` gets this right by default via
-`denySymlinkBypass`; a hand-rolled provider that checks only the requested path
-silently loses it.
+**1. Check both the requested and resolved paths.** Each operation checks the
+normalised request, then its `realpath()`. Create operations resolve the parent
+instead. Without this check, `ln -s .env decoy && cat decoy` bypasses rules
+because `decoy` matches nothing. `ShadowProvider` provides the same check
+through `denySymlinkBypass`.
 
-**Fail closed when `realpath` errors.** An `ENOENT` from `realpath` on a
-create-path is expected and fine. Any other error — `ELOOP`, `EACCES`, a
-provider fault — must deny the operation. A resolver that cannot answer is not
-evidence that the path is safe.
+**Fail closed when `realpath` errors.** A create operation can encounter an
+expected `ENOENT` when its parent does not exist. Any other error, such as
+`ELOOP`, `EACCES`, or a provider fault, must deny the operation. A failed
+resolver does not establish that the path is safe.
 
-**2. Gate `link()` and `symlink()` at creation time.** `realpath` does not help
-against hard links: after `link("secret", "decoy")`, `decoy` is a genuinely
-equal name for the same inode and resolves to itself. The only place to stop it
-is at creation. Both endpoints of `link` and `symlink` are therefore checked,
-which is why they appear in the matrix.
+**2. Gate `link()` and `symlink()` at creation time.** Hard links resolve to
+themselves, so `realpath` cannot identify their aliases. After
+`link("secret", "decoy")`, the new name reaches the same inode. Corb checks
+both endpoints during link creation to prevent that bypass.
 
-**3. Treat directory `rename` as covering its subtree.** Renaming
-`repo/secrets` to `repo/tmp` relocates every path under it out of the reach of a
-`**/secrets/**` rule in one operation. A `rename` whose source is a directory
-must be denied if any rule could match inside it. The conservative
-implementation — deny a directory rename when any configured rule's glob could
-match a path under the source — is cheap and correct; a precise one requires
-walking the subtree.
+**3. Treat directory `rename` as covering its subtree.** A rename from
+`repo/secrets` to `repo/tmp` moves its contents beyond a `**/secrets/**` rule. Renaming a prepared directory into
+`config` can also bypass a `config/*.json` rule. If the source is a directory,
+deny the rename when any rule can match under its source or destination.
+Check the destination's requested path and its resolved parent path. This
+conservative check needs no subtree walk.
 
 ### Path aliasing
 
-The SDK exposes a guest-wide `fuseMount` (default `/data`) under which every
-mounted path is *also* reachable — but that alias never reaches corb's own
-`VirtualProvider` code, and so needs no handling in `normalizeGuestPath` or
-anywhere else in `src/vfs/`. The SDK's `MountRouterProvider` is the thing that
-actually dispatches a FUSE request to a mount's provider, and it does so with
-the path already made relative to that mount, before corb's code ever sees it
-— a request that arrived at the guest kernel as `/data/work/repo/.env` reaches
-corb's provider as `/work/repo/.env` (or, per how corb structures its own
-mounts, `/mnt/corb-raw/<name>`-relative) exactly the same as one that arrived
-as `/work/repo/.env` directly. There is no second, `/data`-prefixed spelling
-for rule matching to worry about.
+The SDK's guest-wide `fuseMount` (default `/data`) exposes every mounted path
+through another name. `MountRouterProvider` strips the mount prefix before it
+calls Corb's provider. Thus `/data/work/repo/.env` reaches the provider with the
+same mount-relative path as `/work/repo/.env`. Corb's raw mounts follow the same
+rule under `/mnt/corb-raw/<name>`. No `/data`-prefixed alias reaches
+`normalizeGuestPath` or other code in `src/vfs/`.
 
-An earlier revision of `normalizeGuestPath` stripped a `/data` prefix on the
-theory that this aliasing needed defending against here. It didn't: the strip
-had no legitimate input to fire on (the alias never arrives), so its only live
-effect was on a workspace with a real top-level directory named `data` —
-`/data/secrets/**` normalized down to `/secrets/...`, missing every rule
-written for it, and `.env` spuriously matched `/data/.env`. That code has been
-removed; see `src/vfs/glob.ts`'s `normalizeGuestPath` for the corrected
-(slash-normalization-only) behavior.
+An earlier `normalizeGuestPath` stripped `/data` unnecessarily. That broke
+workspaces with a real top-level `data` directory: `/data/secrets/**` became
+`/secrets/...`, and `.env` incorrectly matched `/data/.env`. Corb removed the
+strip. `normalizeGuestPath` in `src/vfs/glob.ts` now only normalises slashes.
 
 ### Why this is the strong layer
 
-The enforcement point is host JavaScript, below the guest kernel's view of the
-filesystem. It applies to the agent's edit tools, to its shell tool, to a
-compiler writing an output file, to anything at all in the guest — because there
-is no real filesystem underneath the mount for a guest process to fall back to.
-This is the layer to put static rules in.
+Host JavaScript enforces these rules below the guest kernel's filesystem view.
+The same checks cover edit tools, shells, compilers, and every other guest
+process. No alternative real filesystem exists beneath the mount. Static rules
+belong at this layer.
 
 Verification item: confirm that `VirtualProviderClass` delegates unoverridden
 methods correctly before relying on a partial override (`gondolin-notes.md`
@@ -393,28 +359,24 @@ R13).
 
 Command filtering uses a shim installed in the image before a selected guest
 tool. The shim checks the invocation before running the real binary. This
-pattern can be extended to other commands; the shipped implementation below
+pattern can be extended to other commands. The shipped implementation below
 supports `git` and `gh`.
 
-git and `gh` run in the guest, so a policy table in front of them is a
-convenience layer, not a security boundary. Being clear about that is what makes
-it safe to have one at all: the worst case of a bypass is the guest doing
-something to itself, as an unprivileged user, with no real credentials present.
-The actual enforcement for anything that leaves the guest is `ssh.execPolicy`
-for git over SSH and the HTTP allowlist plus secret binding for `gh` — plus, as
-a third, distinct enforcement point alongside those two (not a replacement for
-either), `gitHttpGate` (`src/vm/githttp.ts`), which applies the same
-`git.allow-repos`/`git.allow-push` rules to git's smart-HTTP protocol over
-HTTPS.
+git and `gh` run in the guest. Their local policy table provides convenience,
+not a security boundary. A bypass affects an unprivileged guest process with
+no real credentials.
 
-The gate exists for two reasons: to fail fast and legibly on operations that
-never leave the guest (local config edits, history rewriting), and to be the
-launch point for the content checks in §5.
+Host-side `ssh.execPolicy` controls Git over SSH. The HTTP allowlist and secret
+bindings control `gh`. A third check, `gitHttpGate` in `src/vm/githttp.ts`,
+applies `git.allow-repos` and `git.allow-push` to Git's smart-HTTP protocol over
+HTTPS. It supplements the other enforcement points.
 
-The stock image shadows exactly two binaries on `PATH`. It does **not** replace
-`/bin/sh`. Replacing the shell means hand-parsing shell syntax, which is a large
-amount of fragile code that buys nothing here, since there is no host round-trip
-to intercept before.
+The gate gives fast, readable errors for local operations such as config edits
+and history rewriting. It also launches the content checks in §5.
+
+The stock image shadows exactly two binaries on `PATH`. It does not replace
+`/bin/sh`. A shell replacement requires a fragile shell parser and adds no
+benefit because these operations have no host round-trip to intercept.
 
 ```
 /usr/local/bin/git      -> policygate
@@ -423,13 +385,15 @@ to intercept before.
 /usr/local/libexec/real-gh
 ```
 
-Named `real-git`/`real-gh`, not `git-real`/`gh-real`: git's own `cmd_main()`
-strips a literal `git-` prefix from its invoked basename and dispatches the
-remainder as a builtin (the mechanism behind `git-upload-pack`/
-`git-receive-pack`/`git-shell`), so a binary renamed to `git-real` fails
-immediately with `fatal: cannot handle real as a builtin` — confirmed against
-a real booted image. `real-gh` matches for naming symmetry even though `gh`
-doesn't share that convention.
+The names `real-git` and `real-gh` avoid git's `cmd_main()` convention.
+Git strips a `git-` prefix from its invoked basename and dispatches the
+remainder as a builtin. This supports names such as `git-upload-pack`,
+`git-receive-pack`, and `git-shell`.
+
+A binary named `git-real` therefore fails with
+`fatal: cannot handle real as a builtin`. A real VM boot confirmed this.
+The name `real-gh` follows the same pattern for consistency, although `gh`
+does not share that convention.
 
 ```go
 type toolPolicy struct {
@@ -459,38 +423,26 @@ var policies = map[string]toolPolicy{
 }
 ```
 
-Flow: resolve the tool from `argv[0]`, then resolve the actual subcommand by
-walking past any leading flags on that tool's `allowedGlobalFlags`
-(`ResolveSubcommand`, `guest/internal/gate/policy.go`) — git and `gh` both
-accept a global-flag-before-subcommand form, e.g. `git --no-pager commit`, so
-the subcommand is not always `argv[1]`. Consult the table using that resolved
-subcommand, run any content check attached to it, then `exec` the real binary
-in-guest as the same unprivileged user. The gate never asks the host to
-execute anything.
+Flow: resolve the tool from `argv[0]`. Walk past leading flags in that tool's
+`allowedGlobalFlags` to find its subcommand (`ResolveSubcommand` in
+`guest/internal/gate/policy.go`). Git and `gh` accept flags before subcommands,
+as in `git --no-pager commit`. The subcommand is therefore not always `argv[1]`.
+
+Consult the table for the resolved subcommand and run any attached content
+check. Then `exec` the real binary in the guest as the same unprivileged user.
+The gate never asks the host to execute anything.
 
 ### Extending command coverage
 
 Adding a command filter is an image and runtime change today:
 
-1. Install the real tool and its shim in the image. The current wiring is in
-   [`image/corb-image.json`](../image/corb-image.json).
-2. Extend `ToolFromInvocation` in
-   [`guest/internal/gate/policy.go`](../guest/internal/gate/policy.go) and the
-   host-generated `GATE_CONFIG` in
-   [`src/vm/session.ts`](../src/vm/session.ts). Tool dispatch currently rejects
-   every basename except `git` and `gh`. Adapt the argument checks to the new
-   tool's syntax; the existing logic resolves subcommands after an allowlist of
-   value-less global flags.
-3. If the tool needs an out-of-guest content check, add its collector and
-   `GatedHook` dispatch, and extend the host request contract and validation in
-   [`src/policy/checks.ts`](../src/policy/checks.ts) and
-   [`src/policy/sentinel.ts`](../src/policy/sentinel.ts). The host currently
-   accepts only `git.commit` and `git.push` operations.
+1. Install the real tool and its shim in the image. See [`image/corb-image.json`](../image/corb-image.json).
+2. Extend `ToolFromInvocation` in [`guest/internal/gate/policy.go`](../guest/internal/gate/policy.go) and the host's `GATE_CONFIG` in [`src/vm/session.ts`](../src/vm/session.ts). Dispatch currently rejects every basename except `git` and `gh`. Adapt the checks to the new tool's arguments. The existing logic allows only value-less global flags before the subcommand.
+3. If the tool needs a content check, add its collector and `GatedHook` dispatch. Extend host validation in [`src/policy/checks.ts`](../src/policy/checks.ts) and [`src/policy/sentinel.ts`](../src/policy/sentinel.ts). The host currently accepts only `git.commit` and `git.push`.
 
-A symlink to `policygate` alone does not add support for another command. There
-is no user configuration for per-tool argument policies. Shims remain a
-convenience layer; host-side filesystem and network rules cover the processes
-that invoke real binaries directly or use tools with no shim.
+A symlink to `policygate` alone does not add command support. Corb has no user
+configuration for per-tool argument policies. Shims provide convenience.
+Host-side filesystem and network rules cover real binaries and tools with no shim.
 
 ### Exit codes
 
@@ -499,50 +451,39 @@ that invoke real binaries directly or use tools with no shim.
 | `86` | Denied by the local policy table |
 | `87` | Denied by an out-of-guest content check |
 
-`126` would be a poor choice for either: POSIX shells already use it for "command
-found but not executable", so a policy denial would be indistinguishable from a
-permissions problem in a transcript. `86` and `87` are unused by shells and by
-git, so both an agent reading its own tool output and a human reading a log can
-grep for them and know unambiguously what happened.
+POSIX shells use `126` for "command found but not executable". Reusing it
+makes policy denials look like permissions problems. Shells and git do not use
+`86` or `87`, so agents and users can identify these denials in logs.
 
-The table can afford to be *stricter* than a security-critical one would dare
-— including duplicating restrictions that `onRequest` also enforces host-side
-— so failures surface instantly and readably rather than as a generic 403
-several network hops later. But a gap here is not merely a local-table
-bypass: `commit`/`push`'s out-of-guest content check (§5) is dispatched from
-the *same* resolved subcommand the local table matches on (`GatedHook`), so a
-subcommand-resolution gap that hides the subcommand from the local check also
-hides it from the content check. `git -C /path commit` is the concrete case
-found in review: git's own global-flag-before-subcommand form shifts the
-subcommand out of `args[0]` entirely, and an earlier version of this gate
-tried to close that by listing `-C`, `--git-dir`, and `--work-tree` in
-`blockedFlags` — a blocklist of the specific flags its authors had thought to
-enumerate, which did not generalize to the many other global flags git
-accepts in that same position (`--no-pager`, `--bare`,
-`--literal-pathspecs`, and more), each an equally valid bypass of both the
-local table and the content check.
-The actual fix is `allowedGlobalFlags`/`ResolveSubcommand`: an allowlist
-(ADR 0005) of the value-less flags permitted to precede the subcommand, so
-the resolved-subcommand check above sees `"commit"` regardless of which
-allowed flag preceded it, and any other leading flag is denied by
-construction rather than by enumeration. `-C`, `--git-dir`, and `--work-tree`
-still stay listed in `blockedFlags` too, as redundant defense-in-depth — they
-retarget which repository or config file git reads, so this table denies
-them outright on top of them also failing the allowlist independently — but
-`blockedFlags` is no longer what closes the argv-shifting gap itself. See
-`ResolveSubcommand`'s doc comment in `guest/internal/gate/policy.go` for the
-exact flag-walking/allowlist rules, and `CheckLocal`'s doc comment there for
-how the two mechanisms are ordered against each other, including how a short
-flag's glued-value spelling (`-C/path`, not just `-C /path`) is still
-covered by `blockedFlags`.
+The table can duplicate host-side `onRequest` restrictions to give immediate,
+readable errors instead of a later generic 403. But subcommand resolution also
+controls content checks. `GatedHook` dispatches `commit` and `push` from the
+same resolved subcommand that the local table uses. If resolution misses a
+subcommand, both checks miss it.
+
+Review found this problem with `git -C /path commit`. Leading global flags move
+the subcommand beyond `args[0]`. The old `blockedFlags` list named `-C`,
+`--git-dir`, and `--work-tree`. It missed other valid leading flags such as
+`--no-pager`, `--bare`, and `--literal-pathspecs`. Each omission bypassed both
+checks.
+
+`allowedGlobalFlags` and `ResolveSubcommand` fix this with an allowlist
+(ADR 0005). Only listed value-less flags can precede the subcommand. The gate
+therefore sees `commit` after every allowed leading flag and rejects all others.
+`blockedFlags` still rejects `-C`, `--git-dir`, and `--work-tree` because they
+retarget the repository or config file.
+
+`blockedFlags` no longer closes the argument-shifting gap. See
+`ResolveSubcommand` in `guest/internal/gate/policy.go` for flag handling.
+`CheckLocal` documents the order of the two checks and their handling of glued
+values such as `-C/path`.
 
 ---
 
 ## 5. Out-of-guest content checks
 
-Some policy needs to see content, not paths: a secret pasted into a diff, a
-commit spanning eighty files. That check has to run on the host, because the
-guest can trivially skip anything that runs in the guest.
+Some policy needs content: a secret in a diff or a commit that spans 80 files.
+These checks run on the host because the guest can skip guest-side checks.
 
 There is no guest→host RPC, so the transport is an `onRequest` short-circuit
 against a sentinel hostname:
@@ -551,13 +492,13 @@ against a sentinel hostname:
 policy.corb.invalid
 ```
 
-`.invalid` is reserved by RFC 2606 and can never resolve, so if the
-short-circuit is ever removed the request fails to connect rather than leaking
-the payload to a real host. The hostname is added to `allowedHosts` so it is not
-dropped before the hook sees it; it never leaves the host process either way.
+RFC 2606 reserves `.invalid`, which never resolves. If the short-circuit is
+removed, requests fail to connect instead of leaking the payload. Corb adds the
+hostname to `allowedHosts` so requests reach the hook. They never leave the host
+process.
 
-**Never bind a secret to the sentinel host.** Secrets may already be expanded by
-the time `onRequest` runs, and this handler reads and logs its request body.
+**Never bind a secret to the sentinel host.** The host can expand secrets
+before `onRequest` runs. This handler reads and logs the request body.
 
 ### Host side
 
@@ -573,48 +514,36 @@ export interface Violation {
 }
 ```
 
-The handler dispatches on hostname inside the same `onRequest` used for the
-outbound allowlist, and returns a synthetic `Response` without touching the
-network. Reading the body with `await req.json()` is sound here: `onRequest`
-receives a full WHATWG `Request` (`gondolin-notes.md` R16).
+The handler dispatches on hostname inside the outbound allowlist's `onRequest`.
+It returns a synthetic `Response` without network traffic. `onRequest` receives
+a full WHATWG `Request`, so `await req.json()` can read its body
+(`gondolin-notes.md` R16).
 
-The checks themselves are fixed functions versioned in Corb's own repository:
-secret-shaped patterns in the diff, a changed-file-count ceiling, path rules
-duplicated from §3 as a second look on the content path. None of them are
-guest-configurable, and none of them shell out to anything constructed from the
-payload. A check that runs a fixed formatter over supplied text is fine; a check
-that evaluates supplied text is the exact failure this whole design avoids.
+Corb versions the checks as fixed functions in its repository. They check
+secret-shaped patterns, changed-file counts, and path rules (§3). The guest
+cannot configure these functions. They never construct shell commands from the
+payload. Running a fixed formatter over supplied text is safe, but evaluating
+supplied text violates the design.
 
 ### The handler is talking to an adversary
 
 The guest can loop on this endpoint, send a gigabyte, or send garbage. Three
 things are load-bearing:
 
-- **Body-size cap.** Reject anything over a fixed limit (256 KiB is generous for
-  a diff) by `Content-Length` *and* by counting bytes as the body streams, since
-  the header is guest-supplied. Reject with a denial, not a parse error. Note
-  this path is HTTP, so the VFS `MAX_RPC_DATA` limit of 60 KiB does not apply;
-  the cap is Corb's own choice. The guest-side collector truncates the diff well
-  below the cap so the cap is only ever reached by something misbehaving.
-- **Field-by-field shape validation.** After parsing, check that `op` is one of
-  the two literals, that `changedFiles` is an array of strings within a length
-  and count bound, and that `diff` is a string. Do not pass an unvalidated
-  parsed object into check functions, and do not reflect any of it into the
-  response.
-- **Rate limit.** A fixed budget of checks per session with a token bucket.
+- **Body-size cap.** Reject bodies over 256 KiB. Check both `Content-Length` and streamed byte counts because the guest controls the header. Return a denial rather than a parse error. This HTTP path does not use VFS's 60 KiB `MAX_RPC_DATA` limit. The guest collector truncates diffs below Corb's cap, so normal requests stay under it.
+- **Field-by-field shape validation.** Accept only the two `op` literals. Check that `changedFiles` is a string array within length and count bounds, and `diff` is a string. Validate before calling check functions. Do not reflect payload fields in the response.
+- **Rate limit.** Use a token bucket with a fixed budget of checks per session.
 
 ### Failure behaviour
 
-An unreachable or erroring check service **fails open**: the operation proceeds
-and the audit log records loudly that the check did not run. The reasoning is
-that this is a second layer over §3's kernel-facing rules, and an operator's
-mistake in the check service should not silently stop the agent from working.
+An unreachable or erroring check service **fails open**. The operation proceeds,
+and the audit log records that the check did not run. This check supplements
+§3's filesystem rules. An operator's check-service mistake must not silently
+stop the agent.
 
-**But a rate-limit rejection is a denial, not an infrastructure error.** If it
-were treated as an infrastructure error, the guest could deliberately exhaust
-the budget to obtain fail-open on demand, which converts the convenience into a
-bypass. The guest-side gate must distinguish the two responses and exit `87` on
-a rate-limit rejection.
+**A rate-limit rejection is a denial.** Treating it as an infrastructure error
+lets the guest exhaust the budget to trigger fail-open behavior. The guest gate
+must distinguish these responses and exit `87` for a rate-limit rejection.
 
 ### Error output
 
@@ -634,9 +563,9 @@ git commit: blocked by corb policy (2 issues)
 exit 87
 ```
 
-Each violation names a rule, optionally a file, a reason, and a hint about what
-to do instead. An agent that gets a bare non-zero exit will retry the same thing;
-one that gets a hint will do something else.
+Each violation names a rule, an optional file, a reason, and a hint. A bare
+non-zero exit encourages repeated attempts. A hint tells the agent what to
+change.
 
 ### Division of labour with the filesystem layer
 
@@ -644,16 +573,15 @@ They are complementary, not redundant:
 
 | | §3 filesystem policy | §5 content checks |
 |---|---|---|
-| Enforces | *where* — is this path writable at all | *what* — is this specific change acceptable |
+| Enforces | *where*: is this path writable | *what*: is this change acceptable |
 | Sees | one path at a time | the whole staged diff or push range |
-| Bypass surface | none; kernel-facing, every process | only tools routed through the gate |
+| Bypass surface | none, kernel-facing for every process | only tools routed through the gate |
 | Good for | static path rules | content rules (secrets in a diff, commit size) |
 | On failure | fails closed | fails open, except rate limiting |
 
-Static, path-shaped rules belong in §3. Content-shaped rules belong in §5. Using
-one mechanism for both would either force path rules to see file content, which
-they cannot, or force content checks to enumerate every path up front, which
-they should not have to.
+Static path rules belong in §3, and content rules belong in §5. Combining them
+forces path rules to inspect content or content checks to enumerate every path.
+Neither is appropriate.
 
 ---
 
@@ -673,14 +601,13 @@ A fifth channel is Corb's own rather than the SDK's:
 
 | Channel | Source |
 |---|---|
-| `session` | `runSession()` itself — one line per session lifecycle transition |
+| `session` | `runSession()` itself, one line per session lifecycle transition |
 
-`session` records `start` before anything is booted (so a pre-boot validation
-failure still lands in the log), `exit:<code>` on a normal end, `error` on an
-abnormal one, and `watchdog-expired` when the wall-clock limit in §7 fires. It
-exists because none of the four SDK-derived channels can say whether a session
-began at all, and a log of policy decisions with no record of the run they
-belong to is hard to read after the fact.
+`session` records `start` before boot, so pre-boot validation failures appear in
+the log. It records `exit:<code>` for normal endings, `error` for abnormal ones,
+and `watchdog-expired` for §7's wall-clock limit. The other four channels cannot
+show whether a session began. These lifecycle events connect policy decisions
+to their run.
 
 Corb writes all five to one JSONL file with one schema:
 
@@ -695,29 +622,24 @@ interface AuditEvent {
 }
 ```
 
-Timestamps come from the host clock, not the guest, and the file is written by
-the host process to a location the guest has no mount for. The guest cannot
-forge, reorder or truncate it.
+The host clock supplies timestamps, and the host process writes the file outside
+every guest mount. The guest cannot forge, reorder, or truncate it.
 
-Each event is written to disk (`fs.writeSync` on an append-mode fd) as soon
-as it is recorded, not buffered in memory for a later flush. An earlier
-version buffered and required an explicit flush, on the reasoning that
-batching writes is cheaper — true, but beside the point for a log whose job
-is to still be trustworthy after something has gone wrong: buffering meant a
-`SIGKILL`, an OOM kill, or any abnormal exit that skipped the normal shutdown
-sequence discarded the *entire session's* log, including whatever triggered
-the kill. A guest could also force that outcome deliberately — loop a denied
-operation to grow the unbounded in-memory buffer, which was a host-memory DoS
-on top of the log-loss problem. `subject`/`reason` are additionally capped in
-length (`MAX_SUBJECT_BYTES`/`MAX_REASON_BYTES`, `src/policy/audit.ts`), since
-several channels build `subject` from guest-controlled input (a VFS path, an
-HTTP path) and an unbounded string is the same guest-driven growth problem in
-miniature. The log file is created `0600` and its directory `0700` — an
-existing, more permissive log file is tightened to `0600` on first use too.
+Corb writes each event immediately with `fs.writeSync` on an append-mode file
+descriptor. It does not buffer events for a later flush. An earlier version
+buffered events to reduce write costs. A `SIGKILL`, OOM kill, or other abnormal
+exit then lost the entire session log, even the event that caused the kill.
 
-The in-guest gate has no durable log of its own by design; its outcomes are
-recorded on the host when the sentinel handler runs. Local table denials that
-never reach the host are best-effort and are reported on stderr only.
+The unbounded buffer also let a guest exhaust host memory by repeating denied
+operations. `subject` and `reason` now have length caps
+(`MAX_SUBJECT_BYTES` and `MAX_REASON_BYTES` in `src/policy/audit.ts`). Several
+channels derive these strings from guest-controlled paths, so their lengths
+need bounds too. Corb creates the log with mode `0600` and its directory with
+mode `0700`. It also tightens existing log files to `0600` on first use.
+
+The guest gate has no durable log. The host records its outcomes when the
+sentinel handler runs. Local table denials that never reach the host appear
+only on stderr, on a best-effort basis.
 
 Never log request URLs or headers from an HTTP hook. Secrets may already be
 expanded at that point. Log the hostname, the method, and the decision.
@@ -731,29 +653,24 @@ allocate memory, fork, and fill disk inside the VM. There is no in-guest
 mechanism to stop it. Everything here is therefore host-side and needs zero
 guest cooperation.
 
-**Wall-clock watchdog.** A session configured with `vm.max-session` gets a
-maximum lifetime, after which the host closes the VM. `vm.close()` is the
-termination primitive because it is the only reliable one Corb has: there is no
-exec timeout and no way to kill a guest process.
+**Wall-clock watchdog.** `vm.max-session` sets a maximum session lifetime.
+When it expires, the host closes the VM. `vm.close()` is Corb's only reliable
+termination primitive. The SDK has no exec timeout or guest-process kill operation.
 
 ```ts
 const watchdog = setTimeout(() => vm.close(), maxSessionMs);
 ```
 
-Expiry records a `session` / `watchdog-expired` line in the audit log and exits
-`124` — `timeout(1)`'s conventional code for the same event — so a session that
-ran out of time is distinguishable in a transcript from one that crashed or was
-signalled. Leaving `vm.max-session` unset disables the watchdog outright; that
-is a real choice a config can make, not a default worth pretending away.
+Expiry records `session` / `watchdog-expired` and exits `124`. This matches
+`timeout(1)`. This separates expiry from crashes or signals in transcripts.
+Leaving `vm.max-session` unset disables the watchdog.
 
 ### Host resource limits: re-exec, not attach
 
-The limit has to exist *before* the hypervisor does. The obvious approach loses
-that race by construction: `vm.getHostPid()` returns the real hypervisor process
-id, but it only returns it once the VM has been created, so attaching a cgroup
-to that pid from outside the SDK leaves a window — of unknown length, with
-nothing in the SDK to narrow it or report when it closes — in which the guest is
-already running unconstrained.
+Limits must exist before the hypervisor starts. `vm.getHostPid()` supplies the
+hypervisor pid only after VM creation. Attaching a cgroup at that point leaves
+an unmeasured window with an unconstrained guest. The SDK cannot narrow or
+report this window.
 
 Corb inverts it. When a session configures `[vm.limits]` and `CORB_SCOPED` is
 unset, `corb run` re-executes *itself* under a transient systemd user scope,
@@ -765,19 +682,19 @@ systemd-run --user --scope --collect --quiet \
   -- <process.execPath> <process.argv.slice(1)…>
 ```
 
-with `CORB_SCOPED=1` in the child's environment so it does not re-exec again.
-The command is rebuilt from `process.execPath` and `process.argv.slice(1)`,
-never a textual `corb …` reconstruction, so it behaves identically under
-`node src/cli.ts run …` in development and under the installed bin shim. `stdio`
-is inherited, so the agent's TUI and pty behave exactly as in a direct run, and
-the parent exits with the child's exact exit code: this is a re-exec, not a
-supervisor. `--collect` unloads the transient unit once it completes even on
-failure, so no "failed"-looking unit lingers; `--quiet` suppresses systemd-run's
-`Running as unit: run-xxxx.scope` line, which would otherwise read as stray
-`corb` output.
+Set `CORB_SCOPED=1` in the child environment to prevent another re-exec.
+Corb builds the command from `process.execPath` and `process.argv.slice(1)`,
+without reconstructing a textual `corb …` command. Development runs and the
+installed bin shim therefore behave alike. The child inherits `stdio`, which
+preserves the TUI and pty behavior. The parent returns the child's exact exit
+code.
 
-The limit then applies to the whole process tree — `corb`, QEMU, everything they
-spawn — from before QEMU exists, and no pid is ever observed.
+`--collect` unloads the transient unit on success or failure. `--quiet`
+suppresses systemd-run's `Running as unit: run-xxxx.scope` line so it does not
+look like Corb output.
+
+The limit covers the whole process tree, from before QEMU exists. This includes
+Corb, QEMU, and their children. Corb never needs to observe a pid.
 
 **Config key to systemd property.** The mapping is not one-to-one in spelling:
 
@@ -787,104 +704,87 @@ spawn — from before QEMU exists, and no pid is ever observed.
 | `vm.limits.pids-max` | `TasksMax=` |
 | `vm.limits.cpu-quota` | `CPUQuota=` |
 
-`TasksMax=`, not `PidsMax=`: the pids controller's systemd property is spelled
-`TasksMax`, and `-p PidsMax=…` fails outright with `Unknown assignment` —
-confirmed against a real `systemd-run` and `man systemd.resource-control`, not
-inferred from the controller's name. Corb's own config key stays `pids-max`;
-only the systemd-side spelling differs. `MemoryMax=` and `CPUQuota=` take the
-raw config strings unchanged, because the size and percentage formats Corb's
-schema already validates are systemd's own.
+The pids controller uses `TasksMax=`, not `PidsMax=`. A real `systemd-run`
+and `man systemd.resource-control` confirmed that `-p PidsMax=…` fails with
+`Unknown assignment`. Corb keeps its config key `pids-max` and maps it to
+`TasksMax`. `MemoryMax=` and `CPUQuota=` accept the config strings unchanged
+because Corb validates systemd's size and percentage formats.
 
-**Only what was configured, and never partially.** Only the `vm.limits` keys
-actually set are examined: an unset key contributes no property and its
-controller is not required. Each configured key needs its controller (`memory`,
-`pids`, `cpu`) delegated to the user's systemd manager, read from
+**Apply all configured limits or none.** An unset `vm.limits` key contributes
+no property and needs no controller. Each configured key needs its controller
+(`memory`, `pids`, or `cpu`) delegated to the user's systemd manager. Corb
+reads delegation from
 `/sys/fs/cgroup/user.slice/user-<uid>.slice/user@<uid>.service/cgroup.controllers`.
-If any configured key's controller is missing, the whole mechanism is skipped —
-never a partial re-exec applying just the deliverable subset, which would hand a
-session quietly fewer limits than its config asked for while looking like it
-worked. The session then runs unlimited with a warning on stderr rather than
-failing outright: an operator's incomplete cgroup delegation should not stop the
-agent from working, the same fail-open-and-say-so posture §5 takes for the
-content-check service.
 
-That warn-and-continue path covers every other way this can be unavailable, not
-only missing delegation: `systemd-run` absent (the spawn fails with `ENOENT`), or
-a platform with no `/sys/fs/cgroup` at all — macOS reads as "nothing delegated"
-and falls through identically. A polling watchdog sampling resident memory and
-CPU would be the macOS-shaped equivalent of a cgroup; **it is not built.** A
-macOS session that configures `[vm.limits]` today gets the wall-clock watchdog,
-no resource limits at all, and a warning saying so.
+If any required controller is missing, Corb skips the whole re-exec. A partial
+set can silently supply fewer limits than requested. Corb instead warns on
+stderr and runs without resource limits. An operator's incomplete delegation
+must not stop the agent. This matches §5's failure behavior.
+
+Corb also warns and continues when `systemd-run` is absent (`ENOENT`) or the
+platform lacks `/sys/fs/cgroup`. macOS therefore follows the same path as
+missing delegation. A host watchdog that polls memory and CPU can substitute
+for cgroups, but **Corb does not implement one**. A macOS session with
+`[vm.limits]` gets the wall-clock watchdog and a warning that resource limits
+do not apply.
 
 ### Cleanup and session sidecars
 
-`vm.close()` on every exit path, including signal handlers and unhandled
-rejections. A VM whose host process exits without closing leaves QEMU running.
-Gondolin's own session registry (`listSessions`, `findSession`, `gcSessions`) is
-the recovery path for those orphans.
+Call `vm.close()` on every exit path. This includes signal handlers and
+unhandled rejections. Otherwise QEMU remains alive after the host process exits.
+Gondolin's `listSessions`, `findSession`, and `gcSessions` recover these orphans.
 
-That registry is not enough on its own, because it knows nothing about
-workspaces: its record is `{ id, pid, socketPath, createdAt, label }`. What a
-session actually mounted, which image it booted, and where its audit log went are
-all absent from it. Corb therefore writes a sidecar alongside it — one
-`<id>.json` under `~/.local/state/corb/sessions/`, holding the workspace dirs
-(name, host path, `ro`/`rw`), the image ref and its content hash, the audit path,
-the pid, and the start time.
+Gondolin's registry contains `{ id, pid, socketPath, createdAt, label }`.
+It has no workspace, image, or audit information. Corb adds a sidecar,
+`<id>.json` under `~/.local/state/corb/sessions/`. It stores workspace names,
+host paths, access modes, the image ref and content hash, audit path, pid, and
+start time.
 
-- `id` is Gondolin's own `vm.id`, and is also the sidecar's filename stem, so the
-  two registries join by exact id with no mapping table between them.
-- `pid` is the host `corb run` process, matching what Gondolin's registry records
-  for the same session — deliberately *not* `vm.getHostPid()`, which is a
-  different process, so that "pid" means one thing across both files.
-- The sidecar is written as soon as `vm.id` is known, so a session is visible
-  while it is still running rather than only after it ends, and removed during
-  shutdown after `vm.close()`.
+- `id` is Gondolin's `vm.id` and the sidecar's filename stem. The registries join on this exact value.
+- `pid` identifies the host `corb run` process in both registries. It is not the hypervisor pid from `vm.getHostPid()`.
+- Corb writes the sidecar once it knows `vm.id`, so active sessions appear immediately. It removes the sidecar after `vm.close()` during shutdown.
 
-The human-legible label is a separate value: `corb:<name>:<shortid>`, where
-`<shortid>` is eight characters minted host-side *before* `VM.create()`. It is
-not `vm.id`, tempting as that would be, and cannot be: `sessionLabel` is one of
-`VM.create()`'s own inputs, so at the moment the label has to exist, `vm.id` does
-not yet. The label is for humans to read; the join key is `id`.
+The label `corb:<name>:<shortid>` helps people identify sessions. The host mints
+the eight-character `<shortid>` before `VM.create()`. It cannot use `vm.id`
+because `sessionLabel` is an input to VM creation. The label serves people,
+and `id` joins the registries.
 
-`corb ls` (M8.4) is the first reader of that join: it lists Gondolin's own
-entries and Corb's sidecars keyed by `id`, showing all three cases — a matched
-pair, a Gondolin VM with no sidecar (listed, with the workspace columns empty
-rather than invented), and a sidecar with no Gondolin entry. That last case is an
-orphan: a session killed without clean teardown, so the sidecar removal never
-ran. `corb ls` surfaces it, marked as not running, but never prunes it — it only
-reads, and pruning is `corb gc`'s job.
+`corb ls` (M8.4) joins Gondolin entries and Corb sidecars by `id`. It shows
+matched pairs, Gondolin VMs without sidecars, and sidecars without Gondolin
+entries. It leaves unknown workspace columns empty. A sidecar without a
+Gondolin entry marks an orphan, such as a session that skipped clean teardown.
+`ls` shows it as not running but does not prune it. Pruning belongs to
+`corb gc`.
 
-`corb kill <session>` (M8.5) is the counterpart that acts on one. It resolves an
-id or unambiguous id prefix through Gondolin's own `findSession`, and sends
-`SIGTERM` to the session's owning host `corb run` process — the pid both
-registries record — so the signal lands in that process's shutdown controller
-and runs the full ordered teardown rather than cutting it short. There is
-deliberately no `--force`/`SIGKILL` path: SIGKILL cannot be caught, so it skips
-teardown entirely and leaves exactly the orphaned QEMU process and stale sidecar
-described above. It also never signals a session that is not currently alive
-(Gondolin's `alive` is a pid *and* socket check): a recorded pid whose process
-has died may since have been reused by an unrelated process. A stale or orphaned
-entry therefore gets an explanation and a non-zero exit, not a signal.
+`corb kill <session>` (M8.5) resolves an id or unambiguous prefix through
+Gondolin's `findSession`. It sends `SIGTERM` to the owning host `corb run`
+process, which both registries identify. The signal triggers the shutdown
+controller's ordered teardown.
 
-`corb gc [--older-than 1h]` (M8.6) is what actually prunes. It calls Gondolin's
-own `gcSessions()` first, then evaluates Corb's sidecars. Its guard is the exact
-mirror of `corb kill`'s: **`kill` requires positive proof of life before it
-signals; `gc` requires positive proof of death before it deletes.** In practice
-that means a sidecar whose recorded host pid is still alive is never pruned,
-whatever either registry says about it — which is what protects the three
-windows in which a healthy session looks dead: the startup gap before Gondolin's
-lazy registration, the teardown gap between `unregisterSession` and Corb's own
-`remove-sidecar` step, and a session whose IPC socket path overflowed
-`sun_path` and so reads `alive: false` forever. That last case matters
-especially here, because `gcSessions()` *will* collect such a session's Gondolin
-metadata; only the pid check then keeps its sidecar. Pid reuse can make a
-collectable sidecar look alive, which merely leaves a file for the next run —
-preferred over deleting a running session's only record. `--older-than` filters
-additionally (dead **and** older than the given age); with no flag there is no
-age filter, since a dead host pid already means the session is definitively
-over. Nothing to collect is a success, not an error.
+Corb provides no `--force` or `SIGKILL` path. `SIGKILL` skips teardown and
+leaves orphaned QEMU processes and stale sidecars. Corb signals only sessions
+that pass Gondolin's pid-and-socket life check. An unrelated process can reuse
+a dead session's pid. Stale or orphaned entries therefore get an explanation
+and non-zero exit rather than a signal.
 
-**Not built yet — M8.7:** `corb attach`.
+`corb gc [--older-than 1h]` (M8.6) first calls Gondolin's `gcSessions()`, then
+checks Corb's sidecars. **Kill requires proof of life. GC requires proof
+of death.** Corb never prunes a sidecar while its recorded host pid lives,
+regardless of registry status.
+
+This protects three windows where healthy sessions appear dead. Startup can
+precede Gondolin's lazy registration. Teardown can remove Gondolin's entry before
+Corb removes its sidecar. An IPC socket path beyond `sun_path` can also leave
+a session permanently marked `alive: false`. Gondolin can collect that last
+session's metadata, but Corb's pid check keeps its sidecar.
+
+Pid reuse can leave a collectable sidecar for a later run. This is safer than
+deleting a running session's only record. `--older-than` additionally requires
+the dead session to exceed the given age. Without it, no age filter applies
+because the dead host pid already establishes that the session ended. Finding
+nothing to collect is a success.
+
+**Not built yet, M8.7:** `corb attach`.
 
 ---
 
@@ -892,28 +792,13 @@ over. Nothing to collect is a success, not an error.
 
 One host TypeScript program is the entire host side. In outline:
 
-1. Resolve configuration: workspace directories, allowed hosts, allowed
-   repositories, whether push is permitted, session limits.
-2. Bind secrets host-side. Each `[secrets.NAME]` entry in config names a host
-   environment variable and the host(s) it may be sent to; every configured
-   secret is bound through `createHttpHooks({ secrets })` the same way,
-   regardless of provider. The guest receives a placeholder for each. A secret
-   name is chosen by the user to match whatever their model provider's SDK
-   (or Pi itself) expects as an environment variable — Corb does not hardcode
-   any one provider's key name or API host.
-3. Build the mount table: one `GlobPolicyProvider`-wrapped `RealFSProvider` per
-   workspace directory at `/work/<name>`, a `MemoryProvider` for the agent's
-   configuration so nothing is written to host disk even transiently, and a
-   `RealFSProvider` for session transcripts that should outlive the VM.
-4. Create the VM with `dns: { mode: "synthetic", syntheticHostMapping: "per-host" }`,
-   the SSH egress policy, and the CA-bundle environment variables the guest's
-   TLS clients need.
-5. Arm the wall-clock watchdog and write the session sidecar (§7). Host
-   resource limits are not applied here: they are already in force by this
-   point, from the re-exec that happens before any of this runs (§7).
-6. `vm.exec` the privilege-drop helper with the agent as its target, `pty: true`,
-   and `attach()` for the interactive terminal.
-7. On exit: clear the watchdog, `vm.close()`, propagate the exit code.
+1. Resolve workspace directories, allowed hosts and repositories, push permission, and session limits.
+2. Bind secrets host-side with `createHttpHooks({ secrets })`. Each `[secrets.NAME]` names a host environment variable and permitted destinations. The guest receives a placeholder for each secret. The user chooses names that match the provider SDK or Pi. Corb hardcodes no provider's key name or API host.
+3. Build the mount table. Wrap each workspace `RealFSProvider` in `GlobPolicyProvider` at `/work/<name>`. Store agent configuration in a `MemoryProvider` so it never reaches host disk. Use a `RealFSProvider` for session transcripts that must survive the VM.
+4. Create the VM with `dns: { mode: "synthetic", syntheticHostMapping: "per-host" }` and the SSH egress policy. Supply the CA-bundle environment variables that guest TLS clients need.
+5. Arm the wall-clock watchdog and write the session sidecar (§7). Host resource limits already apply through the earlier re-exec.
+6. Use `vm.exec` to run the privilege-drop helper with the agent as its target and `pty: true`. Connect the interactive terminal with `attach()`.
+7. On exit, clear the watchdog, call `vm.close()`, and propagate the exit code.
 
 Environment the guest needs, beyond the placeholder secrets:
 
@@ -925,139 +810,77 @@ env: {
 }
 ```
 
-`SSL_CERT_FILE`/`CURL_CA_BUNDLE`/`REQUESTS_CA_BUNDLE` are deliberately *not*
-listed here — Gondolin's own guest init already exports all three pointed at
-this same merged bundle for every guest process, unconditionally
-(`docs/gondolin-notes.md` R3), so restating them would be redundant.
-`NODE_EXTRA_CA_CERTS` is the one exception that must be set explicitly:
-Gondolin's own default for it points at `/etc/gondolin/mitm/ca.crt` instead
-— the raw file inside Gondolin's automatic MITM-CA mount, root-only by
-construction (`docs/gondolin-notes.md` R5/R12/R20) — which the `agent` uid
-`dropcap` drops to cannot read at all, only Node's bundled public root
-store as a silent fallback. `buildGuestEnv()` (`src/vm/session.ts`)
-overrides it to the same merged, actually-`agent`-readable bundle path the
-other three vars already use.
+Gondolin's guest init exports `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, and
+`REQUESTS_CA_BUNDLE` for every guest process. All point to the same merged
+bundle (`docs/gondolin-notes.md` R3), so Corb need not repeat them.
+
+`NODE_EXTRA_CA_CERTS` needs an explicit override. Gondolin defaults it to
+`/etc/gondolin/mitm/ca.crt`, inside a root-only MITM-CA mount
+(`docs/gondolin-notes.md` R5/R12/R20). The unprivileged agent cannot read that
+file, so Node silently falls back to its bundled public roots. `buildGuestEnv()`
+in `src/vm/session.ts` points it at the merged bundle, which the agent can read.
 
 ### Provider and model selection
 
-Pi (`@earendil-works/pi-coding-agent`) already has full multi-provider support
-built in — over two dozen providers, each authenticated via its own named
-environment variable, `auth.json` entry, or OAuth subscription (see the
-installed package's own `docs/providers.md`). Corb's job is narrow: pass the
-user's choice through, not reimplement provider logic.
+Pi (`@earendil-works/pi-coding-agent`) supports more than 24 providers.
+Each uses a named environment variable, `auth.json`, or OAuth subscription.
+See the installed package's `docs/providers.md`. Corb passes the user's choices
+through and does not reimplement provider logic.
 
-- **Model/provider choice.** Pi selects a provider and model via its own
-  `--provider`/`--model` CLI flags (also settable interactively via `/model`).
-  Corb's `[agent].provider`/`[agent].model` config fields (`src/config/
-  schema.ts`) exist to be translated into those two flags, prepended to the
-  `piArgs` a real (non-dry-run) `corb run` passes to `pi` — nothing does this
-  translation yet. `RunSessionOptions.piArgs` is exactly where they belong;
-  `session.ts` doesn't need to know what a "provider" is beyond passing the
-  string through.
-- **Credential binding.** Pi resolves a provider's credential in this order:
-  CLI `--api-key`, `auth.json` (under `PI_CODING_AGENT_DIR`, default
-  `~/.pi/agent`), a provider-specific environment variable, then `models.json`.
-  Corb only ever supplies the third. `buildSecretBindings()` (`src/vm/
-  egress.ts`, M3.2) is already fully generic, and `buildGuestEnv`'s
-  `...secretEnv` spread already forwards whatever `createHttpHooks()` mints
-  into the guest's real environment under its own literal name — **no new
-  mechanism is needed**. The only requirement is naming discipline: a
-  workspace's `[secrets.NAME]` must be spelled exactly as Pi's own table
-  expects (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, …).
-  Corb must not maintain its own copy of that name-to-provider table — it
-  would just drift from Pi's.
-- **M3.4's job — high priority, do this as soon as M3.3 lands:** delete
-  `session.ts`'s `ANTHROPIC_HOST` constant, `requireApiKey`, and
-  `MissingApiKeyError` outright, replacing the current hardcoded
-  single-host/single-secret `createHttpHooks()` call with M3.3's
-  egress-config-derived `allowedHosts`/`allowedInternalHosts` plus
-  `buildSecretBindings(fullConfig.secrets, hostEnv)`. This is a deletion, not
-  a generalization — the generic mechanism it's deleted in favor of already
-  exists. Every session `corb run` starts today is still hardcoded to
-  `api.anthropic.com`/`ANTHROPIC_API_KEY` regardless of what `config.toml`
-  says, which silently makes the entire `[secrets]`/`[egress]` config surface
-  a no-op for anyone using a different provider — this should not sit for
-  more than one more milestone.
-- **Zero-config failure mode.** `buildSecretBindings` returning `{}` for an
-  unconfigured `[secrets]` is correct (M3.2's own decision — no fallback), but
-  left alone it means a VM boots and only then fails inside Pi's own
-  no-credentials UX — worse than failing on the host before boot. M3.5's `corb
-  doctor` should add a soft, provider-neutral check: warn (not hard-block) when
-  no `[secrets.*]` entry is configured at all, pointing at `corb explain` and
-  Pi's own provider docs rather than guessing which provider the user wants.
+- **Model/provider choice.** Pi accepts `--provider` and `--model`, or interactive selection through `/model`. Corb's `[agent].provider` and `[agent].model` in `src/config/schema.ts` exist for translation into those flags. They belong before user `piArgs` in `RunSessionOptions.piArgs`, but that translation is not implemented yet. `session.ts` only needs to pass the strings through.
+- **Credential binding.** Pi checks CLI `--api-key`, then `auth.json`, a provider environment variable, and `models.json`. `auth.json` lives under `PI_CODING_AGENT_DIR`, which defaults to `~/.pi/agent`. Corb supplies only the environment variable. `buildSecretBindings()` in `src/vm/egress.ts` (M3.2) handles arbitrary names. `buildGuestEnv` forwards the `...secretEnv` from `createHttpHooks()` under those names. Use Pi's exact names, such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. Corb must not duplicate Pi's provider-name table because the copies can drift.
+- **M3.4, high priority after M3.3:** delete `session.ts`'s `ANTHROPIC_HOST`, `requireApiKey`, and `MissingApiKeyError`. Replace the hardcoded `createHttpHooks()` call with M3.3's config-derived `allowedHosts` and `allowedInternalHosts`. Supply `buildSecretBindings(fullConfig.secrets, hostEnv)` too. The generic replacement already exists. Current `corb run` sessions hardcode `api.anthropic.com` and `ANTHROPIC_API_KEY` regardless of `config.toml`. This makes `[secrets]` and `[egress]` ineffective for other providers and must not wait beyond the next milestone.
+- **Zero-config failure mode.** `buildSecretBindings` returns `{}` for an unconfigured `[secrets]`, as decided in M3.2. Without another check, the VM boots before Pi reports missing credentials. M3.5's `corb doctor` must add a provider-neutral warning when no `[secrets.*]` entry exists. Point users to `corb explain` and Pi's provider docs without guessing their provider. This warning must not block startup.
 
 ### Ingress (`--expose`)
 
-Some workspaces run a server inside the guest that a human on the host wants
-to reach directly — a dev server, a preview build — rather than only
-interacting with it through Pi. Gondolin ships exactly this as a first-class
-primitive: `vm.enableIngress()` opens a host-to-guest HTTP reverse proxy, and
-`vm.setIngressRoutes()` points it at a guest loopback port
-(`gondolin-notes.md` §9). `corb run --expose PORT` (M9.4) wires that in
-directly, for one guest port at a time: `runSession()` calls
-`vm.enableIngress()` with no overrides — `listenHost`/`listenPort` stay at the
-SDK's own defaults (`127.0.0.1`, an ephemeral port), since nothing here needs
-a fixed host-side address — then calls `vm.setIngressRoutes([{ prefix: "/",
-port: PORT, stripPrefix: true }])`.
+Some workspaces need direct host access to a guest server, such as a dev server
+or preview build. Gondolin's `vm.enableIngress()` opens a host-to-guest HTTP
+reverse proxy. `vm.setIngressRoutes()` selects a guest loopback port
+(`gondolin-notes.md` §9).
 
-There is deliberately no path-prefix multiplexing across several guest ports:
-that would need a naming scheme for the prefixes and a way to configure more
-than one port, and nothing in the current design needs either. A single guest
-port at `/` is the whole feature.
+`corb run --expose PORT` (M9.4) connects these primitives for one guest port.
+`runSession()` calls `vm.enableIngress()` with the SDK defaults:
+`listenHost` is `127.0.0.1`, and `listenPort` is ephemeral. It then calls
+`vm.setIngressRoutes([{ prefix: "/", port: PORT, stripPrefix: true }])`.
 
-The resulting URL is surfaced twice: once as a one-line `stderr` banner
-printed before the pty is attached, so it is not scrolled away under Pi's own
-TUI output the moment the session starts; and once persisted on the session
+Corb exposes one guest port at `/`. It does not multiplex several ports by
+path prefix. That needs prefix names and multi-port configuration, which the
+current design does not require.
+
+Corb prints the URL as a one-line `stderr` banner before attaching the pty.
+This keeps it visible before Pi's TUI starts. Corb also stores the URL in the
 sidecar's `exposed` field (`src/vm/registry.ts`), so `corb ls` can show it for
-a session that is still running, not only at the moment it was started.
+active sessions.
 
-Teardown order matters here the same way it does for the VM itself: the
-ingress listener is closed *before* `vm.close()` in the shutdown sequence
-(`close-ingress`, ahead of `close-vm`), so the host stops accepting new
-connections to the exposed port before the guest it forwards to goes away,
-rather than leaving an in-flight request racing a VM that is mid-teardown.
+Shutdown closes ingress before `vm.close()`. The `close-ingress` step precedes
+`close-vm`. This stops new host connections before the guest disappears and
+prevents requests from racing VM teardown.
 
 ---
 
 ## 9. Non-goals
 
-- **VM escape and hypervisor bugs.** That is QEMU's boundary and Corb treats it
-  as trusted, as the SDK does.
+- **VM escape and hypervisor bugs.** Corb trusts QEMU's boundary, as the SDK does.
 - **A malicious host, or a malicious local user on the same account.**
-- **Complete DoS isolation.** §7 bounds resource use; it does not make the guest
-  well-behaved.
-- **Exfiltration to an allowed destination.** The egress allowlist prevents
-  *unexpected* destinations. If a host is allowed, data can leave through it.
-  Keep the allowlist small and justified.
-- **seccomp and cgroups inside the guest.** Neither the SDK nor Corb implements
-  them today. Worth revisiting; not in scope now.
+- **Complete DoS isolation.** §7 bounds resource use but does not make the guest behave well.
+- **Exfiltration to an allowed destination.** The egress allowlist prevents unexpected destinations. Allowed hosts can still receive data. Keep the list small and justified.
+- **seccomp and cgroups inside the guest.** Neither the SDK nor Corb implements them today. They remain outside the current scope.
 
 ---
 
 ## 10. Acceptance criteria
 
-- The agent's TUI runs interactively, reflows on terminal resize, and streams
-  from the model API.
-- Searching the guest for the real API key and the real GitHub token — process
-  environment, `/proc/*/environ`, and disk — returns nothing.
-- `git fetch` on an allowed repository succeeds; `git push` is denied when push
-  is disabled for the session; a repository outside the allowlist is denied.
-- A request to a host outside the allowlist is blocked, and DNS manipulation
-  does not bypass it.
-- Writing to a `deny-write` or `hidden` path fails with the expected errno **from
-  the shell tool specifically**, not only from the agent's edit tool.
-- `ln -s <hidden path> decoy && cat decoy` is denied, and so is
-  `ln <deny-read path> decoy && cat decoy`.
-- Renaming a directory that contains a rule-matched path is denied.
-- A commit containing a secret-shaped string is blocked with a structured error
-  and exit `87`; a local table denial exits `86`.
-- An unreachable check service does not block commits, and the audit log records
-  that the check did not run. Exhausting the rate limit **does** block, and exits
-  `87`.
-- The privilege-drop helper's target process shows `NoNewPrivs=1` and no
-  supplementary groups in `/proc/self/status`.
-- Pointing the helper at a nonexistent binary exits 127, not 0.
-- The audit log contains at least one entry from each of the five channels after
-  a representative session.
-- A session exceeding its wall-clock limit is closed, and no hypervisor process
-  survives host exit.
+- The agent's TUI runs interactively, reflows on terminal resize, and streams from the model API.
+- The real API key and GitHub token appear nowhere in guest process environments, `/proc/*/environ`, or disk.
+- `git fetch` works for allowed repositories. Host policy denies pushes when disabled and denies repositories outside the allowlist.
+- Host policy blocks requests outside the allowlist, even with DNS manipulation.
+- Shell writes to `deny-write` and `hidden` paths fail with the expected errno. Edit-tool checks alone do not suffice.
+- Host policy denies `ln -s <hidden path> decoy && cat decoy` and `ln <deny-read path> decoy && cat decoy`.
+- Host policy denies directory renames from or into subtrees that a rule can match.
+- A commit with a secret-shaped string fails with a structured error and exit `87`. Local table denials exit `86`.
+- An unreachable check service allows commits and logs the skipped check. Rate-limit exhaustion blocks commits with exit `87`.
+- The privilege-drop target shows `NoNewPrivs=1` and no supplementary groups in `/proc/self/status`.
+- A nonexistent helper target exits 127 rather than 0.
+- A representative session produces at least one audit event in each of the five channels.
+- Corb closes sessions at their wall-clock limit. No hypervisor process survives host exit.
