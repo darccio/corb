@@ -18,7 +18,7 @@ select a separate host config directory as shown in the
 [walkthrough](walkthrough.md#apply-repository-specific-setup). Pi's repository
 instructions and `.pi` settings are separate from Corb's configuration.
 
-Host paths in TOML are used as written; `~` is not expanded. Use absolute paths.
+Corb uses host paths in TOML as written. It does not expand `~`. Use absolute paths.
 Configuration, state, and the audit file must not overlap a mounted directory.
 
 Inspect the effective settings with `corb explain DIR` or
@@ -44,7 +44,7 @@ provider-specific model names or select a different agent executable.
 
 Each secret name identifies a host environment variable. `hosts` restricts where
 its placeholder can be expanded into the real value. A missing required variable
-prevents the session from starting; `optional = true` permits it to be absent.
+prevents the session from starting. `optional = true` permits it to be absent.
 
 The secret binding does not itself grant network access. Add each required
 destination to `egress.allow`.
@@ -82,7 +82,7 @@ Log in once with `corb login openai-codex`. Corb stores the login in
 file is readable only by you. Every Corb session on the host uses the same
 login, and Corb refreshes it when it is close to expiry.
 
-No `[secrets.*]` entry is needed. `chatgpt.com` must be in `egress.allow`; the
+No `[secrets.*]` entry is needed. `chatgpt.com` must be in `egress.allow`. The
 login does not grant network access. `auth.openai.com` is not needed in the
 guest, because the login and every refresh happen on the host.
 
@@ -124,7 +124,7 @@ deny-paths = ["**/actions/secrets/**"]
 process. Configure the destinations required by your workflow explicitly.
 
 The optional GitHub API table adds HTTP method and path restrictions for that
-API; it does not enable its host on its own. With the table absent, this
+API. It does not enable its host on its own. With the table absent, this
 additional API gate is inactive.
 
 ## Directory entries
@@ -153,19 +153,71 @@ resolution](workspaces.md#configuration-resolution) for precedence and
 positional-directory behavior.
 
 Rule modes are `hidden`, `deny-read`, `deny-write`, and `shadow-write`. Shadow
-writes use an in-memory overlay instead of changing the host file.
+writes go to memory instead of changing the host file. Reads, metadata, and
+listings still show the host file. This mode does not provide an overlay.
+
+### Built-in Git protection
+
+Every read/write mount gets built-in `deny-write` rules before its user rules.
+This applies even when the mount has no Git repository at startup. Read-only
+mounts get no built-in rules because their provider already blocks writes.
+
+The rules protect these paths relative to the mount root:
+
+```text
+.git
+.git/config*
+.git/commondir
+.git/hooks/**
+.git/worktrees/*/commondir
+.git/worktrees/*/config*
+.git/modules/**/config*
+.git/modules/**/commondir
+.git/modules/**/hooks/**
+```
+
+The `.git` rule protects that entry itself. It also blocks creating or replacing
+a root Git directory or gitfile. `config*` covers config files and their locks.
+It includes `config.worktree`. Directory renames into or out of a protected
+subtree fail too. Ordinary edits, `git add`, `git commit`, and unrelated
+directory renames remain available.
+
+`protect-git` is a per-directory boolean that defaults to true. To disable it
+for the positional directory, use a host-less entry with its basename:
+
+```toml
+[[dir]]
+name = "packet-loss"
+protect-git = false
+```
+
+Disabling protection requires `--trust-config`. Mode changes between `rw` and `ro` also
+require confirmation for protected mounts. Existing trust records remain trusted
+when Corb adds these rules during an upgrade. Adding user rules still narrows
+policy. `corb explain` shows the built-in rules separately. JSON stores them
+in `builtin-rules`, which cannot be set in TOML.
+
+The protection blocks config writes needed by `git remote add`, `branch -u`,
+`push -u`, `checkout --track`, and `submodule init` inside the guest.
+[DAR-19](https://linear.app/darccio/issue/DAR-19/copy-on-write-path-rule-mode-so-the-guest-can-change-git-config-safely)
+tracks support for safe config edits. `git init` and `git clone <url> .` fail
+at the mount root. A submodule branch named `config` becomes read-only because
+its metadata path matches `config*`.
+
+Read the [security limits](security.md#git-metadata-protection) before running
+host Git against files the agent changed.
 
 ## Command filtering
 
-Command filters are supplied by shims in the guest image. The stock image shims
-`git` and `gh`; Corb's runtime only dispatches those tool names and generates
+Shims in the guest image supply command filters. The stock image shims
+`git` and `gh`. Corb's runtime only dispatches those tool names and generates
 fixed policy tables for them. TOML does not expose a list of commands to shim
 or configurable subcommand and flag rules.
 
 Supporting another command requires matching image and runtime changes. See
 [Command filtering](security.md#command-filtering) for how the shims work and
 where enforcement happens. The `[policy]` settings below control the built-in
-content checks; they do not configure filters for arbitrary commands.
+content checks. They do not configure filters for arbitrary commands.
 
 ## Git transport
 
@@ -177,7 +229,7 @@ allow-push = false
 ```
 
 `git.allow-hosts` and `git.allow-repos` constrain Git transport on the host,
-independently of command shims. Pushes are disabled by default.
+independently of command shims. Corb disables pushes by default.
 
 ## Content policy and audit
 
