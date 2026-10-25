@@ -55,7 +55,7 @@ export async function run(vm, label, script, { agent = false, required = true, e
   return result;
 }
 
-export function options(label, { image = base.assetDir, build = false, workspace = false, verify = false } = {}) {
+export function options(label, { image = base.assetDir, build = false, workspace = false, verify = false, gate = true, memory = "1G", cpus = 2 } = {}) {
   const hosts = ["dl-cdn.alpinelinux.org"];
   if (verify) hosts.push("api.anthropic.com", "github.com");
   const audit = {
@@ -87,7 +87,7 @@ export function options(label, { image = base.assetDir, build = false, workspace
       return new Response(body, { headers: { "content-type": "text/event-stream" } });
     };
   }
-  const mounts = { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() };
+  const mounts = gate ? { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() } : {};
   if (build) mounts["/opt/corb-build"] = new ReadonlyProvider(new RealFSProvider(bootstrap.binaryDir));
   if (workspace) {
     const dir = path.join(runtime, "workspace");
@@ -98,6 +98,9 @@ export function options(label, { image = base.assetDir, build = false, workspace
   }
   return {
     sandbox: { imagePath: image, vmm: "qemu" },
+    memory,
+    cpus,
+    startTimeoutMs: 90_000,
     dns: { mode: "synthetic", syntheticHostMapping: "per-host" },
     httpHooks: egress.httpHooks,
     env: egress.env,
@@ -138,7 +141,10 @@ export async function protectedHashes(vm, label) {
 }
 
 export async function checkpoint(vm, name, image = base) {
-  const filename = path.join(runtime, "layers", "dar-15", name + ".qcow2");
+  const filename = name === "fixed-layer-repeat"
+    ? path.join(runtime, "layers", "dar-15", "repeat", "fixed-layer.qcow2")
+    : path.join(runtime, "layers", "dar-15", name + ".qcow2");
+  fs.mkdirSync(path.dirname(filename), { recursive: true });
   const start = performance.now();
   log(name + "-temporary-overlay", temporaryOverlay(vm));
   const value = await vm.checkpoint(filename);

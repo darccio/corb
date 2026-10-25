@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { VmCheckpoint } from "@earendil-works/gondolin";
 import { base, bootstrap, runtime, log, run, save, read, options, boot, protectedHashes, checkpoint, sha256, diskInfo } from "./common.mjs";
 import { GATES } from "./verify-copy.ts";
 
@@ -238,10 +239,14 @@ async function movedBase() {
   const copied = path.join(runtime, "relocated-layer.qcow2");
   fs.copyFileSync(layer.path, copied);
   const before = sha256(copied);
+  log("moved-base-before", { sha256: before, info: diskInfo(copied), trailer: VmCheckpoint.load(copied).toJSON(), originalLayerSha256: sha256(layer.path) });
   const vm = await boot("moved-base", options("moved-base", { image: relocated, workspace: true }), copied);
   try {
     await sessionChecks(vm, "moved-base");
-    log("moved-base-hash", { before, after: sha256(copied), changed: before !== sha256(copied), info: diskInfo(copied) });
+    log("moved-base-hash", {
+      before, after: sha256(copied), changed: before !== sha256(copied), info: diskInfo(copied),
+      trailerAfterRebase: VmCheckpoint.load(copied).toJSON(),
+    });
   } finally {
     await vm.close();
   }
@@ -267,6 +272,14 @@ async function baseControl(imageName) {
   }
 }
 
+async function timingControl() {
+  for (const gate of [true, false]) {
+    const label = gate ? "timing-with-gate" : "timing-without-gate";
+    const vm = await boot(label, options(label, { gate }));
+    await vm.close();
+  }
+}
+
 try {
   if (action === "baseline") await baseline();
   else if (action === "resume") await resume(process.argv[3] ?? "original-layer");
@@ -276,6 +289,7 @@ try {
   else if (action === "moved-base") await movedBase();
   else if (action === "base-control") await baseControl(process.argv[3]);
   else if (action === "clean-original") await cleanOriginal();
+  else if (action === "timing-control") await timingControl();
   else throw new Error("Unknown phase: " + action);
 } catch (err) {
   console.error(err.stack ?? String(err));
