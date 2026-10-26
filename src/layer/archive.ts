@@ -36,6 +36,8 @@ export function validateSdkArchiveEntries(entries: readonly SdkArchiveEntry[], p
     const stripped = raw.split("/").slice(payload["strip-components"]).join("/");
     total += entry.size;
     if (total > SDK_EXPANDED_LIMIT) fail("SDK archive exceeds 2 GiB expanded bytes");
+    if (seen.has(stripped)) fail(`duplicate SDK archive path '${stripped}'`);
+    seen.add(stripped);
     if (stripped === "") {
       if (entry.type !== "directory") fail("strip-components removes a complete SDK file path");
       continue;
@@ -43,8 +45,6 @@ export function validateSdkArchiveEntries(entries: readonly SdkArchiveEntry[], p
     if (Buffer.byteLength(stripped, "utf8") > SDK_PATH_LIMIT) fail("SDK path exceeds 4096 UTF-8 bytes");
     const destination = path.posix.join(payload.destination, stripped);
     if (!containsPosix(payload.destination, destination)) fail("SDK archive escapes payload destination");
-    if (seen.has(stripped)) fail(`duplicate SDK archive path '${stripped}'`);
-    seen.add(stripped);
     if (entry.type === "file") files.add(stripped);
     results.push({ path: stripped, type: entry.type, size: entry.size, mode: entry.type === "directory" ? 0o555 : 0o444 | (entry.mode & 0o111) });
   }

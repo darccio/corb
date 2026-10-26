@@ -24,6 +24,8 @@ describe("SDK archive header validation", () => {
   });
   it("rejects duplicate final paths and file ancestors in either order", () => {
     expect(() => validateSdkArchiveEntries([file(), file()], sdk())).toThrow("duplicate");
+    const directory = { ...file("go/"), type: "directory", size: 0 };
+    expect(() => validateSdkArchiveEntries([directory, directory], sdk())).toThrow("duplicate");
     for (const entries of [[file("go/bin"), file()], [file(), file("go/bin")]]) expect(() => validateSdkArchiveEntries(entries, sdk())).toThrow("ancestor");
   });
   it.each([{ mode: 0o4755 }, { pax: { "SCHILY.xattr.security.capability": "x" } }, { pax: { "GNU.sparse.size": "2" } }, { pax: { size: "11" } }])("rejects special permission and metadata %j", (change) => {
