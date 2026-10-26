@@ -1,0 +1,1422 @@
+{
+  "date": "2026-10-26",
+  "baseCommit": "0465979",
+  "branch": "bec/dar-20-fix-git-tls-and-openssl-records",
+  "buildId": "a7cd90fa-05bc-5040-8cb8-71e3255c42d4",
+  "privateBuildTag": "corb-spike:dar-20-repaired",
+  "imageStore": "/home/dario/Code/corb/image/build/dar-20/store",
+  "inputHash": "9873eb08",
+  "assetHashes": {
+    "manifest.json": {
+      "sha256": "9dd8dc03a8e583c54b2d078bf5f29e20fc3d52a6a08d12edd6a4d280181df0ed",
+      "bytes": 4660
+    },
+    "vmlinuz-virt": {
+      "sha256": "456e0691f095285a82533cc6335280e4b4991d630c5292ddf15e6320e71971c9",
+      "bytes": 12645376
+    },
+    "initramfs.cpio.lz4": {
+      "sha256": "b275ec4f2a6d44513bc5ef3f3b6799381aeeaf8da4e40e14215d45974bdbadd8",
+      "bytes": 6176577
+    },
+    "rootfs.ext4": {
+      "sha256": "b1114bab74106a7ab7277afd8232406fe0709a188ac0de33a70e1ec8045fbdac",
+      "bytes": 3221225472
+    },
+    "krun-kernel": {
+      "sha256": "8da419440ed6e47e33014a76810656fb2533323a7b7ff85ca2d2397640dac5ef",
+      "bytes": 19070976
+    },
+    "krun-empty-initrd": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  },
+  "packageCoherence": {
+    "databaseSha256": "4ffe6d722e8f685766fcbad0e4051dddc5e6842ade7bae67e78fb284a3cb6694",
+    "trustedKeys": [
+      {
+        "name": "alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub",
+        "sha256": "9c102bcc376af1498d549b77bdbfa815ae86faa1d2d82f040e616b18ef2df2d4"
+      },
+      {
+        "name": "alpine-devel@lists.alpinelinux.org-5261cecb.rsa.pub",
+        "sha256": "12f899e55a7691225603d6fb3324940fc51cd7f133e7ead788663c2b7eecb00c"
+      },
+      {
+        "name": "alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+        "sha256": "207e4696d3c05f7cb05966aee557307151f1f00217af4143c1bcaf33b8df733f"
+      }
+    ],
+    "packages": [
+      {
+        "name": "ada-libs",
+        "version": "3.3.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1c3Mc5F5eryVwPEP5D0NDyA+GDt0=",
+        "archiveSha256": "5afb61331b184c47e91d0637ecb706aaf30e9270e845a6c0417235bdec2009c1",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "alpine-baselayout",
+        "version": "3.7.2-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1VFqm8pEgmviZMrdh2eQiwneFlsw=",
+        "archiveSha256": "6e55ad7baa87468244e7919c7556e96abc5da05576cabd8b879a019c6d43e1b6",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "alpine-baselayout-data",
+        "version": "3.7.2-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1hYFmMtvOB7p+nnpin6We3b0Wh/s=",
+        "archiveSha256": "e6bdc54b720b4053a60aad2610fdc7b7bcc61b4ba818b650fad4f216dcf98c81",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "alpine-keys",
+        "version": "2.6-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1XEWoIc1rhNVDu9f/EqfeGFXFzRM=",
+        "archiveSha256": "a6d92d54856452e1d442e1d20820215c4829e6049c1944a5e65d8dacc55a07ed",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "alpine-release",
+        "version": "3.23.7-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1dU2kBb0Mb/t95coDdKNb4mdsIb8=",
+        "archiveSha256": "34afcd9591e92ed65cb4f69c3a3ec04ed92df1b01266d0f0d103ccb522d58d00",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "apk-tools",
+        "version": "3.0.8-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1+nqEIqu7teF5AzzuVFUSQAeBeyI=",
+        "archiveSha256": "405adef9f3bbd761bffb046b81221cb41c4edc59e0c0b9115dd8963f02d22596",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "bash",
+        "version": "5.3.3-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1jpqyHU374PqoFRUXvYVbY7TjMBw=",
+        "archiveSha256": "c52a2b6997567830d573160c2c0cad665473320f08862133aaf4c1e96864fc48",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "brotli-libs",
+        "version": "1.2.1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q19jvU5Ja1fS3MA5klQ5vHfCtfut8=",
+        "archiveSha256": "cf3dc08928958bb42fe71c07a179ca33adb9e2c341daa29d88777061956d84f5",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "busybox",
+        "version": "1.37.0-r30",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q18TR4AbuWsapA0X+CI3w/T/AqRyU=",
+        "archiveSha256": "2fea8c73710994099eaec6832b69a0f70163e0d6ee13848af3a5270a16d15c5c",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "busybox-binsh",
+        "version": "1.37.0-r30",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1GI0tARCvpY6KPj5f1CSy2Zbfegk=",
+        "archiveSha256": "94f10cf3bb79f033d5ac86675312229e28a8a858fa7bfb5268675951b99466e7",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "c-ares",
+        "version": "1.34.9-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1EgKKSAW9t+uljO/j/CaGZPtO9UY=",
+        "archiveSha256": "90a5da68630b32cddbd5e5fd68f0f244f065f812f97fded3252800dbe6c6c85c",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "ca-certificates",
+        "version": "20261020-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1NkGIBOtW7uqNiQk/O3d1bd/SYRA=",
+        "archiveSha256": "0ff2550833ee3e5ace48fab67147b49f80b77dfe34ab85e5a3ba63b178710d53",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "ca-certificates-bundle",
+        "version": "20261020-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1GWiqMbsMKDpDSINOqReDnfKrxJg=",
+        "archiveSha256": "a4c5de1bf37652cd98cbe71aec209512ae0508a964961957a6c9650f795e46c4",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "cryptsetup-libs",
+        "version": "2.8.1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q14L7ObLAwDz7YEniTggZIJncfRc4=",
+        "archiveSha256": "f1f79d0b35afd8d673b5ff2b06443226a472fa2dd77d70998cf681a60e85de62",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "curl",
+        "version": "8.23.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1+63ItsaqO20RxwNR2bcyWVEQg3s=",
+        "archiveSha256": "3fa0d88bff24906e311fdc0ea6e8e6400c2181ecef17eb4f51ee191902afbf8d",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "device-mapper-libs",
+        "version": "2.03.35-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1/zWVXRaUgw8+p3mJopCyeG2ui7w=",
+        "archiveSha256": "7f3afe40951e6431d0800763a5ef002bf3ad0b9d3b5f678da482878d139dc1b8",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "fd",
+        "version": "10.2.0-r3",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1+0yHQH/gynRIpTSSXE5XgfprO4A=",
+        "archiveSha256": "318282bfc561756a4c300b04fb62a88a2d6b09b1dbedded0703f395a829b3098",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "fuse3-libs",
+        "version": "3.18.3-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Y36eFdYEn0QKmWajugai/eA5RFU=",
+        "archiveSha256": "ca36f06dd04abccd0b80e5e5feebb21418c2b241cafbeecc088203ff01767392",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "git",
+        "version": "2.52.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1vQso+RiU3HWICiJGhEWi0IS+sAk=",
+        "archiveSha256": "0e1db246b3940fa2c66be6553eaad0eb49119956f2174ac83a66b50054ead145",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "git-init-template",
+        "version": "2.52.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1/xWmfR9JSGGKECIJGuehvzmfNmU=",
+        "archiveSha256": "405f2a898c50751ca0b3f0fed03ce0717bb348f1afef89b4bdc1ed55798d1c89",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "github-cli",
+        "version": "2.83.0-r6",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1oB1Y4QcAV9HWy9wPjPN9MLHSCR8=",
+        "archiveSha256": "674596c089224734c750d778aed6ffa4f79b548328081976328a4db39cbbf51c",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "icu-data-en",
+        "version": "76.1-r1",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1B3+6pjcFLd2NYgKDHcGaU7X/9w4=",
+        "archiveSha256": "82d55e064ca2ff15e6ef6c3b7009eb2e869469f56f36c0d84411b265825a3251",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "icu-libs",
+        "version": "76.1-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Wy55i6IPgx1k5UUmQxxS2Y4+35A=",
+        "archiveSha256": "c6b53c168bb1af380fcbc305ff9e25c30e3cab756165fd7b8f77d4dac132aa4d",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "jemalloc",
+        "version": "5.3.0-r6",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1icj/A4Fryi3wBD7wTzrC3L0sRA4=",
+        "archiveSha256": "04ba1f63157c44f2896b0b8d192c2228e5423f2515cbfacc79ce2b6517360a39",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "jq",
+        "version": "1.8.2-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1ahW4edKTHB0NeUAy5L1jpVyaV1s=",
+        "archiveSha256": "883276f981e9e90325105b9cca756c038ab93a318ec7843f995274bc80d9b58f",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "json-c",
+        "version": "0.18-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Ax8KfhxfgoAMX8OfyE2vPJQAHPE=",
+        "archiveSha256": "b82b644f1a77d9d2699a8e17eccf779184e8db9075dd09f59a060731306c9a81",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "keyutils-libs",
+        "version": "1.6.3-r4",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q11FKYUO+5WluPj41YtTHObXEt3iw=",
+        "archiveSha256": "98f8ea3082b81088b784cd3b143fc9509b9280a7bdae39b8333c77443873ec88",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "kmod",
+        "version": "34.2-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q14aGmh1zVlwbtGr8XnSTccfKa02k=",
+        "archiveSha256": "2f36911b05c7ee3ea07ed10caf232dd90a2ed194a763f1cc1dbad44f7a13f7e8",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "kmod-libs",
+        "version": "34.2-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1xTWSV8W+oAJMbuC55LMSc33tEXk=",
+        "archiveSha256": "48fe5822a43e18b7f85ae125e049431f9feb93588ec0df27b4ea07270421f994",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "krb5-conf",
+        "version": "1.0-r2",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1klGggIIWgAbVTyIGh+eCm2AFcBU=",
+        "archiveSha256": "bd6fe65b55d2b6139b378e9120930672b3686e808a59f61e0db539ac0258be26",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "krb5-libs",
+        "version": "1.22.1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1GYDx/9HgDMeUoSkwRuTPXPzuf00=",
+        "archiveSha256": "ce010cbfc266d607f48066c48f32c70771bb2d567da62d117737abf0adc41493",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "lddtree",
+        "version": "1.27-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1hfMySF8nmO1c2L/WDJdhIj3qo0M=",
+        "archiveSha256": "e4cdcb8f8b3e9c1d51360820afd79673a635c78bcf2c3cac3d98bc85d2090d2c",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "less",
+        "version": "685-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1SsGf3U+08pDuy+321n408QoIRQU=",
+        "archiveSha256": "b7a451c8671ac6b659fa45e0f2b6bb4d18a416f72c8443af459a6928e56ed605",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libapk",
+        "version": "3.0.8-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1KRMobR0CZB05Iom6UlhQvmhW3xE=",
+        "archiveSha256": "f5be42fcc282ebd4e0e2f5bd8bfef7365b895dbba0756ab5091a6ce19332a081",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libblkid",
+        "version": "2.41.6-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Hzvje52fXlRyi9XAAe3MxeYLVfg=",
+        "archiveSha256": "e8c829016f4b82f34500b05023060d5f1eb8f06e5affadb0a4427cc26dbb58df",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libcom_err",
+        "version": "1.47.3-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1M9IPB4xi3qxvlswPHl9T9Hjjjbo=",
+        "archiveSha256": "74f16d0f39b2568062ea46d0d05dbac696d8d50c007f320448d4d6e9831cb316",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libcrypto3",
+        "version": "3.5.9-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Ubt/ZmhM+YWFhgwtitzD8qoPZ3I=",
+        "archiveSha256": "9c82c86f051f3372445ecdbae5068ccc39dbc423ba8f779eaa84549fef1cfc77",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libcurl",
+        "version": "8.23.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1DLQrtkoWtPiGrkrdimiRkh9NgEs=",
+        "archiveSha256": "d35e08ce3bafbcaf1a68512ac31483bd93e795ad5e8d8bfd76ada3106d81b569",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libeconf",
+        "version": "0.8.3-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1lpOQqxbo8nP5flINBpoMd5ir1BA=",
+        "archiveSha256": "9a6c216b9c2bf4077bfc1ffe6986e3e69df301594b23764ed55f8003b89d2784",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libedit",
+        "version": "20251016.3.1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Rj9pM1oyI7HOaFbOO+9cA/7nIb8=",
+        "archiveSha256": "3ba80d87818d7e23c96607373655ab8eeef42d9fd5252d7a2a5b48d9e2973f35",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libexpat",
+        "version": "2.9.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1RiVCXcS1QhgNt9xnZpcYRTnjglY=",
+        "archiveSha256": "42a1cb48e3ef0b5d1744f2b341120369d0c045038cdb6c9d5a6dd5ba7d421910",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libgcc",
+        "version": "15.2.0-r2",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1V/zL6e6/I/LE847iok+LC91Qj/c=",
+        "archiveSha256": "4279d14cbf43311312d3a7d43619f4c15ede2e46d5608ba421ed157ded57c700",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libidn2",
+        "version": "2.3.8-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1uMW/o2XaXDYKASMNtNceZa+Urz0=",
+        "archiveSha256": "526275e11e449b99e5264e0ba32625fa12a78c426de61378f8b5cc0af5fc7014",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libncursesw",
+        "version": "6.5_p20251123-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1ZJ0wQcUrgGIPtQqY9ZedJeu+FSM=",
+        "archiveSha256": "233f20a6d64d87afbc4b03ad3e7508f5d56af747508c395ba7a6c5f1033b15f0",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libpsl",
+        "version": "0.21.5-r3",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1tmPAD5IKk75JyCVVWqGiEuQoc5M=",
+        "archiveSha256": "86ada309d460ea8768b340cbf83c7234a1564f8fea9c370fb19f028a2a165891",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libssl3",
+        "version": "3.5.9-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q170vxHAYRS4o+qEErxLLXW0A7BuU=",
+        "archiveSha256": "b5ad11f5955b3b7ddfd8c32e8c1fdd79878d208bb4dfa9bbd8f35ddc59187242",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libstdc++",
+        "version": "15.2.0-r2",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Uo13QXoWcGRor4UvKFmtAPF24mY=",
+        "archiveSha256": "d4be2967a06d78b499f5e136323f4ebe51ad367b381933b3369539499c4f5752",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libunistring",
+        "version": "1.4.1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1blZWK95Fa+5ZcXh9PZXDToTO15c=",
+        "archiveSha256": "eca5eb66c8ac64cca7160fb766b15e885f75d18c15d0919d0adee987a53b9473",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libuuid",
+        "version": "2.41.6-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1otzUjvw9IVgLs5rTGv9nVi/1zbw=",
+        "archiveSha256": "e428f43397e863243f17aa85c5b1c3a99adfcb9277d2300b1df7759502db4b6c",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "libverto",
+        "version": "0.3.2-r2",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1pIDO6DlIiRT7dEdWxtMUkJ4vNrU=",
+        "archiveSha256": "b577b4ed32d7f8cfd1d218c655e71253e07e51f0a1e24afaf7907e4bbab1cd7c",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "linux-virt",
+        "version": "6.18.58-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1f3VQOhGCy0byxudBEHOTE2yVbMY=",
+        "archiveSha256": "c46395ee268cd84164a2b6572e2ee730162fa64e5f9f685324fe3d61f9202b4a",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "mdev-conf",
+        "version": "4.9-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1t51Vo85Wb2nlffpTCVpG8zuO9Eg=",
+        "archiveSha256": "cb9b68c5804508ab1a7fb53685c514ebcab132ddb58a1f3f02c2098de2b208cb",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "mkinitfs",
+        "version": "3.13.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Rpf1uPweJfJ2DOiufCG9tdNPxy0=",
+        "archiveSha256": "c00f20ee2719298167910b6163b7548feb4591ac1be17b80851d9a41236990f6",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "musl",
+        "version": "1.2.5-r24",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1XUI1pl90RATg8vH/H5+0fF2ukao=",
+        "archiveSha256": "d49d703392f1a6d2fe822db1b57e61735063077e1ad846d5f40d79fe507ec727",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "musl-utils",
+        "version": "1.2.5-r24",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1rtAC/LK9HesmJYexXp60XOc2Ii8=",
+        "archiveSha256": "ee9a8106067ead36b8930f5ccdb3e515574871ac8e07f88cc7bab7049effc945",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "ncurses-terminfo-base",
+        "version": "6.5_p20251123-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1V70dgSTslX7v6iMUvfRbDtEGjO4=",
+        "archiveSha256": "9392f4d87fd9446c7c35dd1a29abe8e3566174e03bd75c848028e46829403f1f",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "nghttp2-libs",
+        "version": "1.69.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1a4ZRIn3T+RVd7TDdwXF1en9bkaU=",
+        "archiveSha256": "e52a5325b8720449ed4f123a33202794361b6b164c127abdb4b3c057467e7a41",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "nodejs",
+        "version": "24.22.1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1U574g+2RoyzzCyh1ElbiVG0JaFY=",
+        "archiveSha256": "2d5d09f3bafeca73b78c3e9c32861b76e8321795f840dd7e5d9ab6081486157e",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "npm",
+        "version": "11.11.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1kKkHrqA8nzU5Noesg73Py1IFL0c=",
+        "archiveSha256": "9ceb98c5ee7b2a5f63b4d7b9a95f48682d5f169031bfe7dd60b68c922cea46e4",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "oniguruma",
+        "version": "6.9.10-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1nsYKKhc/JUA/iOxKJRDNvm4srCg=",
+        "archiveSha256": "1738ccfd121036cee7edb2f7820cd8aa61badff5bc9e85c59d930a5cfc5b662f",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "openssh-client-common",
+        "version": "10.2_p1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1ZcQNh1bp4cvmzQ7Y5GLdJ/Sq5Xc=",
+        "archiveSha256": "aa7cbbeca8a8d92ec854a9149e3f8a12f93e152f185e22ee0abf6569d96fe4b6",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "openssh-client-krb5",
+        "version": "10.2_p1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1z9J/MLbC3DOlQf2UYYd2+8UeAFs=",
+        "archiveSha256": "23087741c1e0002764a96cf34d33e1d16d6d2c78cf7d283393caada2b3d5e30a",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "openssh-keygen",
+        "version": "10.2_p1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q14sDG6FkBbVqoK93GWoFMBiyUwhk=",
+        "archiveSha256": "6b24d17c7d17125064bfd381668197bc02afd8bac0fcf8c66feb9894283f7e7e",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "pcre2",
+        "version": "10.49-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1jy5WKPWTL4Io3M/SP3/2TODtkFc=",
+        "archiveSha256": "d8057917531ed5eead1d4ccc8dd3ef630e4d90c0587e9b9feafe56c4f954265f",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "readline",
+        "version": "8.3.1-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1iuuBs6R3+SK5tqUzOBEUxj3ZKP4=",
+        "archiveSha256": "6d29b98eafff4aebaed4e61fca8329fbf7b26489a29fefc1d4462610d687303b",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "ripgrep",
+        "version": "15.1.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1FQxDqvhFxYyDgANOU/hVlxmimDs=",
+        "archiveSha256": "eb1083f7c0ee057d3a3f0ba7fec8cc73933df9ed9d271e79f0f60d4e3c5efee9",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "scanelf",
+        "version": "1.3.8-r2",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1bqNt1E759jZPDN+r4J6hXS/b4ik=",
+        "archiveSha256": "6708eb12027a430614c523e6dcdca6eebcbff5b225242738a33a3a04df7f66b7",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "simdjson",
+        "version": "3.12.0-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q14ObbJgQmj75Eezs7jq1GRYT04eo=",
+        "archiveSha256": "1dfe639550b5457018b7993a9ac9417a6b3d0e4ecbbdacf0ef0e3b42582173e4",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "simdutf",
+        "version": "7.5.0-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1Z52lBV0mZZ/SuVGL83baA9pevNw=",
+        "archiveSha256": "6ca498fdaf3eae672e656f3746c2b4a4740a1924d1210af43ec6233b4a5a1476",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "sqlite-libs",
+        "version": "3.53.4-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q13TMQqTB64B2rsAGHcL97KWjv8Zk=",
+        "archiveSha256": "414be12c879052f4614a42a10fc12af67a88ba49e8e1e33f78cd9ddbbdb13fee",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "ssl_client",
+        "version": "1.37.0-r30",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1W27Ak5z8m+R9lnejFSxUfMGLXt0=",
+        "archiveSha256": "50a3c346ad8b095c901dc6ccd12ecce9f7031a740f451b31fbea7ee401eca382",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "tzdata",
+        "version": "2026e-r0",
+        "arch": "x86_64",
+        "archiveArch": "noarch",
+        "checksum": "Q1wS4sAAlg4HLCjh+cO4pJ8DWJjzg=",
+        "archiveSha256": "b317a4fa0a6ce0bc9f2a62349e205ed9faf5c89cb80c817fdc9cedca53e78da1",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "xz-libs",
+        "version": "5.8.4-r0",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1O0G1I3YJ211NkPj4UteCbWEUr/g=",
+        "archiveSha256": "3c8cc415e88c2a097543d9ee828081ec1905e7d0f57a319c8896269b0e00a672",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "zlib",
+        "version": "1.3.2-r1",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q1jut3bNPRHp/JoWp0GWNhtIWnnQE=",
+        "archiveSha256": "ee62e1864c235901e2aa4d1868c7ae8f7cc5d0740a98c48a2525332eb4bfda73",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      },
+      {
+        "name": "zstd-libs",
+        "version": "1.5.7-r2",
+        "arch": "x86_64",
+        "archiveArch": "x86_64",
+        "checksum": "Q11Qe4rDxDNaQEBawg5JusnUNkK+Y=",
+        "archiveSha256": "d5fcc58f7f071a5658d97b09838668e4443203217631992915b8e60656904104",
+        "signatures": [
+          ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub"
+        ]
+      }
+    ],
+    "files": [
+      {
+        "path": "/usr/lib/libada.so.3.3.0",
+        "package": "ada-libs",
+        "version": "3.3.0-r0",
+        "checksum": "Q1c3Mc5F5eryVwPEP5D0NDyA+GDt0=",
+        "sha256": "f7179a8fabac8058773bc11bb85521871821b9f653dd723a27f0f356a4f278bb"
+      },
+      {
+        "path": "/usr/lib/libbrotlidec.so.1.2.1",
+        "package": "brotli-libs",
+        "version": "1.2.1-r0",
+        "checksum": "Q19jvU5Ja1fS3MA5klQ5vHfCtfut8=",
+        "sha256": "10f40061031ab9ce9d527757ee86d7ee2f606bd6784ebcee0759a71920e2b3c5"
+      },
+      {
+        "path": "/usr/lib/libbrotlicommon.so.1.2.1",
+        "package": "brotli-libs",
+        "version": "1.2.1-r0",
+        "checksum": "Q19jvU5Ja1fS3MA5klQ5vHfCtfut8=",
+        "sha256": "1a1eeb67510dad304138c2b746b74896d486b992cbc38dbf3f7713307fe0ab78"
+      },
+      {
+        "path": "/usr/lib/libbrotlienc.so.1.2.1",
+        "package": "brotli-libs",
+        "version": "1.2.1-r0",
+        "checksum": "Q19jvU5Ja1fS3MA5klQ5vHfCtfut8=",
+        "sha256": "450ac0169df1402959f3b5b06122b410df5ed8d5fb60e96cc388f8cfbadd8697"
+      },
+      {
+        "path": "/usr/lib/libcares.so.2.19.8",
+        "package": "c-ares",
+        "version": "1.34.9-r0",
+        "checksum": "Q1EgKKSAW9t+uljO/j/CaGZPtO9UY=",
+        "sha256": "88cb12cee3a7d28570ed46a6230d5c0ff32ba3936ab3b726757ad91abd70fb76"
+      },
+      {
+        "path": "/usr/lib/libfuse3.so.3.18.3",
+        "package": "fuse3-libs",
+        "version": "3.18.3-r0",
+        "checksum": "Q1Y36eFdYEn0QKmWajugai/eA5RFU=",
+        "sha256": "b27da10c1d873d26972239230a273b356fd9d2e25c3ad1bd35817556165c11f9"
+      },
+      {
+        "path": "/usr/lib/libicui18n.so.76.1",
+        "package": "icu-libs",
+        "version": "76.1-r1",
+        "checksum": "Q1Wy55i6IPgx1k5UUmQxxS2Y4+35A=",
+        "sha256": "cac7f7526de9d89892122b865139881fed0a69e643baf3b5550c0bcacb3d6d4c"
+      },
+      {
+        "path": "/usr/lib/libicuuc.so.76.1",
+        "package": "icu-libs",
+        "version": "76.1-r1",
+        "checksum": "Q1Wy55i6IPgx1k5UUmQxxS2Y4+35A=",
+        "sha256": "e786109c948cf787f04bcba50d091f1eb390d8b5f328dcb1119099085ab8d5cf"
+      },
+      {
+        "path": "/usr/lib/libicudata.so.76.1",
+        "package": "icu-libs",
+        "version": "76.1-r1",
+        "checksum": "Q1Wy55i6IPgx1k5UUmQxxS2Y4+35A=",
+        "sha256": "56d32a07d4160cee5edf4ebece163e993dd6717747d2d424838b19f52edb83cc"
+      },
+      {
+        "path": "/usr/lib/libjemalloc.so.2",
+        "package": "jemalloc",
+        "version": "5.3.0-r6",
+        "checksum": "Q1icj/A4Fryi3wBD7wTzrC3L0sRA4=",
+        "sha256": "0ff802c4938f3d8ba116c922ad6da2829800a0e7d1ad92a431370c47de3fcf12"
+      },
+      {
+        "path": "/usr/lib/libjq.so.1.0.4",
+        "package": "jq",
+        "version": "1.8.2-r0",
+        "checksum": "Q1ahW4edKTHB0NeUAy5L1jpVyaV1s=",
+        "sha256": "30aa81966262947818381e547bdbff894dd497d977bcdd46454e381b5b7981f1"
+      },
+      {
+        "path": "/usr/lib/libkeyutils.so.1.10",
+        "package": "keyutils-libs",
+        "version": "1.6.3-r4",
+        "checksum": "Q11FKYUO+5WluPj41YtTHObXEt3iw=",
+        "sha256": "32286b8fc216df250c6b50e541cddc7802d79d012e2335a93116e76be9dff492"
+      },
+      {
+        "path": "/usr/lib/libgssapi_krb5.so.2.2",
+        "package": "krb5-libs",
+        "version": "1.22.1-r0",
+        "checksum": "Q1GYDx/9HgDMeUoSkwRuTPXPzuf00=",
+        "sha256": "f387a1dc70ee0a70e08cc30176161c2eb1336695f7f5ebb1fd8e47601c306731"
+      },
+      {
+        "path": "/usr/lib/libkrb5.so.3.3",
+        "package": "krb5-libs",
+        "version": "1.22.1-r0",
+        "checksum": "Q1GYDx/9HgDMeUoSkwRuTPXPzuf00=",
+        "sha256": "fa39a8be0c4c84c9fbe9ac2a6ca7e4cc5638c30c381fdd97822a2471bd213a36"
+      },
+      {
+        "path": "/usr/lib/libk5crypto.so.3.1",
+        "package": "krb5-libs",
+        "version": "1.22.1-r0",
+        "checksum": "Q1GYDx/9HgDMeUoSkwRuTPXPzuf00=",
+        "sha256": "d948b651be212201da165f3f48a92797d66b1715d155bf9ba825c131d940eba6"
+      },
+      {
+        "path": "/usr/lib/libkrb5support.so.0.1",
+        "package": "krb5-libs",
+        "version": "1.22.1-r0",
+        "checksum": "Q1GYDx/9HgDMeUoSkwRuTPXPzuf00=",
+        "sha256": "d0986e73e96c4e2406467fbcd3df74c106af2e06890cfe8330542836a7004e99"
+      },
+      {
+        "path": "/usr/lib/libcom_err.so.2.1",
+        "package": "libcom_err",
+        "version": "1.47.3-r0",
+        "checksum": "Q1M9IPB4xi3qxvlswPHl9T9Hjjjbo=",
+        "sha256": "9f485d7f67c164ec4344c920c8dda6cf0c30c823d52667eed93fb79cc83e141d"
+      },
+      {
+        "path": "/usr/lib/libcrypto.so.3",
+        "package": "libcrypto3",
+        "version": "3.5.9-r0",
+        "checksum": "Q1Ubt/ZmhM+YWFhgwtitzD8qoPZ3I=",
+        "sha256": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d"
+      },
+      {
+        "path": "/usr/lib/libcurl.so.4.8.0",
+        "package": "libcurl",
+        "version": "8.23.0-r0",
+        "checksum": "Q1DLQrtkoWtPiGrkrdimiRkh9NgEs=",
+        "sha256": "cc690485c43a1eea2246be7b4366eab92f582a7df12fd6093c964c72d5bcb64f"
+      },
+      {
+        "path": "/usr/lib/libgcc_s.so.1",
+        "package": "libgcc",
+        "version": "15.2.0-r2",
+        "checksum": "Q1V/zL6e6/I/LE847iok+LC91Qj/c=",
+        "sha256": "0f3c933942935150d3864bcd3b20b7922c8d95a66959fe1da5e2da73ba986e8a"
+      },
+      {
+        "path": "/usr/lib/libidn2.so.0.4.0",
+        "package": "libidn2",
+        "version": "2.3.8-r0",
+        "checksum": "Q1uMW/o2XaXDYKASMNtNceZa+Urz0=",
+        "sha256": "39d9a7191ab8cb4412787eb5d43047e14ec12ac2a138d2cba70495c42035a82d"
+      },
+      {
+        "path": "/usr/lib/libncursesw.so.6.5",
+        "package": "libncursesw",
+        "version": "6.5_p20251123-r0",
+        "checksum": "Q1ZJ0wQcUrgGIPtQqY9ZedJeu+FSM=",
+        "sha256": "746857d782c778108c40afea69c9081ba45ba1912e780a6359ef0110235d4dcb"
+      },
+      {
+        "path": "/usr/lib/libpsl.so.5.3.5",
+        "package": "libpsl",
+        "version": "0.21.5-r3",
+        "checksum": "Q1tmPAD5IKk75JyCVVWqGiEuQoc5M=",
+        "sha256": "5f66c2cded461e401e59d4b79c08861058ccda3df28e7bb7b0a42117fb99df83"
+      },
+      {
+        "path": "/usr/lib/libssl.so.3",
+        "package": "libssl3",
+        "version": "3.5.9-r0",
+        "checksum": "Q170vxHAYRS4o+qEErxLLXW0A7BuU=",
+        "sha256": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6"
+      },
+      {
+        "path": "/usr/lib/libstdc++.so.6.0.34",
+        "package": "libstdc++",
+        "version": "15.2.0-r2",
+        "checksum": "Q1Uo13QXoWcGRor4UvKFmtAPF24mY=",
+        "sha256": "ae81a1dd9b4fbab42a1014dda6b9ed13834610583781fe562f84e3cf65ea669b"
+      },
+      {
+        "path": "/usr/lib/libunistring.so.5.2.1",
+        "package": "libunistring",
+        "version": "1.4.1-r0",
+        "checksum": "Q1blZWK95Fa+5ZcXh9PZXDToTO15c=",
+        "sha256": "019724bf2df8b72edb83669318f1857bee8fb5753bcf176c9ca487e24b91bff6"
+      },
+      {
+        "path": "/lib/ld-musl-x86_64.so.1",
+        "package": "musl",
+        "version": "1.2.5-r24",
+        "checksum": "Q1XUI1pl90RATg8vH/H5+0fF2ukao=",
+        "sha256": "01e3b793ecda1146c4853dfa350e0515f2137f380fb9fa2370428f7bf9481148"
+      },
+      {
+        "path": "/usr/lib/libnghttp2.so.14.29.4",
+        "package": "nghttp2-libs",
+        "version": "1.69.0-r0",
+        "checksum": "Q1a4ZRIn3T+RVd7TDdwXF1en9bkaU=",
+        "sha256": "61f33569051345681ae150ac573e50abce43d3c17853f6185dd5a7f78648d5a9"
+      },
+      {
+        "path": "/usr/lib/libonig.so.5.5.0",
+        "package": "oniguruma",
+        "version": "6.9.10-r0",
+        "checksum": "Q1nsYKKhc/JUA/iOxKJRDNvm4srCg=",
+        "sha256": "59ee5a9c73e34ad74de5258a7ccbad9752b3f68665e426c0684dd2e1d547e1c4"
+      },
+      {
+        "path": "/usr/bin/ssh",
+        "package": "openssh-client-krb5",
+        "version": "10.2_p1-r0",
+        "checksum": "Q1z9J/MLbC3DOlQf2UYYd2+8UeAFs=",
+        "sha256": "b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096"
+      },
+      {
+        "path": "/usr/lib/libpcre2-8.so.0.16.1",
+        "package": "pcre2",
+        "version": "10.49-r0",
+        "checksum": "Q1jy5WKPWTL4Io3M/SP3/2TODtkFc=",
+        "sha256": "4540c92cd7fdd1f10566230f9cf688be3f25e9c7facd564ed96ad81fbde0e86c"
+      },
+      {
+        "path": "/usr/lib/libreadline.so.8.3",
+        "package": "readline",
+        "version": "8.3.1-r0",
+        "checksum": "Q1iuuBs6R3+SK5tqUzOBEUxj3ZKP4=",
+        "sha256": "868183e6d35a1b2ebd22341e151e571cdbcafd83949859ce16cde53ab4be3c4f"
+      },
+      {
+        "path": "/usr/lib/libsimdjson.so.25.0.0",
+        "package": "simdjson",
+        "version": "3.12.0-r0",
+        "checksum": "Q14ObbJgQmj75Eezs7jq1GRYT04eo=",
+        "sha256": "66a719f1d5eeee95c1fa63a18a130363372e373627b41350cf1d6d589a72c5b3"
+      },
+      {
+        "path": "/usr/lib/libsimdutf.so.27.0.0",
+        "package": "simdutf",
+        "version": "7.5.0-r1",
+        "checksum": "Q1Z52lBV0mZZ/SuVGL83baA9pevNw=",
+        "sha256": "0f211599e140eb11eb84aa754e612dec542e097c624a871f3a0da0cc2a8837e1"
+      },
+      {
+        "path": "/usr/lib/libsqlite3.so.3.53.4",
+        "package": "sqlite-libs",
+        "version": "3.53.4-r0",
+        "checksum": "Q13TMQqTB64B2rsAGHcL97KWjv8Zk=",
+        "sha256": "31cb64c44f413276f9df944b02ba8cc94f68c2c38531e76e61728c06876f5301"
+      },
+      {
+        "path": "/usr/lib/libz.so.1.3.2",
+        "package": "zlib",
+        "version": "1.3.2-r1",
+        "checksum": "Q1jut3bNPRHp/JoWp0GWNhtIWnnQE=",
+        "sha256": "a6e95f65e8229400707bca29b055fee31c64e6d5bec4355d6db979f49b7d9cc9"
+      },
+      {
+        "path": "/usr/lib/libzstd.so.1.5.7",
+        "package": "zstd-libs",
+        "version": "1.5.7-r2",
+        "checksum": "Q11Qe4rDxDNaQEBawg5JusnUNkK+Y=",
+        "sha256": "bbc46638607e551ffc8e9b4f0b02afb75cd52c8c560b386f7436a42fe840047f"
+      }
+    ]
+  },
+  "protectedBefore": {
+    "/usr/bin/ssh": "b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096",
+    "/usr/lib/libssl.so.3": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+    "/usr/lib/libcrypto.so.3": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+    "/usr/local/bin/dropcap": "f9b3cfa013a9d0c3d483eb2b4ae41104d6c941632cd5d968ea771ca6351bda2e",
+    "/usr/local/libexec/policygate": "e2d9d346e2030725380e81837753e360bbff2732fa7493d503c5625a1dedcc26",
+    "/etc/corb/image.json": "8e01867c5909b5996d1f41ff0462dd6cf8f363034a7e10e360b9413a19ccc010",
+    "/etc/corb/suid-allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "protectedAfter": {
+    "/usr/bin/ssh": "b92d4fcabb0a6b0faad061f311b536e6f93f29f0d23522b110d96682cbb54096",
+    "/usr/lib/libssl.so.3": "119ccfd8f10282b7c5d4b2c08c76a76ff8cf5afc853f7ffd7b220591857bb9f6",
+    "/usr/lib/libcrypto.so.3": "e1bc9392eb00116f8bc5ea5c1b9931d58e9013a987214a98b1e5695c7ada193d",
+    "/usr/local/bin/dropcap": "120bb283f6d765048f1bd53c8fc84698e30490720bb861404d493239a588249d",
+    "/usr/local/libexec/policygate": "ff16155ef08271e2a3e4b88bf672ddf5085f4b572e4af77fffba00eb328dcc26",
+    "/etc/corb/image.json": "8e01867c5909b5996d1f41ff0462dd6cf8f363034a7e10e360b9413a19ccc010",
+    "/etc/corb/suid-allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "gitBefore": [
+    {
+      "argv": [
+        "/usr/local/bin/git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 128,
+      "head": [],
+      "trace": [
+        "05:57:15.904785 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "05:57:15.943278 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "05:57:15.943323 http.c:890              == Info: OpenSSL verify result: 0",
+        "05:57:15.943326 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "05:57:16.218658 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "05:57:16.227662 http.c:890              == Info: TLSv1.3 (IN), TLS alert, decrypt error (563):",
+        "05:57:16.227677 http.c:890              == Info: TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error",
+        "error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error"
+      ]
+    },
+    {
+      "argv": [
+        "/usr/local/bin/dropcap",
+        "1000",
+        "1000",
+        "/usr/local/bin/git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 128,
+      "head": [],
+      "trace": [
+        "05:57:16.239525 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "05:57:16.261191 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "05:57:16.261253 http.c:890              == Info: OpenSSL verify result: 0",
+        "05:57:16.261256 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "05:57:16.444603 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "05:57:16.452949 http.c:890              == Info: TLSv1.3 (IN), TLS alert, decrypt error (563):",
+        "05:57:16.452959 http.c:890              == Info: TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error",
+        "error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error"
+      ]
+    },
+    {
+      "argv": [
+        "/usr/local/libexec/real-git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 128,
+      "head": [],
+      "trace": [
+        "05:57:16.461279 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "05:57:16.482532 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "05:57:16.482633 http.c:890              == Info: OpenSSL verify result: 0",
+        "05:57:16.482635 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "05:57:16.665195 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "05:57:16.673561 http.c:890              == Info: TLSv1.3 (IN), TLS alert, decrypt error (563):",
+        "05:57:16.673570 http.c:890              == Info: TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error",
+        "error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error"
+      ]
+    },
+    {
+      "argv": [
+        "/usr/local/bin/dropcap",
+        "1000",
+        "1000",
+        "/usr/local/libexec/real-git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 128,
+      "head": [],
+      "trace": [
+        "05:57:16.682991 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "05:57:16.705883 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "05:57:16.705923 http.c:890              == Info: OpenSSL verify result: 0",
+        "05:57:16.705925 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "05:57:16.898869 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "05:57:16.908021 http.c:890              == Info: TLSv1.3 (IN), TLS alert, decrypt error (563):",
+        "05:57:16.908034 http.c:890              == Info: TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error",
+        "error: RPC failed; curl 35 TLS connect error: error:0A00041B:SSL routines::tlsv1 alert decrypt error"
+      ]
+    }
+  ],
+  "gitAfter": [
+    {
+      "argv": [
+        "/usr/local/bin/git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 0,
+      "head": [
+        "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\tHEAD"
+      ],
+      "trace": [
+        "06:33:58.791681 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "06:33:58.823480 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:33:58.823549 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:33:58.823552 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "06:33:59.078253 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "06:33:59.083371 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:33:59.083498 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:33:59.083502 http.c:890              == Info: SSL certificate verified via OpenSSL."
+      ]
+    },
+    {
+      "argv": [
+        "/usr/local/bin/dropcap",
+        "1000",
+        "1000",
+        "/usr/local/bin/git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 0,
+      "head": [
+        "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\tHEAD"
+      ],
+      "trace": [
+        "06:33:59.392580 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "06:33:59.410707 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:33:59.410749 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:33:59.410751 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "06:33:59.587195 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "06:33:59.590040 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:33:59.590100 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:33:59.590104 http.c:890              == Info: SSL certificate verified via OpenSSL."
+      ]
+    },
+    {
+      "argv": [
+        "/usr/local/libexec/real-git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 0,
+      "head": [
+        "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\tHEAD"
+      ],
+      "trace": [
+        "06:33:59.842660 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "06:33:59.861500 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:33:59.861539 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:33:59.861541 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "06:34:00.062064 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "06:34:00.065221 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:34:00.065422 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:34:00.065424 http.c:890              == Info: SSL certificate verified via OpenSSL."
+      ]
+    },
+    {
+      "argv": [
+        "/usr/local/bin/dropcap",
+        "1000",
+        "1000",
+        "/usr/local/libexec/real-git",
+        "ls-remote",
+        "https://github.com/octocat/Hello-World.git"
+      ],
+      "exitCode": 0,
+      "head": [
+        "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d\tHEAD"
+      ],
+      "trace": [
+        "06:34:00.317657 run-command.c:765       trace: start_command: /usr/local/bin/git remote-https https://github.com/octocat/Hello-World.git https://github.com/octocat/Hello-World.git",
+        "06:34:00.337779 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:34:00.337836 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:34:00.337839 http.c:890              == Info: SSL certificate verified via OpenSSL.",
+        "06:34:00.520108 http.c:890              == Info: SSL reusing session with ALPN 'http/1.1'",
+        "06:34:00.523402 http.c:890              == Info: SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519MLKEM768 / RSASSA-PSS",
+        "06:34:00.523497 http.c:890              == Info: OpenSSL verify result: 0",
+        "06:34:00.523499 http.c:890              == Info: SSL certificate verified via OpenSSL."
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "name": "user",
+      "ok": true,
+      "detail": "id -u agent = 1000; /home/agent owned by 1000:1000"
+    },
+    {
+      "name": "privilege-drop",
+      "ok": true,
+      "detail": "dropcap 1000 1000 -> NoNewPrivs=1, CapEff=0, Groups empty, Uid=1000/1000/1000"
+    },
+    {
+      "name": "suid",
+      "ok": true,
+      "detail": "live SUID/SGID set matches /etc/corb/suid-allowlist.txt (0 entries)"
+    },
+    {
+      "name": "removals",
+      "ok": true,
+      "detail": "absent from PATH: npm, npx, su, sudo, doas, apk, apk.static"
+    },
+    {
+      "name": "ca-trust",
+      "ok": true,
+      "detail": "CA bundle present; Node, curl and root/agent git/real-git completed trusted HTTPS"
+    },
+    {
+      "name": "git-gh-shimmed",
+      "ok": true,
+      "detail": "git/gh on PATH resolve to the policygate shim; real-git/real-gh/policygate all present and executable"
+    },
+    {
+      "name": "pi",
+      "ok": true,
+      "detail": "pi --version ('1.4.0') matches /etc/corb/image.json's pinned piVersion '1.4.0'"
+    }
+  ],
+  "unitTests": {
+    "files": 61,
+    "passed": 1562,
+    "failed": 0
+  },
+  "standardChecks": [
+    "npm run typecheck",
+    "npm run lint",
+    "npm test"
+  ],
+  "runtime": {
+    "memory": "1G",
+    "cpus": 2,
+    "startTimeoutMs": 45000,
+    "gateCommandTimeoutMs": 30000,
+    "diagnosticCommandTimeoutMs": 45000,
+    "buildOverallTimeoutSeconds": 1500,
+    "e2eOverallTimeoutSeconds": 900
+  },
+  "canonicalPreservation": {
+    "unchanged": true,
+    "refs": {
+      "refs/corb/0.1.0/x86_64": "../../../objects/2747a805-7a7e-5798-84ca-077fb5086311",
+      "refs/corb/0.1.0-x86_64-171874b9/x86_64": "../../../objects/2747a805-7a7e-5798-84ca-077fb5086311",
+      "refs/corb-spike/dar-15-plain/x86_64": "../../../objects/a7e4ca98-2359-516c-8d37-e4607e470e66",
+      "refs/corb-spike/dar-15-fixed/x86_64": "../../../objects/e8292a0a-0a1a-52d5-959b-9ed372068d54"
+    },
+    "objectAssetCount": 48,
+    "beforeSha256": "c6248fc735fd572fb78a4cc0f3d951d8daba98b03ac8b5c3c4e789dc8617bd7b",
+    "afterSha256": "c6248fc735fd572fb78a4cc0f3d951d8daba98b03ac8b5c3c4e789dc8617bd7b"
+  },
+  "e2eTests": {
+    "passed": 53,
+    "total": 53,
+    "command": "CORB_E2E=1 npm run test:e2e",
+    "isolatedAlias": "corb:0.1.0",
+    "buildId": "a7cd90fa-05bc-5040-8cb8-71e3255c42d4"
+  },
+  "cleanup": {
+    "hostContext": true,
+    "taskProcesses": [],
+    "sessionFiles": [],
+    "transientFiles": [],
+    "remainingDockerContainers": [
+      "7d63ddc97cae programatic-app programatic-app-1",
+      "93aa10f0108d caddy:2-alpine programatic-caddy-1",
+      "6ca57386bd17 moby/buildkit:buildx-stable-1 buildx_buildkit_bskycat0"
+    ],
+    "sdkListSessions": [],
+    "slotReleased": true
+  }
+}
