@@ -143,3 +143,39 @@ path outside all mounts.
 
 For the detailed guarantees and their reasoning, consult the repository's design
 document and architecture decisions.
+
+## Base package state
+
+The production image installs Alpine packages through trusted APK transactions on the v3.23 branch.
+It upgrades and reinstalls the minirootfs packages before applying Corb overlays.
+The recipe leaves SDK payload extraction disabled for the rootfs. The real solver selects all runtime packages and their dependencies.
+The SSH provider is `openssh-client-krb5`. This preserves the shipped client's Kerberos and GSSAPI support.
+
+Before hardening, the build verifies each installed package against its signed archive.
+It compares the package name, version, architecture, control checksum, and required native library bytes.
+The check includes the OpenSSL libraries and rejects unresolved solver dependencies or conflicting SSH providers.
+A separate check repeats recorded identity and native byte checks before publication. All seven image gates must also pass.
+
+Corb then removes `npm`, `npx`, `su`, `sudo`, `doas`, `apk`, and `apk.static` from PATH.
+It keeps the APK records for later solver transactions. Removed tools and moved Git binaries are intentional package file changes.
+Corb owns the policy shims, protected config, compiled bindfs, and pinned Pi installation.
+Package coherence does not claim that every package file stays unchanged after these overlays.
+
+## Trusted Git HTTPS
+
+Gondolin 0.12.0 creates a bare TLS socket and supplies its leaf context through an SNI callback.
+With the measured host OpenSSL stack, a resumed TLS 1.3 handshake fails before that callback supplies the right context.
+The first verified request succeeds. The second connection reports a PSK parsing error and sends a decrypt alert.
+
+Corb prepares the known destination's context before passing encrypted bytes to that socket.
+The adapter uses `TLSSocket.setKeyCert` and checks the pinned SDK version and internal method shapes.
+It limits pending bytes and discards work for closed sessions. Active context errors close only their own connection.
+Late failures after cleanup or buffer overflow cannot close a replacement connection.
+
+This adapter stays in Corb source and applies to production sessions and image verification.
+It requires review when the SDK changes because the SDK exposes no public hook for this step.
+
+The measured repair makes fresh, verified TLS 1.3 handshakes when a client offers an earlier session ticket.
+It keeps protocol versions, ciphers, certificate checks, HTTP policy, and command shims intact.
+The image gate tests both Git paths as root and through `dropcap` as uid 1000.
+Node and curl retain their separate trusted TLS checks.

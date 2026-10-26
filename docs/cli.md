@@ -161,6 +161,16 @@ corb image build [--config FILE] [--tag REF] \
 Build, verify, and tag a guest image. The default image configuration is
 `image/corb-image.json` from the checkout.
 
+A successful default build writes `corb:<packageVersion>-<arch>-<hash>` and the `corb:<packageVersion>` alias.
+With `--tag REF`, the build writes only `REF`. This includes an explicitly requested version alias.
+A failed verification writes no refs and imports no object.
+
+The hash covers the effective config, configured init files, and each resolved `postBuild.copy` source and destination.
+Corb resolves referenced files against the config directory and rejects missing inputs before building.
+Field boundaries and config order keep the input sequence distinct.
+This tag identifies effective build inputs. It does not identify a reproducible disk or an immutable package repository snapshot.
+Keep exact asset checksums and the Gondolin build ID when recording local images.
+
 `image ls`, `image verify`, and `image pin` are planned and are not implemented
 commands.
 

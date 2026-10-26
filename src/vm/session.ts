@@ -24,6 +24,7 @@
 // every exit path (a clean Ctrl-C, a killed terminal, an unexpected throw,
 // and the exec's own normal completion) is the only reliable termination
 // primitive available.
+import { configureTrustedTls } from "./tls.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -1218,6 +1219,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       ...(options.cpus !== undefined ? { cpus: options.cpus } : {}),
       sessionLabel,
     });
+    configureTrustedTls(vm);
 
     // Ingress (M9.4): host-to-guest reverse proxy exposing a single guest
     // loopback port, wired only when `--expose PORT` was passed

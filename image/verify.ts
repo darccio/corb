@@ -20,6 +20,7 @@
 // than a blind port — see the "ca-trust" and "git-gh-current-state" gates
 // below for what was decided and why.
 
+import { configureTrustedTls } from "../src/vm/tls.ts";
 import { createHttpHooks, VM } from "@earendil-works/gondolin";
 import { buildGateConfigMount, GATE_CONFIG_GUEST_PATH, GATE_CONFIG_RAW_ROOT } from "../src/vm/session.ts";
 
@@ -64,6 +65,7 @@ async function run(vm: VM, argv: string[], env: Record<string, string> = {}) {
     env: { PATH: BASE_PATH, ...env },
     stdout: "buffer",
     stderr: "buffer",
+    signal: AbortSignal.timeout(30_000),
   });
 }
 
@@ -176,7 +178,7 @@ async function gateSuid(vm: VM): Promise<GateResult> {
 
 async function gateRemovals(vm: VM): Promise<GateResult> {
   const name = "removals";
-  const candidates = ["npm", "npx", "su", "sudo", "doas", "apk"];
+  const candidates = ["npm", "npx", "su", "sudo", "doas", "apk", "apk.static"];
   const script = candidates.map((c) => `command -v ${c} >/dev/null 2>&1 && echo "PRESENT:${c}"`).join("; ");
   const result = await run(vm, ["/bin/sh", "-lc", script]);
   const present = result.stdout
@@ -247,61 +249,40 @@ async function gateCaTrust(vm: VM): Promise<GateResult> {
     );
   }
 
-  // git — ls-remote against a real public git-over-HTTPS host. Exit 0
-  // means the TLS handshake was trusted and the smart-HTTP exchange
-  // completed; no clone, no credentials. Invokes the real binary directly at
-  // `/usr/local/libexec/real-git` (M7's `postBuild.commands` moved it there
-  // and put a `policygate` shim symlink at the old `/usr/bin/git`/
-  // `/usr/local/bin/git` — see `gateGitGhShimmed` below and `src/vm/
-  // session.ts`'s `GATE_CONFIG` doc comment for why `real-git`, not
-  // `git-real`), but this does *not* avoid `policygate` entirely: this
-  // Alpine git build has no standalone `git-remote-https` binary, so git's
-  // own https transport internally re-invokes the literal name `git` via a
-  // plain `$PATH` lookup (confirmed with `GIT_TRACE=1`: `start_command:
-  // /usr/local/bin/git remote-https ...`), landing back on the `policygate`
-  // shim for that one sub-invocation before it re-execs `real-git` a second
-  // time to actually run the transport. Harmless in a real session (the
-  // shim allows the unblocked `remote-https` subcommand straight through,
-  // and `CORB_GATE_CONFIG` is inherited across the re-exec), but this
-  // throwaway build-time verify VM otherwise has no `gate.json` mounted at
-  // all, so without the mount/env below the recursive shim call would fail
-  // closed for a reason that has nothing to do with CA trust. Mounting
-  // `buildGateConfigMount()`'s exact production config here (see
-  // `verifyImage()` below) makes this gate exercise the same real path a
-  // production session does, rather than papering over it.
-  const gitResult = await run(
-    vm,
-    ["/usr/local/libexec/real-git", "ls-remote", "https://github.com/octocat/Hello-World.git"],
-    { HOME: "/root", CORB_GATE_CONFIG: GATE_CONFIG_GUEST_PATH },
-  );
-  if (gitResult.exitCode !== 0) {
-    problems.push(`git: ls-remote over https to github.com failed, exit ${gitResult.exitCode}: ${gitResult.stderr.trim()}`);
+  // Git invokes the policy shim again for its HTTPS helper. Both users
+  // need the production gate mount and CA environment from the wrapper.
+  for (const agent of [false, true]) {
+    for (const executable of ["/usr/local/bin/git", "/usr/local/libexec/real-git"]) {
+      const gitResult = await run(
+        vm,
+        [
+          ...(agent ? ["/usr/local/bin/dropcap", "1000", "1000"] : []),
+          executable, "ls-remote", "https://github.com/octocat/Hello-World.git",
+        ],
+        {
+          HOME: agent ? "/home/agent" : "/root",
+          CORB_GATE_CONFIG: GATE_CONFIG_GUEST_PATH,
+          GIT_TERMINAL_PROMPT: "0",
+          GIT_TRACE_CURL: "1",
+          GIT_TRACE_CURL_NO_DATA: "1",
+        },
+      );
+      const label = `${agent ? "agent" : "root"} ${executable}`;
+      if (gitResult.exitCode !== 0 || !/^[a-f0-9]{40,64}\s+HEAD$/m.test(gitResult.stdout)) {
+        problems.push(`${label}: HTTPS ls-remote failed (exit ${gitResult.exitCode}): ${gitResult.stderr.trim().slice(-4000)}`);
+      } else if (!/SSL certificate (?:verify ok|verified via OpenSSL)/.test(gitResult.stderr)) {
+        problems.push(`${label}: HTTPS trace did not confirm certificate verification`);
+      }
+    }
   }
 
   if (problems.length > 0) {
     return fail(name, problems.join(" | "));
   }
-  return pass(name, "CA bundle present; node, curl and git each completed a trusted TLS handshake to an allowed host");
+  return pass(name, "CA bundle present; Node, curl and root/agent git/real-git completed trusted HTTPS");
 }
 
-// The plan's original gate table (written before M1 was split into
-// milestones) asserted that `/usr/local/bin/git` is a `policygate` shim and
-// that `/usr/bin/git` is absent. Before M7 shipped, that assertion was
-// flipped to a *current-state* gate (git/gh still the real, unmodified
-// Alpine binaries) so a premature regression toward the shimmed state would
-// still be caught. M7 (`image/corb-image.json`'s `postBuild.commands`) now
-// actually installs the shim, so this gate is flipped back to asserting the
-// shimmed state the plan originally called for — this is the gate that
-// stays in place going forward.
-//
-// This is static image structure only: `command -v`/symlink target/`test -x`
-// checks against the *built image*, not `policygate`'s actual runtime
-// gating behavior. This throwaway build-time verify VM has no `gate.json`
-// mounted (that's a runtime, per-session artifact `src/vm/session.ts`
-// generates, not something baked into the image) and no `CORB_GATE_CONFIG`
-// pointing anywhere, so no gated subcommand can be meaningfully exercised
-// here. Full behavioral verification against a real session (M7.4) is a
-// separate, later item.
+// Check the shipped policy shims. Behavioral policy tests also run in e2e.
 async function gateGitGhShimmed(vm: VM): Promise<GateResult> {
   const name = "git-gh-shimmed";
   const result = await run(vm, [
@@ -392,15 +373,28 @@ async function gatePi(vm: VM): Promise<GateResult> {
   return pass(name, `pi --version ('${actual}') matches /etc/corb/image.json's pinned piVersion '${expectedVersion}'`);
 }
 
-const GATES: Array<(vm: VM) => Promise<GateResult>> = [
-  gateUser,
-  gatePrivilegeDrop,
-  gateSuid,
-  gateRemovals,
-  gateCaTrust,
-  gateGitGhShimmed,
-  gatePi,
+const GATES: Array<[string, (vm: VM) => Promise<GateResult>]> = [
+  ["user", gateUser],
+  ["privilege-drop", gatePrivilegeDrop],
+  ["suid", gateSuid],
+  ["removals", gateRemovals],
+  ["ca-trust", gateCaTrust],
+  ["git-gh-shimmed", gateGitGhShimmed],
+  ["pi", gatePi],
 ];
+
+/** Run all seven gates. The caller owns the VM and its network mounts. */
+export async function verifyVm(vm: VM): Promise<VerifyReport> {
+  const gates: GateResult[] = [];
+  for (const [name, gate] of GATES) {
+    try {
+      gates.push(await gate(vm));
+    } catch (error) {
+      gates.push(fail(name, String(error)));
+    }
+  }
+  return { ok: gates.every((gate) => gate.ok), gates };
+}
 
 /**
  * Boot the guest image at `assetDir` (a `buildAssets()` output directory, an
@@ -408,12 +402,19 @@ const GATES: Array<(vm: VM) => Promise<GateResult>> = [
  * accepts) in a throwaway VM and run every gate against it. Always closes the
  * VM, including when a gate throws or fails.
  */
-export async function verifyImage(assetDir: string, options: VerifyImageOptions = {}): Promise<VerifyReport> {
+export async function withImageVm<T>(
+  assetDir: string,
+  options: VerifyImageOptions,
+  check: (vm: VM) => Promise<T>,
+): Promise<T> {
   const allowedHosts = options.allowedHosts ?? DEFAULT_ALLOWED_HOSTS;
   const { httpHooks, env } = createHttpHooks({ allowedHosts, allowedInternalHosts: [] });
 
   const vm = await VM.create({
     sandbox: { imagePath: assetDir },
+    memory: "1G",
+    cpus: 2,
+    startTimeoutMs: 45_000,
     dns: { mode: "synthetic", syntheticHostMapping: "per-host" },
     httpHooks,
     env,
@@ -428,12 +429,14 @@ export async function verifyImage(assetDir: string, options: VerifyImageOptions 
   });
 
   try {
-    const gates: GateResult[] = [];
-    for (const gate of GATES) {
-      gates.push(await gate(vm));
-    }
-    return { ok: gates.every((g) => g.ok), gates };
+    configureTrustedTls(vm);
+    return await check(vm);
   } finally {
     await vm.close();
   }
+}
+
+/** Boot an image, run the seven gates, and close the VM on every result. */
+export async function verifyImage(assetDir: string, options: VerifyImageOptions = {}): Promise<VerifyReport> {
+  return withImageVm(assetDir, options, verifyVm);
 }
