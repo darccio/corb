@@ -195,7 +195,7 @@ Both registry and proxy use HTTPS on fresh loopback ports with a valid fixture C
 The official registry checks a private bcrypt credential file.
 Every ORAS transfer receives an explicit private registry config and the fixture CA.
 Missing credentials, wrong credentials and an untrusted CA fail through real transport requests.
-The fixture strips query strings and never records credentials or upload-state tokens.
+The proxy records query-free request paths. A later independent run finds upload-state tokens in official child logs and ORAS errors.
 
 The first group records **115 HTTP requests**.
 Authenticated success includes 4 upload starts, 13 completed writes, 22 downloads and 11 successful HEAD requests.
@@ -307,7 +307,7 @@ The coordinator separately audits actual host processes and SDK runtime cleanup.
 The fixture scans all transferred input and base blob bytes, shared files and ordinary diagnostics for credential markers.
 
 The full run's service group then passes the private options observation at `b03ad36`.
-It records **27 create calls and 8 resume calls**, all clean, without credential markers.
+It records **27 create calls and 8 resume calls**, all clean against password and Basic credential markers.
 The coordinator independently audits those receipts and actual host process cleanup.
 
 ### Final serial suite
@@ -333,8 +333,71 @@ All **16 API cases pass again** at that head in **8.66 seconds**, with 115 real 
 The base-transfer case now uses B's empty SDK store beside its active workspace and verified generation.
 It checks B's selected config, shared files, current pointer and checkpoint after each base-import control.
 
-The coordinator's independent final 100-case run at `1f5cd0e` covers those two refinements.
-Its result is pending while this draft remains under review.
+### Independent failed run, 2026-10-27
+
+The coordinator's independent final run at `1f5cd0e` fails on 2026-10-27 after **25 passes and 1 failure** in **2305.11 seconds**.
+The failure occurs during A's separate base push, before the stronger B import checks run.
+Source coherence and all seven gates pass. ORAS then reports EOF during the 3 GiB rootfs upload.
+The owned registry receives the full body, whose hash still matches A's exact source rootfs.
+The proxy records 502 without a final upload success response.
+
+The fixture's ten-second upstream idle timeout can expire while the registry commits a complete body.
+The official implementation calls filesystem flush and sync before returning upload success.
+This is the leading explanation for the observed failure. The original receipt lacks timing evidence to prove that phase caused the timeout.
+See the [official upload handler](https://github.com/distribution/distribution/blob/v3.1.2/registry/handlers/blobupload.go) and [filesystem writer](https://github.com/distribution/distribution/blob/v3.1.2/registry/storage/driver/filesystem/driver.go).
+
+Registry shutdown also fails its one-second drain limit and requires a forced kill.
+The outer runner reports no remaining children or ownership uncertainty, but the nested registry receipt correctly reports uncertainty.
+The old teardown stops at that registry failure. It skips later base audits, runtime removal and the main result receipt.
+The coordinator independently confirms every recorded process is gone and all canonical refs and existing assets remain unchanged.
+
+The failed receipts remain under `image/build/dar-21-root-review/full`.
+Later URL-secret redaction changes only nine known diagnostic files. A private action receipt records their before and after hashes at `image/build/dar-21/diagnostic-redaction.json`.
+
+This run also reveals a diagnostic gap. ORAS errors and official access logs contain registry-generated upload-state query tokens.
+Earlier marker scans cover the fixture password and Basic credentials. They do not cover these dynamic tokens.
+Those previous scans do not establish complete token redaction.
+
+The required correction must scrub URL secrets before diagnostic storage and retain the full failed regression.
+Final acceptance remains pending a complete passing serial run at the corrected executable head.
+
+### Registry recovery, 2026-10-27
+
+The narrow production correction scrubs URL userinfo, query values and fragments from ORAS error diagnostics before retaining output tails.
+It handles chunk boundaries, truncated userinfo and oversized tokens. Successful descriptor stdout and binary transfers retain their exact bytes.
+The fixture disables official access logs and scrubs other child diagnostics before writing receipts.
+Actual upload-state values join the private marker plan. Reports record only their count.
+
+The marker plan keeps its 64 KiB limit and accepts at most 256 markers. Overflow fails closed.
+Later VM calls read a refreshed private plan through the same bounded observer.
+
+The proxy now allows 120 seconds of upstream inactivity within the existing command and overall bounds.
+It records query-free body byte counts, body completion, elapsed time and failure class.
+Cleanup attempts every registry, base audit and runtime step, then writes a result receipt that includes the runtime path.
+It retains primary test failures and reports all cleanup failures.
+
+A fresh official-registry probe uploads and downloads the exact **3,221,225,472-byte** rootfs through real ORAS over authenticated HTTPS.
+The successful upload returns **201** after **48.523 seconds**. Its body finishes after **11.555 seconds**.
+The measured **36.968-second post-body wait** exceeds the old ten-second fixture limit.
+The authenticated download returns **200**, transfers the same byte count and matches the original source hash.
+
+The complete owned probe takes **70.252 seconds** and captures one real upload-state marker without diagnostic leakage.
+The registry and outer runner exit zero with no forced kills, survivors or ownership uncertainty. Actual host checks confirm all recorded PIDs are gone.
+
+The first recovery probe also transfers and hashes the full bytes, but fails a new fixture assertion.
+It selects the expected unauthenticated GET challenge instead of the later authenticated download.
+The correction selects the successful authenticated row and retains every byte, hash and status assertion.
+Both receipts remain preserved. This fixture error is separate from the original base-push failure.
+
+The host checks pass **1931 unit tests in 101 files**, typecheck and lint.
+Six focused files pass 17 diagnostic, marker, TCP timeout, observer and cleanup tests.
+The API group passes **16 tests** again in **8.82 seconds**, with 115 real requests and four dynamic upload-state markers.
+Both registry and outer receipts report exit zero and no forced kills, survivors or ownership uncertainty.
+Actual host checks confirm all 11 recorded PIDs are gone.
+
+The production fix is `8a01169`. The fixture correction and executable freeze are `d306b80`.
+The coordinator must still run the complete serial suite at that final executable head.
+Earlier partial results do not replace that run. Final acceptance remains pending.
 
 ### Repeat DAR-21 acceptance
 

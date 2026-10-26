@@ -561,7 +561,7 @@ The report separates measured production results from historical spikes. It reco
 The serial suite passes 100 tests at `b03ad36`, with the separate two-VM case disabled under the one-VM limit.
 Official Distribution 3.1.2 and external ORAS 1.3.5 transfer input and separate raw-base graphs over authenticated HTTPS.
 Two coherent bases with different package/account state compose the same authenticated inputs and keep their own exact-base checkpoint caches.
-Actual create/resume option observations remain free of registry credential markers.
+Actual create/resume option observations remain free of password and Basic credential markers.
 
 Signed Redis 8.4.2-r0 uses its unmodified packaged config through explicit root build/preparation checks as the real Redis account.
 Production runtime restoration supplies its declared directories before fresh startup and own-base resume.
@@ -571,3 +571,8 @@ The missing-directory control fails for the measured log-path error.
 These checks provide no automatic boot service or public root service launcher.
 The [dated validation report](layer-validation.md#dar-21-production-acceptance-2026-10-26) records versions, digests, requests, gates, cleanup and later fixture refinements.
 It limits the Go evidence to pure Go on the measured native bases and leaves token/redirect behavior delegated to ORAS.
+
+The independent final run on 2026-10-27 fails during the separate 3 GiB base upload after 25 passing tests.
+It also reveals upload-state tokens in transport and official registry diagnostics.
+The [validation report](layer-validation.md) preserves this failure and the later correction evidence.
+Final acceptance requires a complete passing run at the corrected executable head.

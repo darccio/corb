@@ -167,12 +167,16 @@ Registry token realms, redirects and host credential helpers are trusted transpo
 This is not guest hostname confinement or independent publisher authentication.
 These host settings never enter guest inputs or shared artifact bytes.
 
+Corb redacts URL userinfo, queries and fragments in ORAS error diagnostics before retaining their bounded output tails.
+
 The acceptance fixture uses the official Distribution 3.1.2 binary with its immutable archive and executable hashes.
 Its [release page](https://github.com/distribution/distribution/releases/tag/v3.1.2) provides the primary source.
 
 The fixture creates its own CA, HTTPS endpoints, credentials and private storage on loopback ports.
 It uses a private registry config for every external ORAS transfer.
 Its small HTTPS proxy records methods, paths, status codes and authentication results without credentials or upload tokens.
+
+Official access logging is disabled. The fixture also scrubs captured registry diagnostics and privately tracks dynamic upload-state markers.
 This fixture is test code. Corb does not provide a registry service.
 
 Local state uses private directories, immutable verified cache objects and one exclusive writer lock per workspace.
