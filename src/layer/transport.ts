@@ -19,7 +19,8 @@ export function validatePushDestination(reference: string): string {
 export function artifactRepository(reference: string): string { return validateArtifactReference(reference).split("@")[0]!; }
 export function registryFlags(options: RegistryOptions, direction = ""): string[] {
   const prefix = direction === "" ? "" : `${direction}-`;
-  return [...(options.registryConfig === undefined ? [] : [`--${prefix}registry-config`, path.resolve(options.registryConfig)]), ...(options.caFile === undefined ? [] : [`--${prefix}ca-file`, path.resolve(options.caFile)])];
+  // ORAS infers HTTP for localhost unless this option is explicitly false.
+  return [`--${prefix}plain-http=false`, ...(options.registryConfig === undefined ? [] : [`--${prefix}registry-config`, path.resolve(options.registryConfig)]), ...(options.caFile === undefined ? [] : [`--${prefix}ca-file`, path.resolve(options.caFile)])];
 }
 export class OrasTransport {
   private readonly deadline = Date.now() + 60 * 60_000;

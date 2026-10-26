@@ -7,7 +7,7 @@ import { corbCacheRoot } from "../../src/config/paths.ts";
 import { normalizeLayerDefinition, hashLayerDefinition } from "../../src/layer/definition.ts";
 import { publishInputGraph, readInputGraph } from "../../src/layer/graph.ts";
 import { publishBlob, hashFile } from "../../src/layer/state.ts";
-import { OrasTransport, writeOciLayout } from "../../src/layer/transport.ts";
+import { OrasTransport, writeOciLayout, registryFlags } from "../../src/layer/transport.ts";
 
 describe.skipIf(!process.env.CORB_E2E)("input OCI layouts through real ORAS", () => {
   let root: string; let graph: Awaited<ReturnType<typeof publishInputGraph>>; let transport: OrasTransport;
@@ -43,6 +43,12 @@ describe.skipIf(!process.env.CORB_E2E)("input OCI layouts through real ORAS", ()
       expect(cancellation).toBeDefined(); await new Promise((resolve) => setTimeout(resolve, 100)); cancellation!();
       expect((await outcome).error?.message).toContain("cancelled"); expect(process.listeners("SIGINT").filter((listener) => !before.has(listener))).toEqual([]);
     } finally { fs.rmSync(filename, { force: true }); fs.writeFileSync(filename, bytes, { flag: "wx", mode: 0o600 }); }
+  });
+
+  it("explicitly disables ORAS localhost HTTP inference", async () => {
+    const config = path.join(root, "private-registry-config.json"); fs.writeFileSync(config, '{"auths":{}}', { flag: "wx", mode: 0o600 });
+    const remote = new OrasTransport({ registryConfig: config });
+    await expect(remote.run(["manifest", "fetch", ...registryFlags(remote.options), `localhost:1/closed@sha256:${"a".repeat(64)}`])).rejects.toThrow("https://localhost:1/");
   });
 
 });

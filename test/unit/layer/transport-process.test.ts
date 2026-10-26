@@ -36,7 +36,7 @@ it("fetches bounded config bytes with ORAS's required output contract and TLS/au
   });
   const transport = new OrasTransport({ registryConfig: "/private/auth", caFile: "/private/ca" });
   expect((await fetchArtifactMetadata(transport, `registry.example/repo@${digest}`, "input", root)).config.toString()).toBe(configBytes);
-  for (const call of state.spawn.mock.calls.filter((call) => call[1][0] !== "version")) { expect(call[1]).toContain("--ca-file"); expect(call[1]).toContain("--registry-config"); expect(call[1]).not.toContain("--insecure"); expect(call[1]).not.toContain("--plain-http"); }
+  for (const call of state.spawn.mock.calls.filter((call) => call[1][0] !== "version")) { expect(call[1]).toContain("--ca-file"); expect(call[1]).toContain("--registry-config"); expect(call[1]).toContain("--plain-http=false"); expect(call[1]).not.toContain("--insecure"); expect(call[1]).not.toContain("--plain-http"); }
 });
 it("kills and reaps excessive output without retaining unbounded diagnostics", async () => {
   const root = directory(); let excessive: ReturnType<typeof child>;

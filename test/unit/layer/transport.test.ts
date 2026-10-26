@@ -11,8 +11,9 @@ function root() {
 it.each(["repo:tag", "org/repo:tag", "ghcr.io/org/repo", "ghcr.io/org/repo@sha256:" + "a".repeat(64), "https://ghcr.io/org/repo:tag", "ghcr.io/UPPER/repo:tag"])("rejects unqualified destination %s", (value) => { expect(() => validatePushDestination(value)).toThrow(); });
 it.each(["ghcr.io/org/repo:tag", "localhost:5443/test:tag", "registry.example:443/group/repo:tag"])("accepts an explicit tagged destination %s", (value) => { expect(validatePushDestination(value)).toBe(value); });
 it("passes only verified TLS/auth options through each ORAS interface", () => {
-  expect(registryFlags({ registryConfig: "/private/auth", caFile: "/private/ca" }, "from")).toEqual(["--from-registry-config", "/private/auth", "--from-ca-file", "/private/ca"]);
-  expect(registryFlags({})).toEqual([]);
+  expect(registryFlags({ registryConfig: "/private/auth", caFile: "/private/ca" }, "from")).toEqual(["--from-plain-http=false", "--from-registry-config", "/private/auth", "--from-ca-file", "/private/ca"]);
+  expect(registryFlags({})).toEqual(["--plain-http=false"]);
+  expect(registryFlags({}, "to")).toEqual(["--to-plain-http=false"]);
 });
 it("rejects a base artifact as an input artifact and rejects external URL/subject edges", () => {
   const bytes = root(); const digest = `sha256:${sha256(bytes)}`; expect(inspectArtifactRoot(bytes, "input", digest).artifactType).toContain("layer-inputs");
