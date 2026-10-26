@@ -289,6 +289,10 @@ Base choices, composed generations, output hashes, account numbers and checkpoin
 Runtime directories name required paths and system accounts. They do not launch services or run startup scripts.
 The [security guide](security.md#workspace-layer-input-boundary) describes package compatibility and archive limits.
 
-Workspace layer support for image pin/build/push/pull arrives in the integration issue.
-Until then, a real run with a layer stops before credentials or VM creation.
-The implementation performs no downloads, extraction or VM builds for these inspection contracts.
+Explicit pin, build and layer transport commands use this same winning workspace.
+`--workspace NAME` works without any hosted directory or primary mount.
+Without it, cwd selection retains source and ambiguity errors. No cwd mount is invented.
+
+These commands never accept personal normal-run trust.
+Normal run validates the current exact-base generation before reading credentials or starting a VM.
+See [layer sharing](layers.md) for producer and recipient steps, local state and recovery limits.

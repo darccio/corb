@@ -112,9 +112,7 @@ Both run the same code.
 A few things worth being explicit about, since the design docs describe a
 larger target surface than what exists today:
 
-- **`corb image` only has `build`.** `image ls`, `image verify`, and `image
-  pin` remain unimplemented. `src/cli.ts` dispatches `image build` and prints
-  a stub message for anything else under `image`.
+- **Workspace layers require explicit preparation.** Pin authenticated inputs, build a local exact-base composition, and push only reusable inputs. Recipients pull and compose on their own compatible base. See [the workflow](docs/layers.md).
 - **`corb run` does not yet have** `--rule`, `--allow-host`, `--allow-repo`,
   `--allow-push`/`--no-push`, `--no-network`, `--image`, `--memory`, `--cpus`,
   `--max-session`, `--name`, `--session-dir`, `--env`, `--print-plan`, or
@@ -307,6 +305,10 @@ M9.5 evaluated checkpoint warm starts and deliberately left them unimplemented.
 `vm.checkpoint()` and `resume()` save disk contents, without CPU or memory state.
 The spike found that they still boot the guest from scratch and do not speed up `corb run` startup.
 See [M9.5](docs/spike-results.md) and [R19](docs/gondolin-notes.md) for measurements and reasoning.
+
+Workspace layers now use signed input bundles and per-base disk caches.
+Separate base OCI push/pull distributes raw SDK assets without coupling them to shared inputs.
+See [layer preparation and sharing](docs/layers.md) for producer and recipient commands.
 
 ## License
 

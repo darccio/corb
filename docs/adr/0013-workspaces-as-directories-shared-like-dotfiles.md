@@ -7,7 +7,10 @@ Accepted
 DAR-10 provides workspace sources and the mount guard. DAR-9 provides selection,
 configuration layering, portable hosts, and workspace trust keys.
 DAR-14 provides implied provider hosts. DAR-17 records the workspace when its file sets the provider.
-Layers and pins remain for DAR-16. The DAR-15 spike will inform their design.
+
+DAR-22 defines shareable input pins, OCI graphs and runtime directories.
+DAR-23 implements explicit pin/build/push/pull and exact-base local composition after the DAR-20 coherent base.
+The conditional-delta DAR-16 spike remains historical evidence only.
 
 ## Context and Problem Statement
 
@@ -17,7 +20,7 @@ This decision replaces that layout with workspace directories.
 
 Teams need to share workspace settings without sharing personal trust records.
 They also need several mount paths, portable across different home directories.
-A workspace will hold image and layer pins alongside its configuration.
+A workspace holds authenticated input pins alongside its configuration.
 
 `CORB_CONFIG_DIR` can select a separate configuration for each project.
 That replaces both the global configuration and its `trusted.json`.
@@ -61,8 +64,8 @@ It does not identify the workspace or its trust record.
 Each directory holds:
 
 * `corb.toml`, with the global `config.toml` schema except `[workspaces]`.
-* `corb.sum`, with image and layer pins, planned in DAR-16.
-* Later, workspace-only layer definitions through `[image.layer]`, also planned in DAR-16.
+* `corb.sum`, with authenticated shareable input pins.
+* Workspace-only layer definitions through `[image.layer]`.
 
 Directories keep related configuration and pins together, unlike the reserved
 single-file layout. A workspace can set secrets, mounts, push permission and
@@ -219,7 +222,7 @@ Corb adds brokered providers' API hosts to `egress.allow` automatically.
 DAR-14 applies this before trust. DAR-9 includes the workspace layer in that merge.
 DAR-17 names the workspace when its file sets the provider. Other provider sources remain global.
 
-Layers' run-time hosts will also become implied through DAR-16.
+Layer runtime hosts also become implied through the shared recipe.
 `corb explain` shows each implied host and its source.
 A newly implied host counts as widening and requires personal acceptance.
 
@@ -231,7 +234,7 @@ That separation remains deliberate, as documented in `docs/configuration.md`.
 
 ### Open questions
 
-* What exact format will `corb.sum` use? DAR-15 must inform that decision.
+* DAR-22 defines the strict version-1 `corb.sum` format. DAR-23 implements its lifecycle.
 * How will `corb ls` show the workspace a session used? Its WORKSPACE column
   currently lists mounted directory names.
 
@@ -248,4 +251,15 @@ That separation remains deliberate, as documented in `docs/configuration.md`.
 * Bad, because old path-keyed acceptance does not cover a workspace's first run.
 * Neutral, because scalars, same-named directory fields and secret host lists still replace earlier values. Widening requires acceptance.
 * Neutral, because sharing the whole configuration directory through dotfiles is unsupported. DAR-10 rejects sources containing `trusted.json`.
-* Neutral, because the layer and pin format remains open until the DAR-15 spike supplies evidence.
+* Neutral, because shared pins describe reusable inputs while exact-base generation state stays local.
+
+
+## Production layer implementation
+
+The winning raw workspace controls definition and pins for all image preparation commands.
+Explicit name selection needs no primary mount. Normal run retains its existing session assembly and personal trust flow.
+A reusable input graph contains no base, installed delta, checkpoint, local path or Gondolin build ID.
+
+Each compatible recipient performs its own APK transaction and SDK copy on an exact local base.
+Immutable generations are local caches. Separate base OCI commands distribute raw SDK assets when needed.
+See [the production workflow](../layers.md) for commands and trust, service and recovery limits.

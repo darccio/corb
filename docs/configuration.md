@@ -331,12 +331,12 @@ owner = "agent"
 group = "agent"
 ```
 
-The parser and inspection commands support these contracts now.
-Workspace layer support for image pin/build/push/pull arrives in the integration issue.
-A real run with a layer stops before credentials or VM creation until that integration lands.
+Use explicit pin, build and transport commands to prepare a local composition.
+Normal run requires a verified generation for the exact selected base before credentials or VM creation.
+See [the producer and recipient workflow](layers.md).
 
 `corb explain` and `corb run --dry-run` need neither pins nor a local generation.
-Missing pins show `corb image pin --workspace <name>`. This command is not available yet.
+Missing pins show `corb image pin --workspace <name>`.
 Malformed or stale pins are errors during inspection.
 
 `packages` is required. Keep `packages = []` for recipes that contain only SDK archives or commands.
@@ -347,7 +347,7 @@ Package and host lists become sorted sets.
 
 `commands` defaults to `[]`. Corb preserves each command's bytes and their order.
 Entries must be nonempty strings without NUL.
-These are unpinned root install steps. Integration will run each separately with `/bin/sh -ec` from `/`.
+These are unpinned root install steps. Corb runs each separately with `/bin/sh -ec` from `/`.
 They cannot change base or pinned package records or silently add dependencies.
 
 `build-hosts` defaults to `["dl-cdn.alpinelinux.org"]`. An explicit list replaces that default.
@@ -359,7 +359,7 @@ Build hosts and archive download hosts grant no runtime access.
 ### SDK payloads
 
 Each `[[image.layer.payload]]` has the following fields. Only complete `tar.gz` SDK trees are supported.
-The URL needs no filename suffix. Integration validates the archive bytes.
+The URL needs no filename suffix. Corb validates the archive bytes.
 
 | Field | Contract |
 | --- | --- |
@@ -389,9 +389,9 @@ Corb sorts entries by path.
 
 `mode` is a four-character octal string from `0000` through `0777`. Its default is `0755`.
 Required owner and group names must match `^[a-z_][a-z0-9_-]*[$]?$`.
-Integration resolves numeric ownership from the actual composed guest accounts. Those numbers stay local.
+Corb resolves numeric ownership from the actual composed guest accounts. Those numbers stay local.
 
-Integration will create or fix only each declared directory before agent startup and every checkpoint resume.
+Corb creates or fixes only each declared directory before agent startup and every checkpoint resume.
 It must not follow symlinks, delete files or change children recursively.
 The declaration starts no service. Service launch, supervision and startup scripts are not schema features.
 
@@ -422,3 +422,8 @@ Local generations, output hashes, compatibility receipts and account mappings st
 Local generation publication never edits `corb.sum`.
 Every added, changed or removed recipe or selected target requires fresh trust acceptance.
 Changes to another target do not change selected trust inputs.
+
+Image preparation selects the winning raw workspace source directly.
+An explicit `--workspace NAME` needs no primary mount or hosted directory.
+Without it, cwd selection retains ordinary source and ambiguity errors.
+The base comes from global plus workspace settings, without positional or CLI mount layers.
