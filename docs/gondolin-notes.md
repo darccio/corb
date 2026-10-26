@@ -551,3 +551,6 @@ Source details that constrain production:
 
 Canonical base assets and refs stay unchanged during tests. Checkpoints are disk caches and resume through a full boot.
 See [the sharing guide](layers.md) for exact public interfaces and boundaries.
+
+The [production validation report](layer-validation.md) records final image/input/generation identities, measured tests, failure recovery and cleanup.
+It keeps source mismatches and unverified remote/service cases separate from the historical spike evidence.

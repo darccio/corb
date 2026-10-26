@@ -309,6 +309,7 @@ See [M9.5](docs/spike-results.md) and [R19](docs/gondolin-notes.md) for measurem
 Workspace layers now use signed input bundles and per-base disk caches.
 Separate base OCI push/pull distributes raw SDK assets without coupling them to shared inputs.
 See [layer preparation and sharing](docs/layers.md) for producer and recipient commands.
+The [validation report](docs/layer-validation.md) records production identities, source checks and test limits.
 
 ## License
 
