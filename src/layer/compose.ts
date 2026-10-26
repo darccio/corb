@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { VmCheckpoint } from "@earendil-works/gondolin";
 import { authenticateGraph, ownedLayerStaging, removeLayerStaging, inputMount, APK_PREFIX } from "./prepare.ts";
 import { inputsForContext, type InputGraph } from "./graph.ts";
@@ -43,6 +44,10 @@ export async function composeLayer(context: LayerContext, suppliedGraph?: InputG
     ownedCandidate = true;
     const prepared = await authenticateGraph(graph, context, base, baseline, staging);
     const payloadPath = prepared.payloads.flatMap((payload) => payload.path.map((entry) => path.posix.join(payload.destination, entry))).concat(BASE_PATH.split(":"));
+    // Own both checkpoint source and destination: the SDK disables source deletion before moving it.
+    const builderDisk = path.join(directory, "builder.qcow2");
+    fs.closeSync(fs.openSync(builderDisk, "wx", 0o600));
+    execFileSync("qemu-img", ["create", "-f", "qcow2", "-F", "raw", "-b", base.assets.rootfs!.path, builderDisk], { timeout: 30_000, maxBuffer: 1024 * 1024 });
     const built = await withLayerVm(base, "corb-layer-builder", context.definition["build-hosts"], async (vm) => {
       const processBaseline = await layerGuest(vm, "processes");
       let additions: ReturnType<typeof parsePackagePlan> = [];
@@ -86,7 +91,7 @@ export async function composeLayer(context: LayerContext, suppliedGraph?: InputG
       process.stderr.write(`corb image: checkpointing builder host PID ${vm.getHostPid()}\n`);
       await vm.checkpoint(path.join(directory, "checkpoint.qcow2"));
       return { evidence, plan, mapping, guestEvidenceSha256: guestEvidence.sha256 };
-    }, { mounts: inputMount(prepared.input) });
+    }, { mounts: inputMount(prepared.input), builderDisk });
     const checkpoint = path.join(directory, "checkpoint.qcow2");
     const trailer = inspectCheckpointTrailer(checkpoint, base.manifest.buildId);
     inspectCheckpointBacking(checkpoint, base.assets.rootfs!.path);

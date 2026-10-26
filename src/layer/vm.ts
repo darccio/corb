@@ -31,11 +31,11 @@ export async function verifyProductionVm(vm: VM): Promise<Verification> {
   if (!result.ok || result.gates.length !== 7 || required.some((name) => result.gates.filter((gate) => gate.name === name && gate.ok).length !== 1)) fail("production image verification requires all seven gates");
   return result;
 }
-export async function withLayerVm<T>(base: LayerBase, label: string, hosts: string[], callback: (vm: VM) => Promise<T>, options: { mounts?: NonNullable<VMOptions["vfs"]>["mounts"]; checkpoint?: VmCheckpoint; verifier?: boolean } = {}): Promise<T> {
+export async function withLayerVm<T>(base: LayerBase, label: string, hosts: string[], callback: (vm: VM) => Promise<T>, options: { mounts?: NonNullable<VMOptions["vfs"]>["mounts"]; checkpoint?: VmCheckpoint; verifier?: boolean; builderDisk?: string } = {}): Promise<T> {
   requireLayerExecution(base);
   const { httpHooks, env } = createHttpHooks({ allowedHosts: hosts, allowedInternalHosts: [] });
   const vmOptions: VMOptions = {
-    sandbox: { imagePath: base.directory, vmm: "qemu" }, memory: "1G", cpus: 2, startTimeoutMs: 45_000,
+    sandbox: { imagePath: base.directory, vmm: "qemu", ...(options.builderDisk === undefined ? {} : { rootDiskPath: options.builderDisk, rootDiskFormat: "qcow2" as const, rootDiskDeleteOnClose: true }) }, memory: "1G", cpus: 2, startTimeoutMs: 45_000,
     dns: { mode: "synthetic", syntheticHostMapping: "per-host" }, httpHooks, env,
     ssh: { allowedHosts: [] }, allowWebSockets: false,
     vfs: { mounts: { ...(options.verifier ? { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() } : {}), ...options.mounts } }, sessionLabel: label,
