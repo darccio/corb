@@ -86,6 +86,57 @@ describe("shareable pins", () => {
     expect(readLayerLock(dir)?.target).toEqual({ x86_64: pins(), aarch64: arm });
     expect(fs.statSync(target).mode & 0o777).toBe(0o600);
   });
+  it.each(["read", "stage"])("refuses a lock symlink retargeted during %s without clobbering either real file", (phase) => {
+    const dir = temporary();
+    const file = path.join(dir, "corb.sum");
+    const targetA = path.join(dir, "a.toml");
+    const targetB = path.join(dir, "b.toml");
+    const prior = serializeLayerLock({ version: 1, target: { x86_64: pins() } });
+    fs.writeFileSync(targetA, prior);
+    fs.writeFileSync(targetB, "malformed old content");
+    fs.symlinkSync("a.toml", file);
+    let changed = false;
+    const retarget = () => {
+      if (changed) return;
+      changed = true;
+      fs.unlinkSync(file);
+      fs.symlinkSync("b.toml", file);
+    };
+    if (phase === "read") {
+      const read = fs.readFileSync.bind(fs);
+      vi.spyOn(fs, "readFileSync").mockImplementation((...args: Parameters<typeof fs.readFileSync>) => {
+        const bytes = read(...args);
+        if (args[0] === targetA) retarget();
+        return bytes;
+      });
+    } else {
+      const rename = fs.renameSync.bind(fs);
+      vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+        rename(from, to);
+        retarget();
+      });
+    }
+    expect(() => refreshLayerPins(dir, "x86_64", pins())).toThrow("changed during pin refresh");
+    expect(changed).toBe(true);
+    expect(fs.readFileSync(targetA, "utf8")).toBe(prior);
+    expect(fs.readFileSync(targetB, "utf8")).toBe("malformed old content");
+    expect(fs.readlinkSync(file)).toBe("b.toml");
+    expect(fs.readdirSync(dir).sort()).toEqual(["a.toml", "b.toml", "corb.sum"]);
+  });
+  it("refuses replacement of the captured target before publication", () => {
+    const dir = temporary();
+    const file = path.join(dir, "corb.sum");
+    fs.writeFileSync(file, serializeLayerLock({ version: 1, target: { x86_64: pins() } }));
+    const rename = fs.renameSync.bind(fs);
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      rename(from, to);
+      fs.unlinkSync(file);
+      fs.writeFileSync(file, "malformed replacement");
+    });
+    expect(() => refreshLayerPins(dir, "x86_64", pins())).toThrow("changed during pin refresh");
+    expect(fs.readFileSync(file, "utf8")).toBe("malformed replacement");
+    expect(fs.readdirSync(dir)).toEqual(["corb.sum"]);
+  });
   it("preserves pins and symlink on a real filesystem write failure", () => {
     const dir = temporary();
     const store = path.join(dir, "readonly");

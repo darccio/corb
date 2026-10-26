@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { realpathOrResolve } from "../config/hostpaths.ts";
 import { parse, stringify } from "smol-toml";
 import { writeFileSecure } from "../util/secure-write.ts";
 import { assertLayerTarget, hashLayerDefinition, type LayerDefinition } from "./definition.ts";
@@ -153,12 +155,53 @@ export function readLayerLock(workspaceDir: string): LayerLock | undefined {
   catch (error) { fail(`could not read '${file}': ${error instanceof Error ? error.message : String(error)}`); }
 }
 
+interface LockSnapshot {
+  file: string;
+  target: string;
+  entry?: fs.BigIntStats;
+  targetStat?: fs.BigIntStats;
+  bytes?: Buffer;
+}
+
+function sameFileIdentity(before: fs.BigIntStats, after: fs.BigIntStats): boolean {
+  return before.dev === after.dev && before.ino === after.ino && before.size === after.size
+    && before.mtimeNs === after.mtimeNs && before.ctimeNs === after.ctimeNs;
+}
+
+function assertLockSnapshot(snapshot: LockSnapshot): void {
+  const target = lockTarget(snapshot.file);
+  const changed = () => fail(`corb.sum '${snapshot.file}' changed during pin refresh`);
+  if (snapshot.entry === undefined) {
+    if (target !== undefined || realpathOrResolve(snapshot.file) !== snapshot.target) changed();
+    return;
+  }
+  if (target === undefined || fs.realpathSync(target) !== snapshot.target) changed();
+  if (!sameFileIdentity(snapshot.entry, fs.lstatSync(snapshot.file, { bigint: true }))
+    || !sameFileIdentity(snapshot.targetStat!, fs.statSync(snapshot.target, { bigint: true }))) changed();
+}
+
+function captureLockSnapshot(file: string): LockSnapshot {
+  const target = lockTarget(file);
+  if (target === undefined) return { file, target: realpathOrResolve(file) };
+  const canonical = fs.realpathSync(target);
+  const snapshot: LockSnapshot = { file, target: canonical, entry: fs.lstatSync(file, { bigint: true }),
+    targetStat: fs.statSync(canonical, { bigint: true }), bytes: fs.readFileSync(canonical) };
+  assertLockSnapshot(snapshot);
+  return snapshot;
+}
+
 export function refreshLayerPins(workspaceDir: string, arch: LayerArch, pins: LayerTargetPins): LayerLock {
-  const prior = readLayerLock(workspaceDir) ?? { version: 1, target: {} };
+  const snapshot = captureLockSnapshot(path.join(workspaceDir, "corb.sum"));
+  const prior = snapshot.bytes === undefined ? { version: 1, target: {} } : parseLayerLock(snapshot.bytes.toString("utf8"));
   const next: LayerLock = { version: 1, target: { ...prior.target, [arch]: recipePins(pins, arch) } };
-  const file = path.join(workspaceDir, "corb.sum");
-  const target = lockTarget(file) ?? file;
-  writeFileSecure(target, serializeLayerLock(next));
+  const staging = path.join(path.dirname(snapshot.target), `.${path.basename(snapshot.target)}.refresh-${process.pid}-${randomUUID()}`);
+  try {
+    writeFileSecure(staging, serializeLayerLock(next));
+    assertLockSnapshot(snapshot);
+    fs.renameSync(staging, snapshot.target);
+  } finally {
+    fs.rmSync(staging, { force: true });
+  }
   return normalizeLayerLock(next);
 }
 
