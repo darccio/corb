@@ -57,6 +57,7 @@ export function configureTrustedTls(vm: VM): void {
       waiting.delete(session);
       for (const chunk of chunks) original(key, session, chunk);
     }).catch((error: unknown) => {
+      if (backend.tcpSessions.get(key) !== session || !waiting.has(session)) return;
       waiting.delete(session);
       backend.abortTcpSession(key, session, `TLS context preparation failed: ${String(error)}`);
     });

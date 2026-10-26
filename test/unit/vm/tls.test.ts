@@ -55,6 +55,19 @@ describe("trusted TLS context preparation", () => {
     expect(backend.abortTcpSession).toHaveBeenCalledWith("connection", session, expect.stringContaining("certificate unavailable"));
     expect(calls).toEqual([]);
   });
+  it("ignores a context rejection after a replacement session takes the same key", async () => {
+    const { vm, backend, session, reject } = fixture();
+    configureTrustedTls(vm);
+    backend.handleTlsData("connection", session, Buffer.from("first"));
+    const replacement = { ...session };
+    backend.tcpSessions.set("connection", replacement);
+    backend.abortTcpSession.mockImplementation((key) => backend.tcpSessions.delete(key));
+    reject(new Error("late certificate failure"));
+    await settle();
+    expect(backend.abortTcpSession).not.toHaveBeenCalled();
+    expect(backend.tcpSessions.get("connection")).toBe(replacement);
+    expect(backend.ensureTlsSession).not.toHaveBeenCalled();
+  });
   it("does not create a socket after VM cleanup removes the session", async () => {
     const { vm, backend, session, resolve } = fixture();
     configureTrustedTls(vm);
@@ -70,6 +83,31 @@ describe("trusted TLS context preparation", () => {
     backend.handleTlsData("connection", session, Buffer.alloc(32));
     backend.handleTlsData("connection", session, Buffer.alloc(33));
     expect(backend.abortTcpSession).toHaveBeenCalledWith("connection", session, "TLS context pending buffer exceeded");
+    expect(backend.ensureTlsSession).not.toHaveBeenCalled();
+  });
+  it("ignores a late rejection after overflow and key reuse", async () => {
+    const { vm, backend, session, reject } = fixture();
+    backend.abortTcpSession.mockImplementation((key) => backend.tcpSessions.delete(key));
+    configureTrustedTls(vm);
+    backend.handleTlsData("connection", session, Buffer.alloc(32));
+    backend.handleTlsData("connection", session, Buffer.alloc(33));
+    expect(backend.tcpSessions.has("connection")).toBe(false);
+    const replacement = { ...session };
+    backend.tcpSessions.set("connection", replacement);
+    reject(new Error("late certificate failure"));
+    await settle();
+    expect(backend.abortTcpSession).toHaveBeenCalledExactlyOnceWith("connection", session, "TLS context pending buffer exceeded");
+    expect(backend.tcpSessions.get("connection")).toBe(replacement);
+    expect(backend.ensureTlsSession).not.toHaveBeenCalled();
+  });
+  it("does not abort twice when overflow cleanup leaves the old session mapped", async () => {
+    const { vm, backend, session, reject } = fixture();
+    configureTrustedTls(vm);
+    backend.handleTlsData("connection", session, Buffer.alloc(32));
+    backend.handleTlsData("connection", session, Buffer.alloc(33));
+    reject(new Error("late certificate failure"));
+    await settle();
+    expect(backend.abortTcpSession).toHaveBeenCalledExactlyOnceWith("connection", session, "TLS context pending buffer exceeded");
     expect(backend.ensureTlsSession).not.toHaveBeenCalled();
   });
   it("rejects unsupported SDK shapes instead of omitting the repair", () => {

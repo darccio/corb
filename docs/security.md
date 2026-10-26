@@ -169,7 +169,9 @@ The first verified request succeeds. The second connection reports a PSK parsing
 
 Corb prepares the known destination's context before passing encrypted bytes to that socket.
 The adapter uses `TLSSocket.setKeyCert` and checks the pinned SDK version and internal method shapes.
-It limits pending bytes and discards work for closed sessions. Context errors close the connection.
+It limits pending bytes and discards work for closed sessions. Active context errors close only their own connection.
+Late failures after cleanup or buffer overflow cannot close a replacement connection.
+
 This adapter stays in Corb source and applies to production sessions and image verification.
 It requires review when the SDK changes because the SDK exposes no public hook for this step.
 
