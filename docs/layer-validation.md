@@ -12,7 +12,7 @@ See [the workflow](layers.md) for the public interfaces, trust boundaries and re
 
 ## Measured results
 
-Typecheck and lint pass. The full unit suite passes **1913 tests in 94 files**.
+Typecheck and lint pass. The full unit suite passes **1915 tests in 95 files**.
 The serial real-VM suite passes **70 tests in 12 files**, with one separately gated concurrency case skipped.
 That case then passes under its separate coordinator grant: **71 e2e tests pass across all 13 files** in the two runs.
 The installed compiled CLI passes package coherence and all seven gates with no checkout `src` directory.
@@ -23,6 +23,7 @@ Earlier fixture failures remain in local logs. The final serial run passes the c
 
 A later review with a clean home exposed a personal Git setting in the legacy SSH fixture.
 Both its bare and working repositories now start explicitly on `main`, so the pushed branch matches the bare HEAD.
+The SSH, Git-protection and local ORAS subset then passed 17 cases with a private clean home.
 
 Every generation below has package coherence and seven-of-seven production gate success.
 The tree transaction adds one package to the 75-package base. Both Go compositions retain 75 packages.
@@ -90,6 +91,7 @@ They explain implementation choices and corrections to earlier assumptions.
 | ORAS 1.3.5 reports a text version and requires an explicit blob-fetch output option. Copy TLS/auth flags use direction prefixes. | Check the exact version, fetch blobs with `--output -`, and pass flags to the correct remote side. |
 | ORAS 1.3.5 defaults localhost registries to HTTP even when the option is omitted. | Pass explicit false-valued plain-HTTP options. This disables HTTP and is the necessary exception to the prompt's literal flag wording. Never enable HTTP or insecure TLS. |
 | SDK verification wrappers otherwise inherit WebSocket allowance. | Explicitly disable WebSockets and SSH egress for image verification. |
+| The SDK can run a short QEMU `--version` probe before starting a guest. | Ignore only that exact probe in guest resource checks. Keep every owned process in cleanup tracking and retain strict actual guest checks. |
 | SDK exit hooks do not guarantee child reaping after a parent SIGKILL. | The test runner tracks owned sessions and process start identities, drains verified children and bounds escalation. Discovery uncertainty fails the group. |
 | The installed canonical `corb:0.1.0` still lacks the new coherence report. | Preserve that canonical ref and its assets. Use independently rebuilt coherent bases and private SDK stores for validation. |
 

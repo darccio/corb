@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { runOwnedProcess } from "./helpers/owned-process.ts";
+import { isQemuVersionProbe } from "./helpers/qemu.ts";
 import { expect, it } from "vitest";
 const enabled = process.env.CORB_E2E === "1" && process.env.CORB_E2E_LAYER_CONCURRENCY === "1" && process.platform === "linux" && process.arch === "x64";
 const hash = (filename: string) => execFileSync("sha256sum", [filename], { encoding: "utf8", timeout: 120_000 }).split(" ")[0]!;
@@ -28,6 +29,7 @@ it.skipIf(!enabled)("resumes two isolated overlays without changing the generati
     const vms = new Map<number, string>();
     const result = await runOwnedProcess(process.execPath, ["src/cli.ts", "run", "--workspace", "go", ...(token === "prime" ? ["--trust-config"] : []), "--", "--extension", "/work/project/concurrent.mjs", "--print", token], { env, timeoutMs: 120_000,
       observe: (pid, args) => {
+        if (isQemuVersionProbe(args)) return;
         const argv = args.join(" "); expect(argv).toContain("-m 1G -smp 2");
         const overlay = /-drive file=([^,]+),format=qcow2/.exec(argv)?.[1]; expect(overlay).toBeDefined(); expect(overlay).not.toBe(checkpoint);
         const info = JSON.parse(execFileSync("qemu-img", ["info", "--force-share", "--output=json", overlay!], { encoding: "utf8", timeout: 5000 }));
