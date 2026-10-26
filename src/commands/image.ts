@@ -258,6 +258,12 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
   // throwaway VM and run the gate suite against them. On any failure, the
   // already-written buildAssets() output is left on disk (useful for
   // debugging) but nothing gets imported or tagged.
+  process.stderr.write(`corb image build: validating package coherence at ${result.outputDir}\n`);
+  const coherencePath = path.join(packageRoot(), "image", "coherence.ts");
+  const { validateImagePackageCoherence } = await import(pathToFileURL(coherencePath).href) as {
+    validateImagePackageCoherence: (assetDir: string) => Promise<void>;
+  };
+  await validateImagePackageCoherence(result.outputDir);
   process.stderr.write(`corb image build: verifying guest image at ${result.outputDir}\n`);
   const verifyImage = await loadVerifyImage();
   const verify = await verifyImage(result.outputDir, {

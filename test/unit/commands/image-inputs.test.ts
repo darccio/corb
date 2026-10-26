@@ -71,6 +71,16 @@ describe("image build input hash", () => {
     expect(computeContentHash(config, dir)).not.toBe(first);
   });
 
+  it("separates copy bytes even when payloads contain destination text", () => {
+    const { dir, config } = fixture();
+    config.postBuild = { copy: [{ src: "a", dest: "/a" }, { src: "b", dest: "/b" }] };
+    fs.writeFileSync(path.join(dir, "a"), "left");
+    fs.writeFileSync(path.join(dir, "b"), "/bright");
+    const before = computeContentHash(config, dir);
+    fs.writeFileSync(path.join(dir, "a"), "left/b");
+    fs.writeFileSync(path.join(dir, "b"), "right");
+    expect(computeContentHash(config, dir)).not.toBe(before);
+  });
   it("rejects missing copy inputs", () => {
     const { dir, config } = fixture();
     config.postBuild = { copy: [{ src: "absent", dest: "/a" }] };

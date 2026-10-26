@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
-  build: vi.fn(), importImage: vi.fn(), tag: vi.fn(), verify: vi.fn(),
+  build: vi.fn(), importImage: vi.fn(), tag: vi.fn(), verify: vi.fn(), coherence: vi.fn(),
 }));
 vi.mock("@earendil-works/gondolin", async (load) => ({
   ...await load<object>(),
@@ -12,10 +13,12 @@ vi.mock("@earendil-works/gondolin", async (load) => ({
   tagImage: mocks.tag,
 }));
 vi.mock("../../../image/verify.ts", () => ({ verifyImage: mocks.verify }));
+vi.mock("../../../image/coherence.ts", () => ({ validateImagePackageCoherence: mocks.coherence }));
 import { imageBuild, runImageCommand } from "../../../src/commands/image.ts";
 const dirs: string[] = [];
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.coherence.mockResolvedValue(undefined);
   mocks.build.mockResolvedValue({ outputDir: "/candidate" });
   mocks.importImage.mockReturnValue({ buildId: "candidate-id" });
   mocks.tag.mockImplementation((_id, reference) => ({ reference, targets: { x86_64: "candidate-id" } }));
@@ -55,9 +58,40 @@ describe("image publication", () => {
     await runImageCommand(["build", ...args(), "--tag", "corb-spike:dar-20-output"]);
     expect(log.mock.calls.filter(([line]) => String(line).includes("tagged"))).toHaveLength(1);
   });
-  it("imports nothing and writes no refs after a failed gate", async () => {
-    mocks.verify.mockResolvedValue({ ok: false, gates: [{ name: "ca-trust", ok: false, detail: "TLS failure" }] });
-    await expect(imageBuild(args())).rejects.toThrow(/verification failed/);
+  for (const extra of [[], ["--tag", "corb-spike:dar-20-failed"], ["--tag", "corb:0.1.0"]]) {
+    it(`writes no refs after a failed gate with ${extra.join(" ") || "default tags"}`, async () => {
+      mocks.verify.mockResolvedValue({ ok: false, gates: [{ name: "ca-trust", ok: false, detail: "TLS failure" }] });
+      await expect(imageBuild([...args(), ...extra])).rejects.toThrow(/verification failed/);
+      expect(mocks.importImage).not.toHaveBeenCalled();
+      expect(mocks.tag).not.toHaveBeenCalled();
+    });
+  }
+  it("preserves old objects and content refs when explicitly moving an existing alias", async () => {
+    const argv = args();
+    const store = path.join(path.dirname(argv[1]!), "store");
+    vi.stubEnv("GONDOLIN_IMAGE_STORE", store);
+    const sdk = await vi.importActual<typeof import("@earendil-works/gondolin")>("@earendil-works/gondolin");
+    const oldId = randomUUID();
+    const newId = randomUUID();
+    for (const id of [oldId, newId]) {
+      const object = path.join(store, "objects", id);
+      fs.mkdirSync(object, { recursive: true });
+      fs.writeFileSync(path.join(object, "manifest.json"), JSON.stringify({ buildId: id, config: { arch: "x86_64" }, assets: { kernel: "vmlinuz-virt", initramfs: "initramfs.cpio.lz4", rootfs: "rootfs.ext4" } }));
+      for (const file of ["vmlinuz-virt", "initramfs.cpio.lz4", "rootfs.ext4"]) fs.writeFileSync(path.join(object, file), id);
+    }
+    sdk.setImageRef("corb:0.1.0", oldId, "x86_64");
+    sdk.setImageRef("corb:0.1.0-x86_64-existing", oldId, "x86_64");
+    mocks.importImage.mockReturnValue({ buildId: newId });
+    mocks.tag.mockImplementation(sdk.tagImage);
+    await imageBuild([...argv, "--tag", "corb:0.1.0"]);
+    expect(sdk.resolveImageSelector("corb:0.1.0", "x86_64").buildId).toBe(newId);
+    expect(sdk.resolveImageSelector("corb:0.1.0-x86_64-existing", "x86_64").buildId).toBe(oldId);
+    expect(fs.readFileSync(path.join(store, "objects", oldId, "rootfs.ext4"), "utf8")).toBe(oldId);
+  });
+  it("imports nothing and writes no refs after failed package coherence", async () => {
+    mocks.coherence.mockRejectedValue(new Error("libssl3: recorded version 3.5.4-r0 differs from signed archive 3.5.9-r0"));
+    await expect(imageBuild(args())).rejects.toThrow(/libssl3: recorded version/);
+    expect(mocks.verify).not.toHaveBeenCalled();
     expect(mocks.importImage).not.toHaveBeenCalled();
     expect(mocks.tag).not.toHaveBeenCalled();
   });
