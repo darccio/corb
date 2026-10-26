@@ -19,3 +19,7 @@ it("rejects changed base dependency and provider identities", () => {
   expect(() => assertPackageIdentities(existing, [{ ...existing[0]!, D: "changed" }], [])).toThrow("base package");
   expect(() => assertPackageIdentities(existing, [], [])).toThrow("missing or extra");
 });
+it("compares package identities independently of database field order", () => {
+  const reordered = parseInstalledIdentities("C:base\nA:x86_64\np:so:libc=1\nD:so:libc\nV:1.2.4-r0\nP:musl\n");
+  expect(() => assertPackageIdentities(existing, reordered, [])).not.toThrow();
+});

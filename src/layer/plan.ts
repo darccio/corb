@@ -6,17 +6,19 @@ export function parseInstalledIdentities(database: string): InstalledIdentity[] 
   const names = new Set<string>();
   return database.trim().split(/\n\n+/).filter(Boolean).map((block) => {
     const result = { D: "", p: "" } as InstalledIdentity;
+    const fields = new Set<string>();
     for (const line of block.split("\n")) {
       if (["P", "V", "A", "C", "D", "p"].includes(line[0]!) && line[1] === ":") {
         const key = line[0] as keyof InstalledIdentity;
-        if (key in result && key !== "D" && key !== "p") fail("duplicate APK identity field");
+        if (fields.has(key)) fail("duplicate APK identity field");
+        fields.add(key);
         result[key] = line.slice(2);
       }
     }
     for (const field of ["P", "V", "A", "C"] as const) if (!result[field]) fail(`missing APK identity field ${field}`);
     if (names.has(result.P)) fail(`duplicate installed APK '${result.P}'`);
     names.add(result.P);
-    return result;
+    return { P: result.P, V: result.V, A: result.A, C: result.C, D: result.D, p: result.p };
   });
 }
 /** Only complete, numbered Installing operations can authorize additions. */

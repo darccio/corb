@@ -51,6 +51,7 @@ export async function publishBlob(source: string, digest: string, expectedSize?:
   const staging = path.join(path.dirname(destination), `.publish-${randomUUID()}`);
   try {
     fs.copyFileSync(source, staging, fs.constants.COPYFILE_EXCL);
+    if (await hashFile(staging) !== digest.replace(/^sha256:/, "") || (expectedSize !== undefined && fs.statSync(staging).size !== expectedSize)) fail("staged blob digest or size mismatch");
     fs.chmodSync(staging, 0o400);
     const fd = fs.openSync(staging, "r");
     try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
@@ -80,7 +81,10 @@ export function atomicJson(filename: string, value: unknown): void {
     try { fs.fsyncSync(parent); } finally { fs.closeSync(parent); }
   } finally { fs.rmSync(temporary, { force: true }); }
 }
-export function readJson(filename: string): unknown { return parseMetadata(fs.readFileSync(filename), filename); }
+export function readJson(filename: string): unknown {
+  if (fs.lstatSync(filename).size > 1024 * 1024) fail("metadata exceeds 1 MiB");
+  return parseMetadata(fs.readFileSync(filename), filename);
+}
 
 interface LockOwner { version: 1; token: string; pid: number; host: string }
 function readOwner(filename: string): LockOwner {
@@ -125,12 +129,13 @@ export function acquireWorkspaceLock(workspace: string): () => void {
 }
 
 /** Stream through an owned file. No response body enters an in-memory disk buffer. */
-export async function boundedCopy(source: NodeJS.ReadableStream, destination: string, limit: number): Promise<number> {
+export async function boundedCopy(source: NodeJS.ReadableStream, destination: string | number, limit: number): Promise<number> {
   let size = 0;
   const bound = new Transform({ transform(chunk, _encoding, callback) {
     size += chunk.length;
     callback(size > limit ? new Error(`download exceeds ${limit} bytes`) : null, chunk);
   } });
-  await pipeline(source, bound, fs.createWriteStream(destination, { flags: "wx", mode: 0o600 }));
+  const output = typeof destination === "number" ? fs.createWriteStream("", { fd: destination, autoClose: false }) : fs.createWriteStream(destination, { flags: "wx", mode: 0o600 });
+  await pipeline(source, bound, output);
   return size;
 }

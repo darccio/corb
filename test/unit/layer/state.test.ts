@@ -52,3 +52,11 @@ it("bounds streamed downloads", async () => {
   const directory = setup();
   await expect(boundedCopy(Readable.from([Buffer.alloc(4), Buffer.alloc(4)]), path.join(directory, "bounded"), 5)).rejects.toThrow("exceeds");
 });
+it("verifies copied candidate bytes before exposing a complete CAS object", async () => {
+  const directory = setup(); const file = path.join(directory, "source"); fs.writeFileSync(file, "expected");
+  const original = fs.copyFileSync;
+  vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => { fs.writeFileSync(source, "changed"); original(source, destination, mode); });
+  const digest = `sha256:${sha256("expected")}`;
+  await expect(publishBlob(file, digest)).rejects.toThrow("staged blob");
+  expect(fs.existsSync(blobPath(digest))).toBe(false);
+});
