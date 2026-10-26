@@ -23,3 +23,12 @@ it("rechecks source identity and definition before publication", () => {
   const { config, workspace } = fixture(); const selected = selectLayerWorkspace("named", config);
   fs.appendFileSync(path.join(workspace, "corb.toml"), '\nhosts=["example.com"]'); expect(() => selected.recheck()).toThrow("changed");
 });
+it("preserves cwd ambiguity checks when another matching workspace appears", () => {
+  const { config, workspace } = fixture();
+  const host = path.join(config, "project"); fs.mkdirSync(host);
+  fs.appendFileSync(path.join(workspace, "corb.toml"), `\n[[dir]]\nname="project"\nhost=${JSON.stringify(host)}\n`);
+  const selected = selectLayerWorkspace(undefined, config, host);
+  const second = path.join(config, "workspaces", "second"); fs.mkdirSync(second);
+  fs.writeFileSync(path.join(second, "corb.toml"), fs.readFileSync(path.join(workspace, "corb.toml")));
+  expect(() => selected.recheck()).toThrow("matches several workspaces");
+});

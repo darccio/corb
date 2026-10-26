@@ -22,7 +22,7 @@ export function selectLayerWorkspace(name?: string, configDir = corbConfigDir(),
     definition: hashLayerDefinition(config.image.layer), pins: pins === undefined ? null : serializeLayerLock(pins) });
   return { selected, config, definition: config.image.layer, arch, pins: pins?.target[arch], snapshot,
     recheck: () => {
-      const next = selectLayerWorkspace(selected.name, configDir, cwd);
+      const next = selectLayerWorkspace(name, configDir, cwd);
       if (next.snapshot !== snapshot) fail("selected workspace source, definition or pins changed during operation");
     } };
 }

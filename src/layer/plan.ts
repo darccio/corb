@@ -25,12 +25,14 @@ export function parseInstalledIdentities(database: string): InstalledIdentity[] 
 export function parsePackagePlan(output: string, before: readonly InstalledIdentity[], pins: LayerRecipePins): LayerPackagePin[] {
   const additions: LayerPackagePin[] = [];
   let expectedTotal: number | undefined;
+  let summary = false;
   for (const raw of output.split("\n")) {
     const line = raw.trim();
     const action = /^\((\d+)\/(\d+)\) (Installing|Upgrading|Downgrading|Reinstalling|Purging|Replacing) ([a-z0-9][a-z0-9+_.-]*) \(([^\s()]+)\)$/.exec(line);
     if (action === null) {
       if (line.startsWith("(") || /\b(?:Installing|Upgrading|Downgrading|Reinstalling|Purging|Replacing)\b/.test(line)) fail(`unrecognized APK transaction operation '${line}'`);
-      if (line !== "" && !/^OK: \d+ (?:MiB|KiB|B) in \d+ packages$/.test(line) && !/^OK: \d+ packages, \d+ dirs, \d+ files, \d+ MiB$/.test(line)) fail(`unrecognized APK simulation output '${line}'`);
+      if (/^OK: \d+(?:\.\d+)? (?:MiB|KiB|B) in \d+ packages$/.test(line) || /^OK: \d+ packages, \d+ dirs, \d+ files, \d+ MiB$/.test(line)) { if (summary) fail("duplicate APK plan summary"); summary = true; }
+      else if (line !== "") fail(`unrecognized APK simulation output '${line}'`);
       continue;
     }
     const [, ordinal, count, operation, name, version] = action;
@@ -41,6 +43,7 @@ export function parsePackagePlan(output: string, before: readonly InstalledIdent
     if (pin === undefined) fail(`incompatible base: planned unbundled package '${name}=${version}'`);
     additions.push(pin);
   }
+  if (!summary) fail("missing complete APK simulation summary");
   if (expectedTotal !== undefined && additions.length !== expectedTotal) fail("incomplete APK transaction plan");
   assertCompatiblePackagePlan(pins, additions.map(({ requested: _requested, ...identity }) => ({ action: "add", ...identity })));
   return additions;

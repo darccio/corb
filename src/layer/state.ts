@@ -82,8 +82,17 @@ export function atomicJson(filename: string, value: unknown): void {
   } finally { fs.rmSync(temporary, { force: true }); }
 }
 export function readJson(filename: string): unknown {
-  if (fs.lstatSync(filename).size > 1024 * 1024) fail("metadata exceeds 1 MiB");
-  return parseMetadata(fs.readFileSync(filename), filename);
+  const stat = fs.lstatSync(filename);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) fail("metadata requires a regular file of at most 1 MiB");
+  const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  try {
+    if (!fs.fstatSync(fd).isFile()) fail("metadata is not a regular file");
+    const bytes = Buffer.alloc(1024 * 1024 + 1);
+    let length = 0;
+    while (length < bytes.length) { const count = fs.readSync(fd, bytes, length, bytes.length - length, null); if (count === 0) break; length += count; }
+    if (length > 1024 * 1024) fail("metadata exceeds 1 MiB");
+    return parseMetadata(bytes.subarray(0, length), filename);
+  } finally { fs.closeSync(fd); }
 }
 
 interface LockOwner { version: 1; token: string; pid: number; host: string }

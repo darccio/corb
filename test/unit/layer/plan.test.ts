@@ -23,3 +23,7 @@ it("compares package identities independently of database field order", () => {
   const reordered = parseInstalledIdentities("C:base\nA:x86_64\np:so:libc=1\nD:so:libc\nV:1.2.4-r0\nP:musl\n");
   expect(() => assertPackageIdentities(existing, reordered, [])).not.toThrow();
 });
+it("accepts real APK decimal summaries and rejects missing summaries", () => {
+  expect(parsePackagePlan("(1/1) Installing go (1.26.0-r0)\nOK: 170.5 MiB in 61 packages", existing, pins())).toHaveLength(1);
+  expect(() => parsePackagePlan("(1/1) Installing go (1.26.0-r0)", existing, pins())).toThrow("summary");
+});

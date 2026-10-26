@@ -26,3 +26,10 @@ it("revalidates complete cached graph bytes before reuse", async () => {
   const file = blobPath(graph.manifest.config.digest); fs.chmodSync(file, 0o600); fs.writeFileSync(file, "{}");
   await expect(readInputGraph(graph.digest, "x86_64")).rejects.toThrow("corrupt");
 });
+it("rejects a wrong-node immutable receipt winner before reading it", async () => {
+  const config = fixture(); const graph = await publishInputGraph(config, "x86_64"); const key = hashRecipePins(config.pins, "x86_64");
+  publishPinReceipt(key, graph);
+  const { layerCache } = await import("../../../src/layer/state.ts"); const filename = path.join(layerCache(), "receipts", `${key}.json`);
+  fs.unlinkSync(filename); fs.mkdirSync(filename);
+  expect(() => publishPinReceipt(key, graph)).toThrow("regular file");
+});

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createGunzip } from "node:zlib";
 import { Readable } from "node:stream";
 import { validateSdkArchiveEntries, SDK_ENTRY_LIMIT, SDK_EXPANDED_LIMIT, type SdkArchiveEntry } from "./archive.ts";
@@ -82,7 +82,7 @@ export async function walkTar(stream: AsyncIterable<Buffer>, visit: (entry: TarE
     if (header.length === 0) break;
     if (header.every((byte) => byte === 0)) {
       const second = await reader.take(512, true);
-      if (second.length !== 0 && !second.every((byte) => byte === 0)) fail("malformed tar end marker");
+      if ((options.requireEnd && second.length !== 512) || (second.length !== 0 && !second.every((byte) => byte === 0))) fail("malformed tar end marker");
       ended = true;
       for (;;) { const padding = await reader.take(512, true); if (padding.length === 0) break; if (!padding.every((byte) => byte === 0)) fail("data after tar end marker"); }
       break;
@@ -96,7 +96,7 @@ export async function walkTar(stream: AsyncIterable<Buffer>, visit: (entry: TarE
     const type = tarString(header.subarray(156, 157));
     let size = octal(header.subarray(124, 136));
     const mode = octal(header.subarray(100, 108));
-    const rawName = [tarString(header.subarray(345, 500)), tarString(header.subarray(0, 100))].filter(Boolean).join("/");
+    const rawName = [magic === "ustar" ? tarString(header.subarray(345, 500)) : "", tarString(header.subarray(0, 100))].filter(Boolean).join("/");
     const special = type === "x" || type === "L";
     if (type === "g" || type === "K") fail("unsupported global PAX or GNU link header");
     if (!special && extended?.size !== undefined) {
@@ -133,7 +133,7 @@ export interface PayloadTree { hash: string; entries: Array<{ path: string; type
 export async function stageSdkArchive(archive: string, payload: LayerPayload, destination: string): Promise<PayloadTree> {
   if (await hashFile(archive, 512 * 1024 ** 2) !== payload.sha256) fail("SDK archive digest mismatch");
   fs.mkdirSync(destination, { mode: 0o700 });
-  const raw = path.join(destination, ".raw"); fs.mkdirSync(raw, { mode: 0o700 });
+  const raw = path.join(path.dirname(destination), `.sdk-raw-${randomUUID()}`); fs.mkdirSync(raw, { mode: 0o700 });
   const entries: TarEntry[] = [];
   const hashes: string[] = [];
   const stream = fs.createReadStream(archive).pipe(createGunzip());
@@ -167,7 +167,7 @@ export async function stageSdkArchive(archive: string, payload: LayerPayload, de
     }
     tree.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
     return { hash: createHash("sha256").update(JSON.stringify(tree)).digest("hex"), entries: tree };
-  } catch (error) { stream.destroy(); fs.rmSync(destination, { recursive: true, force: true }); throw error; }
+  } catch (error) { stream.destroy(); fs.rmSync(raw, { recursive: true, force: true }); fs.rmSync(destination, { recursive: true, force: true }); throw error; }
 }
 export async function tarBuffer(bytes: Buffer): Promise<Map<string, { entry: TarEntry; bytes: Buffer }>> {
   const result = new Map<string, { entry: TarEntry; bytes: Buffer }>();

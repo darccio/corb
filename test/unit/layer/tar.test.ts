@@ -36,3 +36,7 @@ it("bounds expanded bytes and entry count", async () => {
   await expect(walkTar(Readable.from([bytes]), async (_entry, chunks) => { for await (const _ of chunks) { /* consume */ } }, { limit: 100 })).rejects.toThrow("limit");
   await expect(walkTar(Readable.from([bytes]), async (_entry, chunks) => { for await (const _ of chunks) { /* consume */ } }, { entries: 0 })).rejects.toThrow("entries");
 });
+it("preserves valid dot-raw payload paths completely", async () => {
+  const { dir, tree } = await extract([{ path: "go/.raw/", type: "5" }, { path: "go/.raw/tool", body: "keep" }]);
+  expect(fs.readFileSync(path.join(dir, "tree/.raw/tool"), "utf8")).toBe("keep"); expect(tree.entries.some((entry) => entry.path === ".raw/tool")).toBe(true);
+});

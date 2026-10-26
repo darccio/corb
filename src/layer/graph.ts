@@ -45,7 +45,8 @@ export function publishPinReceipt(recipeHash: string, graph: InputGraph): void {
   try {
     fs.writeFileSync(temporary, receipt, { flag: "wx", mode: 0o400 });
     try { fs.linkSync(temporary, filename); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-    if (fs.readFileSync(filename, "utf8") !== receipt) fail("inconsistent immutable pin receipt");
+    const winner = table(readJson(filename), "pin receipt", ["version", "recipePinsSha256", "inputDigest"]);
+    if (!same(winner, JSON.parse(receipt))) fail("inconsistent immutable pin receipt");
   } finally { fs.rmSync(temporary, { force: true }); }
 }
 export async function inputsForContext(context: LayerContext): Promise<InputGraph> {

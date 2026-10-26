@@ -1,7 +1,7 @@
 import { createHash, verify, createPublicKey } from "node:crypto";
 import { inflateRawSync, gunzipSync } from "node:zlib";
 import { tarBuffer } from "./tar.ts";
-import { fail, PACKAGE_NAME, sha256, type LayerArch } from "./validate.ts";
+import { fail, sha256, type LayerArch } from "./validate.ts";
 import { validateApkindexChecksum } from "./pins.ts";
 
 export interface ApkIndexRecord { P: string; V: string; A: string; C: string; S: number; D: string; p: string; repository: "main" | "community" }
@@ -39,7 +39,7 @@ export async function verifyApkSignature(members: readonly ApkMember[], keys: Ap
   const signatures = await tarBuffer(members[0]!.data);
   let trusted = false;
   for (const [name, { entry, bytes }] of signatures) {
-    const match = /^\.SIGN\.(RSA|RSA256|RSA512)\.([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(name);
+    const match = /^\.SIGN\.(RSA|RSA256|RSA512)\.([A-Za-z0-9][A-Za-z0-9._@+-]*)$/.exec(name);
     if (match === null || entry.type !== "file" || bytes.length > 16 * 1024) fail(`unsupported APK signature format '${name}'`);
     const pem = keys[match[2]!];
     if (pem === undefined) continue;
@@ -67,9 +67,9 @@ export async function verifiedIndex(bytes: Buffer, keys: ApkKeys, repository: Ap
       if (line[1] !== ":" || line[0]! in fields) fail("malformed or duplicate signed APKINDEX field");
       fields[line[0]!] = line.slice(2);
     }
-    if (!PACKAGE_NAME.test(fields.P ?? "") || !/^[^\s/\0:@]+$/.test(fields.V ?? "") || ![arch, "noarch"].includes(fields.A ?? "") || !/^[1-9][0-9]*$/.test(fields.S ?? "")) fail("invalid signed APKINDEX identity, size or architecture");
+    if (!/^[A-Za-z0-9][A-Za-z0-9+_.-]*$/.test(fields.P ?? "") || !/^[^\s/\0:@]+$/.test(fields.V ?? "") || ![arch, "noarch"].includes(fields.A ?? "") || !/^[1-9][0-9]*$/.test(fields.S ?? "")) fail("invalid signed APKINDEX identity, size or architecture");
     const size = Number(fields.S);
-    if (!Number.isSafeInteger(size) || size > 512 * 1024 ** 2) fail("APK index archive size exceeds limit");
+    if (!Number.isSafeInteger(size)) fail("invalid signed APK archive size");
     validateApkindexChecksum(fields.C);
     const identity = `${fields.P}=${fields.V}`;
     if (seen.has(identity)) fail("duplicate signed APKINDEX identity");

@@ -60,3 +60,12 @@ it("verifies copied candidate bytes before exposing a complete CAS object", asyn
   await expect(publishBlob(file, digest)).rejects.toThrow("staged blob");
   expect(fs.existsSync(blobPath(digest))).toBe(false);
 });
+it("rejects symlink and wrong-node metadata before any blocking read", async () => {
+  const directory = setup(); const { readJson } = await import("../../../src/layer/state.ts");
+  const target = path.join(directory, "target"); fs.writeFileSync(target, "{}");
+  fs.symlinkSync(target, path.join(directory, "link"));
+  const read = vi.spyOn(fs, "readSync");
+  expect(() => readJson(path.join(directory, "link"))).toThrow("regular file");
+  expect(() => readJson(directory)).toThrow("regular file");
+  expect(read).not.toHaveBeenCalled();
+});
