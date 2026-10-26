@@ -100,6 +100,6 @@ describe.skipIf(process.env.CORB_E2E !== "1")("authenticated HTTPS Distribution 
     expect(fixture.requests.some((row) => row.method === "PUT" && row.path.startsWith("/v2/partial/blobs/uploads/") && row.status === 201 && row.authenticated)).toBe(true);
     expect(fixture.requests.some((row) => row.path === "/v2/partial/manifests/partial" && row.status === 503)).toBe(true);
     const ordinary = JSON.stringify({ requests: fixture.requests, graph: graph.config, root: graph.rootBytes.toString() });
-    for (const marker of fixture.markers) expect(ordinary).not.toContain(marker);
+    for (const marker of fixture.markers) expect(ordinary.includes(marker)).toBe(false);
   });
 });

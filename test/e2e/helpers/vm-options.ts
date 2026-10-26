@@ -1,5 +1,7 @@
+export const VM_MARKER_LIMIT = 256;
+export const VM_MARKER_BYTES = 64 * 1024;
 export function cleanVmOptions(value: unknown, markers: readonly string[], limits = { nodes: 200_000, depth: 64, text: 16 * 1024 ** 2, bytes: 512 * 1024 ** 2 }): boolean {
-  if (markers.length === 0 || markers.length > 32 || markers.some((marker) => marker.length === 0 || marker.length > 4096)) throw Error("invalid private marker plan");
+  if (markers.length === 0 || markers.length > VM_MARKER_LIMIT || markers.some((marker) => marker.length === 0 || marker.length > 4096) || Buffer.byteLength(JSON.stringify(markers)) > VM_MARKER_BYTES) throw Error("invalid private marker plan");
   const needles = markers.map((marker) => Buffer.from(marker)); const seen = new WeakSet<object>();
   let nodes = 0; let text = 0; let bytes = 0;
   const bounded = (ok: boolean) => { if (!ok) throw Error("VM options inspection exceeded its bounds"); };

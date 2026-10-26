@@ -10,6 +10,7 @@ import { publishInputGraph } from "../../src/layer/graph.ts";
 import { OrasTransport, pushArtifact, registryFlags } from "../../src/layer/transport.ts";
 import { computePortableBuildId, projectPortableSdkManifest } from "../../src/layer/base.ts";
 import { runOwnedProcess } from "./helpers/owned-process.ts";
+import { attemptCleanup } from "./helpers/cleanup.ts";
 import { isQemuVersionProbe } from "./helpers/qemu.ts";
 import { startDistribution } from "./helpers/distribution.ts";
 import { sha256 } from "../../src/layer/validate.ts";
@@ -53,6 +54,7 @@ describe.skipIf(!enabled)("packaged services and remote producer/recipient input
     return { pointer, directory: current, metadata: JSON.parse(fs.readFileSync(path.join(current, "metadata.json"), "utf8")), evidence: JSON.parse(fs.readFileSync(path.join(current, "evidence.json"), "utf8")) };
   };
   async function execute(party: Party, args: string[], expected = 0, fixture = false) {
+    fs.writeFileSync(path.join(registry.root, "private-markers.json"), JSON.stringify(registry.markers), { mode: 0o600 });
     const receipt = path.join(root, `vm-options-${optionReceipts.length + 1}.json`); optionReceipts.push(receipt);
     const result = await runOwnedProcess(process.execPath, ["--import", path.join(repo, "test/e2e/fixtures/observe-vm-options.ts"), ...(fixture ? args : ["src/cli.ts", ...args])], {
       cwd: repo, env: { ...party.env, CORB_E2E_VM_MARKERS: path.join(registry.root, "private-markers.json"), CORB_E2E_VM_RECEIPT: receipt }, timeoutMs: 9 * 60_000,
@@ -92,10 +94,14 @@ describe.skipIf(!enabled)("packaged services and remote producer/recipient input
     console.log(`service/recipient evidence: ${root}`);
   });
   afterAll(async () => {
-    vi.unstubAllEnvs(); if (registry) await registry.close();
-    for (const [filename, hash] of baseline) expect(digest(filename), filename).toBe(hash);
-    if (runtime) { expect(fs.readdirSync(runtime)).toEqual([]); fs.rmdirSync(runtime); }
-    if (root) fs.writeFileSync(path.join(root, "results.json"), JSON.stringify({ records, baseline: Object.fromEntries(baseline), inputDigest, baseReference }, null, 2), { mode: 0o600 });
+    vi.unstubAllEnvs();
+    const failures = await attemptCleanup([
+      { name: "registry", run: async () => { if (registry) await registry.close(); } },
+      ...[...baseline].map(([filename, hash]) => ({ name: `base:${filename}`, run: () => { expect(digest(filename), filename).toBe(hash); } })),
+      { name: "runtime", run: () => { if (runtime) { expect(fs.readdirSync(runtime)).toEqual([]); fs.rmdirSync(runtime); } } },
+    ]);
+    failures.push(...await attemptCleanup([{ name: "receipt", run: () => { if (root) fs.writeFileSync(path.join(root, "results.json"), JSON.stringify({ records, baseline: Object.fromEntries(baseline), inputDigest, baseReference, runtime, runtimeRemoved: runtime !== undefined && !fs.existsSync(runtime), cleanupFailures: failures.map((row) => row.name) }, null, 2), { mode: 0o600 }); } }]));
+    if (failures.length > 0) throw new AggregateError(failures.map((row) => row.error), `service fixture cleanup failed: ${failures.map((row) => row.name).join(", ")}`);
   });
   it("pins a full signed candidate closure and checks fresh default Redis before checkpointing", async () => {
     await cli(a, ["image", "pin", "--workspace", "service"]);
@@ -306,6 +312,7 @@ describe.skipIf(!enabled)("packaged services and remote producer/recipient input
     expect(graph.layers.every((row: { annotations: Record<string, string> }) => /^base\/(manifest|kernel|initramfs|rootfs|krunKernel|krunInitrd)$/.test(row.annotations["org.opencontainers.image.title"]!))).toBe(true);
   }, 18 * 60_000);
   it("keeps registry secrets out of artifact bytes, shared pins, guest options and ordinary diagnostics", async () => {
+    expect(registry.markers.length).toBeGreaterThan(3);
     const blobs = new Set<string>();
     for (const [party, reference] of [[b, inputDigest], [a, baseReference.split("@")[1]!]] as const) {
       const directory = path.join(party.root, "cache/layer-inputs/v1/blobs/sha256"); const rootFile = path.join(directory, reference.slice(7));
@@ -313,7 +320,7 @@ describe.skipIf(!enabled)("packaged services and remote producer/recipient input
       for (const descriptor of [{ digest: reference }, graph.config, ...graph.layers]) blobs.add(path.join(directory, descriptor.digest.slice(7)));
     }
     for (const filename of [...blobs, file(a), file(b), sum(a), sum(b), ...fs.readdirSync(root).filter((name) => /^command-\d+\.log$/.test(name)).map((name) => path.join(root, name))]) expect(await hasCredentialMarker(filename, registry.markers), filename).toBe(false);
-    for (const marker of registry.markers) expect(JSON.stringify({ records, requests: registry.requests })).not.toContain(marker);
+    for (const marker of registry.markers) expect(JSON.stringify({ records, requests: registry.requests }).includes(marker)).toBe(false);
     const observed = optionReceipts.flatMap((filename) => JSON.parse(fs.readFileSync(filename, "utf8")) as Array<{ kind: string; count: number; clean: boolean }>);
     expect(observed.some((row) => row.kind === "create")).toBe(true); expect(observed.some((row) => row.kind === "resume")).toBe(true); expect(observed.every((row) => row.clean)).toBe(true);
     for (const party of [a, b]) { const current = generation(party); expect(digest(path.join(current.directory, "checkpoint.qcow2"))).toBe(current.metadata.checkpoint.sha256); }
