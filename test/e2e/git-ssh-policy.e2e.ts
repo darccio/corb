@@ -258,8 +258,8 @@ function run(cmd: string, args: string[], cwd?: string): void {
 function setupBareRepo(bareRepoPath: string): void {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "corb-e2e-git-work-"));
   try {
-    run("git", ["init", "--bare", "-q", bareRepoPath]);
-    run("git", ["init", "-q", workDir]);
+    run("git", ["init", "--bare", "--initial-branch=main", "-q", bareRepoPath]);
+    run("git", ["init", "--initial-branch=main", "-q", workDir]);
     fs.writeFileSync(path.join(workDir, COMMIT_FILE_NAME), COMMIT_FILE_CONTENT);
     run("git", ["-C", workDir, "config", "user.email", "corb-e2e@example.invalid"]);
     run("git", ["-C", workDir, "config", "user.name", "Corb E2E"]);

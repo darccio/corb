@@ -21,6 +21,9 @@ The serial run started at `be710ae`. Production source stayed unchanged through 
 The later `d1ce0f7` test-only exceptional cleanup changes have six real subprocess regressions.
 Earlier fixture failures remain in local logs. The final serial run passes the corrected exact assertions.
 
+A later review with a clean home exposed a personal Git setting in the legacy SSH fixture.
+Both its bare and working repositories now start explicitly on `main`, so the pushed branch matches the bare HEAD.
+
 Every generation below has package coherence and seven-of-seven production gate success.
 The tree transaction adds one package to the 75-package base. Both Go compositions retain 75 packages.
 All three preserve 142 baseline native files and 38 protected nodes. The protected nodes cover relevant ancestor directories.
