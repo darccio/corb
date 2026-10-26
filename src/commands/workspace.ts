@@ -148,7 +148,7 @@ export function renderWorkspaceShowText(payload: WorkspaceShowJson): string {
     lines.push(`cannot compare: ${payload.error}`);
     if (payload.error.includes("no hosted directory of its own")) lines.push(`Run with --workspace ${payload.name} DIR.`);
   }
-  if (payload.config !== null) lines.push("", "effective config:", ...renderConfigSections(payload.config, payload.impliedHosts).map((line) => `  ${line}`));
+  if (payload.config !== null) lines.push("", "effective config:", ...renderConfigSections(payload.config, payload.impliedHosts, payload.name).map((line) => `  ${line}`));
   lines.push("", `trust records (${payload.records.length}):`);
   for (const item of payload.records) {
     lines.push(`key: ${item.key}`, `  kind: ${item.kind}`, `  status: ${item.status}`);

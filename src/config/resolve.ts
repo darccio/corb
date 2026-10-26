@@ -2,6 +2,9 @@
 // Persistent layers include an added positional directory. CLI flags only affect fullConfig.
 // Selection metadata stays outside the effective config and its trust hash.
 import fs from "node:fs";
+import { getImageStoreDirectory } from "@earendil-works/gondolin";
+import { assertLayerTarget, nativeLayerArch, type LayerArch } from "../layer/definition.ts";
+import { assertPinsMatchDefinition, readLayerLock } from "../layer/pins.ts";
 import path from "node:path";
 import os from "node:os";
 import { mergeConfigLayers, type DirConfig, type EffectiveConfig } from "./load.ts";
@@ -14,7 +17,7 @@ import {
   type TrustStore,
   type TrustedWorkspaceRecord,
 } from "./trust.ts";
-import { configTomlPath, corbConfigDir, corbStateDir, trustStorePath, expandHomePrefix } from "./paths.ts";
+import { configTomlPath, corbConfigDir, corbStateDir, corbCacheRoot, trustStorePath, expandHomePrefix } from "./paths.ts";
 import { writeFileSecure } from "../util/secure-write.ts";
 import { agentProviderLayer, applyImpliedHosts, type ImpliedHost } from "./implied.ts";
 import { isSameOrDescendant, realpathOrResolve } from "./hostpaths.ts";
@@ -44,11 +47,12 @@ export class WorkspaceDirectoryError extends Error {
  * inside a mount: the guest could truncate or rewrite the one record of its
  * own denials.
  */
-type ForbiddenMountKind = "config" | "state" | "audit" | "workspace-source" | "workspace" | "workspace-file";
+type ForbiddenMountKind = "config" | "state" | "audit" | "workspace-source" | "workspace" | "workspace-file" | "cache" | "image-store";
 
 export class ForbiddenMountError extends Error {
   constructor(hostPath: string, corbDir: string, corbDirKind: ForbiddenMountKind) {
     const nouns: Record<ForbiddenMountKind, string> = {
+      cache: "cache directory", "image-store": "SDK image store directory",
       config: "config directory", state: "state directory", audit: "audit log file",
       "workspace-source": "workspace source directory", workspace: "workspace directory", "workspace-file": "workspace file",
     };
@@ -124,11 +128,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * The final directory list covers positional mounts, global entries, and CLI overrides.
  * This runs before VM startup, including explain and dry-run commands.
  */
-function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: string, workspaces: WorkspaceListing, auditPath?: string): void {
+function assertNoMountOverlapsCorbDirs(dirs: readonly DirConfig[], configDir: string, workspaces: WorkspaceListing, auditPath?: string, layerEnabled = false): void {
   const forbidden: Array<{ resolved: string; label: string; kind: ForbiddenMountKind }> = [
     { resolved: realpathOrResolve(configDir), label: configDir, kind: "config" },
     { resolved: realpathOrResolve(corbStateDir()), label: corbStateDir(), kind: "state" },
   ];
+  if (layerEnabled) {
+    forbidden.push({ resolved: realpathOrResolve(corbCacheRoot()), label: corbCacheRoot(), kind: "cache" });
+    const imageStore = getImageStoreDirectory();
+    forbidden.push({ resolved: realpathOrResolve(imageStore), label: imageStore, kind: "image-store" });
+  }
   if (auditPath !== undefined) {
     forbidden.push({ resolved: realpathOrResolve(auditPath), label: auditPath, kind: "audit" });
   }
@@ -225,6 +234,7 @@ export function readTrustStore(configDir: string): TrustStore {
 }
 
 export interface ResolveWorkspaceOptions {
+  targetArch?: LayerArch;
   /** Override the personal config directory. */
   configDir?: string;
   workspace?: string;
@@ -313,8 +323,21 @@ export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer,
     }
     layers.push({ dir: [{ name, host: resolvedDir!, mode: "rw" }] });
   }
-  const { config: persistentConfig, implied: impliedHosts } = applyImpliedHosts(mergeConfigLayers(layers), {
+  const merged = mergeConfigLayers(layers);
+  if (merged.image !== undefined) {
+    const arch = opts.targetArch ?? nativeLayerArch();
+    assertLayerTarget(merged.image.layer, arch);
+    const pins = readLayerLock(selected!.entry.dir)?.target[arch];
+    if (pins !== undefined) {
+      assertPinsMatchDefinition(pins, merged.image.layer, arch);
+      merged.image = { layer: merged.image.layer, pins };
+    }
+  }
+  const { config: persistentConfig, implied: impliedHosts } = applyImpliedHosts(merged, {
     providerLayer: agentProviderLayer(configTomlLayer, selected === undefined ? undefined : { name: selected.name, layer: selected.layer }),
+    extraHosts: merged.image === undefined ? [] : merged.image.layer.hosts.map((host) => ({
+      host, source: { kind: "image-layer", layer: "workspace", workspace: selected!.name },
+    })),
   });
   let primary: string;
   let keyDir: string;
@@ -344,7 +367,7 @@ export function resolveWorkspace(dir: string | undefined, cliLayer: ConfigLayer,
   const priorRecord = trustStore[trustKey];
   const trustEvaluation = evaluateTrust(priorRecord?.acceptedConfig, persistentConfig);
   const fullConfig = mergeConfigLayers([persistentConfig, cliLayer]);
-  assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir, workspaces, fullConfig.audit?.path);
+  assertNoMountOverlapsCorbDirs(fullConfig.dir, configDir, workspaces, fullConfig.audit?.path, fullConfig.image !== undefined);
   const selectedWorkspace = selected === undefined ? undefined : {
     name: selected.name, selectedBy: selected.selectedBy,
     source: { index: selected.entry.source, raw: workspaces.sources[selected.entry.source]!.raw, path: workspaces.sources[selected.entry.source]!.path },

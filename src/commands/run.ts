@@ -327,6 +327,10 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
 
+  if (resolved.fullConfig.image !== undefined) {
+    throw new Error("corb run: workspace layers require the image integration implementation. Use corb explain or corb run --dry-run to inspect this definition");
+  }
+
   // Trust gate (see module comment): evaluated against the *persistent*
   // config only, so CLI-added `--dir` directories never affect the verdict
   // and are never recorded by `acceptWorkspace`.

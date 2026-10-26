@@ -1,10 +1,10 @@
 // Add uncovered hosts before trust checks. Sources stay outside the effective config.
-// DAR-16 can supply layer runtime hosts through extraHosts after its schema is final.
 import { findBrokeredProvider, uncoveredHosts } from "../auth/provider.ts";
 import type { EffectiveConfig } from "./load.ts";
 import type { ConfigLayer } from "./schema.ts";
 
 export type ImpliedHostSource =
+  | { kind: "image-layer"; layer: "workspace"; workspace: string }
   | { kind: "agent-provider"; provider: string; layer: "global" }
   | { kind: "agent-provider"; provider: string; layer: "workspace"; workspace: string };
 
@@ -14,6 +14,7 @@ export interface ImpliedHost {
 }
 
 export function describeImpliedHostSource(source: ImpliedHostSource): string {
+  if (source.kind === "image-layer") return `[image.layer] hosts in workspace "${source.workspace}"`;
   const setting = `[agent] provider = "${source.provider}"`;
   return source.layer === "workspace" ? `${setting} in workspace "${source.workspace}"` : setting;
 }

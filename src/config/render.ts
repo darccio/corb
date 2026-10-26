@@ -18,6 +18,8 @@
 // an opt-in `verify` sub-table that is itself only a URL/header-name/status
 // list — never the secret's own value), so there is nothing secret-valued
 // for this module to accidentally leak.
+import { hashLayerDefinition, nativeLayerArch, layerPayloadPath } from "../layer/definition.ts";
+import { hashRecipePins, pinCommandHint } from "../layer/pins.ts";
 import type { DirConfig, EffectiveConfig } from "./load.ts";
 import { hashEffectiveConfig, type ConfigChange, type TrustEvaluation, type TrustedWorkspaceRecord } from "./trust.ts";
 import type { ResolvedWorkspace } from "./resolve.ts";
@@ -65,6 +67,29 @@ function renderVm(vm: EffectiveConfig["vm"]): string[] {
   return lines;
 }
 
+function renderImage(image: EffectiveConfig["image"], workspaceName?: string): string[] {
+  if (image === undefined) return [];
+  const layer = image.layer;
+  const lines = ["image:", "  layer:", `    packages: ${fmtArray(layer.packages)}`,
+    `    build-hosts: ${fmtArray(layer["build-hosts"])}`, `    hosts: ${fmtArray(layer.hosts)}`,
+    `    definition-sha256: ${hashLayerDefinition(layer)}`, "    payload:"];
+  for (const item of layer.payload) {
+    lines.push(`      - ${item.name}: url=${item.url} sha256=${item.sha256} arch=${item.arch}`,
+      `        destination=${item.destination} strip-components=${item["strip-components"]} path=${fmtArray(item.path)}`);
+  }
+  lines.push(`    PATH prefix: ${fmtArray(layerPayloadPath(layer))}`, "    runtime-dir:");
+  for (const item of layer["runtime-dir"]) lines.push(`      - ${item.path}: mode=${item.mode} owner=${item.owner} group=${item.group}`);
+  lines.push("    commands (unpinned root install steps, /bin/sh -ec, cwd /):");
+  for (const command of layer.commands) lines.push(`      - ${JSON.stringify(command)}`);
+  if (image.pins === undefined) {
+    lines.push("  pins: missing");
+    if (workspaceName !== undefined) lines.push(`  pin command: ${pinCommandHint(workspaceName)}`);
+  } else lines.push(`  recipe-pins-sha256: ${hashRecipePins(image.pins, image.pins.index[0]?.url.includes("/aarch64/") ? "aarch64" : layer.payload[0]?.arch ?? nativeLayerArch())}`,
+    `  pins: ${JSON.stringify(image.pins)}`, `  artifact: ${image.pins.artifact ?? "(unbound)"}`);
+  return lines;
+}
+
+
 // `extensions`/`append-system-prompt-file` (E2): `schema.ts`'s
 // `parseAgentConfig` now rejects a non-empty `extensions` or any
 // `append-system-prompt-file` at parse time, so every real `corb
@@ -79,6 +104,7 @@ function renderVm(vm: EffectiveConfig["vm"]): string[] {
 // contains regardless. Silently dropping these fields from `renderText`
 // would make it lie by omission relative to `renderJson` for the same
 // object, for the sake of deleting two harmless lines.
+
 function renderAgent(agent: EffectiveConfig["agent"]): string[] {
   if (agent === undefined) {
     return ["agent: (unset)"];
@@ -296,11 +322,12 @@ export function renderTrust(trust: TrustEvaluation, trustKey: string, scope?: {
 }
 
 /** Shared config text for current settings and accepted snapshots. */
-export function renderConfigSections(config: EffectiveConfig, impliedHosts: readonly ImpliedHost[]): string[] {
+export function renderConfigSections(config: EffectiveConfig, impliedHosts: readonly ImpliedHost[], workspaceName?: string): string[] {
   return [
     `version: ${fmtScalar(config.version)}`,
     `name: ${fmtScalar(config.name)}`,
     ...renderVm(config.vm),
+    ...renderImage(config.image, workspaceName),
     ...renderAgent(config.agent),
     ...renderSecrets(config.secrets),
     ...renderEgress(config.egress, impliedHosts),
@@ -339,7 +366,7 @@ export function renderText(resolved: ResolvedWorkspace, options: RenderOptions =
       : `workspace: ${resolved.selectedWorkspace.name} (selected by ${resolved.selectedWorkspace.selectedBy}; source ${resolved.selectedWorkspace.source.raw}; ${resolved.selectedWorkspace.dir})`,
     `primary: ${resolved.primary}`,
     "",
-    ...renderConfigSections(resolved.fullConfig, resolved.impliedHosts),
+    ...renderConfigSections(resolved.fullConfig, resolved.impliedHosts, resolved.selectedWorkspace?.name),
     ...renderWorkspaces(resolved.workspaces),
     "",
     ...renderTrust(trustEvaluation, trustKey, resolved, options.trusted ? hashMatches : undefined),
@@ -358,6 +385,7 @@ export interface ExplainJson {
   impliedHosts: ImpliedHost[];
   trust: TrustEvaluation;
   workspaces: WorkspaceListing;
+  imageLayer?: { definitionSha256: string; pinsState: "missing" | "pinned"; pinCommand?: string };
   acceptedSnapshot?: { acceptedAt: number; configHash: string; hashMatches: boolean; config: EffectiveConfig } | null;
 }
 
@@ -369,6 +397,11 @@ export function renderJson(resolved: ResolvedWorkspace, options: RenderOptions =
     selectedWorkspace: resolved.selectedWorkspace ?? null,
     trustKey: resolved.trustKey,
     config: resolved.fullConfig,
+    ...(resolved.fullConfig.image === undefined ? {} : { imageLayer: {
+      definitionSha256: hashLayerDefinition(resolved.fullConfig.image.layer),
+      pinsState: resolved.fullConfig.image.pins === undefined ? "missing" as const : "pinned" as const,
+      ...(resolved.fullConfig.image.pins === undefined ? { pinCommand: pinCommandHint(resolved.selectedWorkspace!.name) } : {}),
+    } }),
     impliedHosts: resolved.impliedHosts,
     trust: resolved.trustEvaluation,
     workspaces: resolved.workspaces,

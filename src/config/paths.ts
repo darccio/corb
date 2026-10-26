@@ -84,3 +84,8 @@ export function sessionsStateDir(stateDir: string = corbStateDir()): string {
 export function credentialsStateDir(stateDir: string = corbStateDir()): string {
   return path.join(stateDir, "credentials");
 }
+
+/** The cache root also protects local layer inputs and composed generations from guest mounts. */
+export function corbCacheRoot(): string {
+  return process.env.CORB_CACHE_DIR ?? path.join(os.homedir(), ".cache", "corb");
+}
