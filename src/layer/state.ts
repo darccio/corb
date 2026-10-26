@@ -19,15 +19,20 @@ export function layerState(workspace: string): string { return path.join(corbSta
 export async function hashFile(filename: string, limit = 32 * 1024 ** 3): Promise<string> {
   const stat = fs.lstatSync(filename);
   if (!stat.isFile() || stat.size > limit) fail(`invalid or excessive cache file '${filename}'`);
-  const hash = createHash("sha256");
-  let size = 0;
-  for await (const chunk of fs.createReadStream(filename)) {
-    size += chunk.length;
-    if (size > limit) fail(`file exceeds limit '${filename}'`);
-    hash.update(chunk);
-  }
-  if (size !== stat.size) fail(`file changed while reading '${filename}'`);
-  return hash.digest("hex");
+  const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  try {
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size !== stat.size) fail(`file changed while opening '${filename}'`);
+    const hash = createHash("sha256"); let size = 0;
+    for await (const chunk of fs.createReadStream(filename, { fd, autoClose: false })) {
+      size += chunk.length;
+      if (size > limit) fail(`file exceeds limit '${filename}'`);
+      hash.update(chunk);
+    }
+    const final = fs.fstatSync(fd); const named = fs.lstatSync(filename);
+    if (!named.isFile() || named.dev !== opened.dev || named.ino !== opened.ino || size !== opened.size || final.size !== opened.size || final.mtimeMs !== opened.mtimeMs || final.ctimeMs !== opened.ctimeMs) fail(`file changed while reading '${filename}'`);
+    return hash.digest("hex");
+  } finally { fs.closeSync(fd); }
 }
 export function blobPath(digest: string): string {
   const hex = digest.replace(/^sha256:/, "");

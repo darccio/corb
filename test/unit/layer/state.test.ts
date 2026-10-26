@@ -69,3 +69,13 @@ it("rejects symlink and wrong-node metadata before any blocking read", async () 
   expect(() => readJson(directory)).toThrow("regular file");
   expect(read).not.toHaveBeenCalled();
 });
+
+it("rejects replacement by a FIFO between stat and streaming without blocking", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const directory = setup(); const file = path.join(directory, "bytes"); const fifo = path.join(directory, "fifo"); fs.writeFileSync(file, "bytes");
+  expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+  const module = new URL("../../../src/layer/state.ts", import.meta.url).href;
+  const script = `import fs from "node:fs"; import { hashFile } from ${JSON.stringify(module)}; const stream=fs.createReadStream; fs.createReadStream=(...args)=>{fs.renameSync(${JSON.stringify(fifo)},${JSON.stringify(file)});return stream(...args)}; try{await hashFile(${JSON.stringify(file)});process.exitCode=2}catch(error){console.log(error.message)}`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 2000 });
+  expect(result.error).toBeUndefined(); expect(result.status).toBe(0); expect(result.stdout).toContain("file changed while reading");
+});
