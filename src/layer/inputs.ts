@@ -21,7 +21,7 @@ export function normalizeInputConfig(value: unknown, arch: LayerArch): LayerInpu
   const pins = normalizeTargetPins(config.pins, arch);
   if (pins.artifact !== undefined) fail("artifact config recipe pins cannot include their own artifact reference");
   assertPinsMatchDefinition(pins, definition, arch);
-  // Require normalized values, including explicit defaults and sorted set arrays.
+  // Require explicit defaults and sorted set arrays.
   if (!same(JSON.parse(serializeLayerDefinition(definition)), config.definition)) fail("input config definition is not normalized");
   const recipe = recipePins(pins, arch);
   if (!same(recipe, config.pins)) fail("input config pins are not normalized");

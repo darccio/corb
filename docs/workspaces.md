@@ -70,7 +70,7 @@ Every global `[[dir]]` participates in every run. Global `egress.allow` values
 also remain in workspace runs. A workspace can set every option except `[workspaces]`.
 That table stays in the personal global file.
 
-Lists only add. A workspace cannot remove a global directory entry or an earlier rule.
+Security lists only add. A workspace cannot remove a global directory entry or an earlier rule.
 Scalars replace. This covers VM settings, provider, model, policy, and Git push permission.
 
 Directories merge by name. Later `host`, `mode`, `create`, and `protect-git` fields replace earlier values.
@@ -226,7 +226,8 @@ Run that workspace with `--workspace <name> DIR`.
 A workspace definition is a directory at `<source>/<name>/`, with one `corb.toml` file.
 The directory name identifies the workspace. A `name` inside its TOML remains a session label.
 The file uses the global configuration schema except `[workspaces]`, which stays personal.
-Image and layer pins in `corb.sum` will follow in DAR-16.
+Optional layer pins live in the winning workspace directory's `corb.sum`.
+The [layer contract](configuration.md#workspace-layer-recipes) defines its strict version-1 format.
 
 The global `config.toml` lists source directories in order:
 
@@ -259,3 +260,35 @@ Even a missing source stays protected when a mount contains its future location.
 `CORB_CONFIG_DIR` remains supported. It selects the personal configuration directory,
 its `trusted.json`, and the default workspace source. Workspace files still layer
 above that selected global `config.toml`.
+
+
+## Layer inspection and local state
+
+A workspace can own one `[image.layer]` definition. Global `[image]` tables are errors.
+Sources replace that complete definition with the rest of the workspace directory.
+`[vm].image` remains the local base selector.
+
+Recipes declare Alpine package names, ordered root install commands, SDK archives, runtime hosts and runtime directories.
+Build and archive download hosts grant no runtime access.
+Runtime hosts follow provider hosts in implied-host processing.
+Current output labels them `[image.layer] hosts in workspace "<name>"`.
+Accepted snapshots show the same shareable settings without current source labels.
+
+`corb explain`, `corb run --dry-run` and `corb workspace show` can inspect a recipe without pins or a built generation.
+Missing pins show `corb image pin --workspace <name>`. Malformed pins fail inspection.
+The lock comes from the winning workspace. Corb validates symlink targets and ignores locks from cwd or replaced sources.
+Without a layer, Corb omits `image` and does not parse `corb.sum`.
+
+Review definition and selected pin changes before accepting them.
+Every addition, edit or removal requires trust confirmation. Changes from pins alone also require confirmation.
+Another architecture's valid pins do not affect the selected trust record.
+Existing workspace and directory trust keys keep their format.
+
+Share the definition and authenticated input identities through version control.
+Base choices, composed generations, output hashes, account numbers and checkpoints remain local.
+Runtime directories name required paths and system accounts. They do not launch services or run startup scripts.
+The [security guide](security.md#workspace-layer-input-boundary) describes package compatibility and archive limits.
+
+Workspace layer support for image pin/build/push/pull arrives in the integration issue.
+Until then, a real run with a layer stops before credentials or VM creation.
+The implementation performs no downloads, extraction or VM builds for these inspection contracts.

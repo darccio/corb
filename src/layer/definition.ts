@@ -52,7 +52,7 @@ export function normalizedPosixPath(value: unknown, location: string, absolute: 
 function hosts(value: unknown, location: string): string[] {
   return [...new Set(array(value, location).map((entry) => {
     const host = string(entry, location);
-    // Gondolin treats every '*' as a substring wildcard, including within labels.
+    // Gondolin treats every '*' as a substring wildcard within or across labels.
     if (host.trim() !== host || !/^[a-zA-Z0-9*](?:[a-zA-Z0-9*.-]*[a-zA-Z0-9*])?$/.test(host)
       || host.includes("..") || host.split(".").some((label) => label.startsWith("-") || label.endsWith("-"))) fail(`invalid hostname pattern in ${location}`);
     return host.toLowerCase();
