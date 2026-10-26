@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { randomBytes } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock("node:child_process", async (load) => ({ ...await load<object>(), spawn: state.spawn }));
@@ -13,10 +14,10 @@ import { sha256 } from "../../../src/layer/validate.ts";
 const directories: string[] = [];
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); state.spawn.mockReset(); for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true }); });
 function directory() { const root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-oras-process-")); directories.push(root); return root; }
-function child(stdout: string | Buffer, stderr = "", code = 0) {
+function child(stdout: string | Buffer, stderr: string | string[] = "", code = 0) {
   const processValue = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill: ReturnType<typeof vi.fn> };
   processValue.stdout = new PassThrough(); processValue.stderr = new PassThrough(); processValue.kill = vi.fn(() => { queueMicrotask(() => processValue.emit("close", 143)); return true; });
-  queueMicrotask(() => { processValue.emit("spawn"); processValue.stdout.write(stdout); processValue.stderr.write(stderr); processValue.emit("close", code); });
+  queueMicrotask(() => { processValue.emit("spawn"); processValue.stdout.write(stdout); for (const part of Array.isArray(stderr) ? stderr : [stderr]) processValue.stderr.write(part); processValue.emit("close", code); });
   return processValue;
 }
 it("rejects any other ORAS version and checks again after a failed discovery", async () => {
@@ -53,4 +54,21 @@ it("bounds each command and reaps a child that ignores graceful timeout", async 
   const listeners = process.listenerCount("SIGTERM"); const pending = new OrasTransport({}).run(["cp", "source", "destination"]); const rejected = expect(pending).rejects.toThrow("time limit");
   for (let count = 0; count < 10 && state.spawn.mock.calls.length < 2; count++) await Promise.resolve();
   await vi.advanceTimersByTimeAsync(30 * 60_000); expect(stalled.kill).toHaveBeenCalledWith("SIGTERM"); await vi.advanceTimersByTimeAsync(1000); await rejected; expect(stalled.kill).toHaveBeenCalledWith("SIGKILL"); expect(process.listenerCount("SIGTERM")).toBe(listeners);
+});
+
+it("redacts split URL secrets before retaining failed ORAS diagnostics", async () => {
+  const marker = randomBytes(24).toString("hex");
+  state.spawn.mockImplementation((_name: string, args: string[]) => {
+    if (args[0] === "version") return child("Version: 1.3.5\n");
+    return child("", [`Put "https://user:${marker.slice(0, 5)}`, `${marker.slice(5)}@localhost/v2/object?_sta`, `te=${marker}${"x".repeat(80_000)}${marker}`, '\": EOF\n'], 1);
+  });
+  let message = "";
+  try { await new OrasTransport({}).run(["cp", "source", "destination"]); } catch (error) { message = (error as Error).message; }
+  expect(message).toContain("ORAS failed"); expect(message).toContain("EOF"); expect(message.includes(marker)).toBe(false); expect(message.length).toBeLessThan(200);
+});
+it("preserves successful descriptor stdout and binary output bytes", async () => {
+  const raw = `https://localhost/path?_state=${randomBytes(24).toString("hex")}`;
+  state.spawn.mockImplementation((_name: string, args: string[]) => args[0] === "version" ? child("Version: 1.3.5\n") : child(raw));
+  const transport = new OrasTransport({}); expect(await transport.run(["manifest", "fetch", "--descriptor", "exact"]) === raw).toBe(true);
+  const filename = path.join(directory(), "raw"); await transport.run(["blob", "fetch", "--output", "-", "exact"], { filename, limit: Buffer.byteLength(raw) }); expect(fs.readFileSync(filename).equals(Buffer.from(raw))).toBe(true);
 });

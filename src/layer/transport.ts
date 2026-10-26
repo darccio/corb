@@ -8,6 +8,7 @@ import { INPUT_ARTIFACT_TYPE, INPUT_CONFIG_TYPE, INPUT_BLOB_LIMIT, INPUT_DESCRIP
 import { BASE_ARTIFACT_TYPE, BASE_CONFIG_TYPE, BASE_ASSET_LIMIT } from "./base.ts";
 import { fail, integer, string, table, sha256 } from "./validate.ts";
 import { hashFile, privateDirectory, publishBlob, blobPath } from "./state.ts";
+import { RegistryDiagnosticRedactor } from "./diagnostics.ts";
 
 export interface RegistryOptions { registryConfig?: string; caFile?: string }
 export function validatePushDestination(reference: string): string {
@@ -43,6 +44,7 @@ export class OrasTransport {
       return await new Promise<string>((resolve, reject) => {
         const child = spawn("oras", args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
         let stdout = ""; let stderr = ""; let bytes = 0; let failure: Error | undefined;
+        const diagnostics = new RegistryDiagnosticRedactor();
         let force: ReturnType<typeof setTimeout> | undefined;
         const stop = (error: Error) => { failure ??= error; child.kill("SIGTERM"); force ??= setTimeout(() => child.kill("SIGKILL"), 1000); };
         const cancelled = () => stop(new Error("ORAS transfer cancelled"));
@@ -56,9 +58,10 @@ export class OrasTransport {
             else try { fs.writeSync(fd!, chunk); } catch (error) { stop(error as Error); }
           } else { stdout = (stdout + chunk.toString("utf8")).slice(-64 * 1024); }
         });
-        child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-64 * 1024); });
+        child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + diagnostics.write(chunk.toString("utf8"))).slice(-64 * 1024); });
         child.on("error", (error) => { failure = (error as NodeJS.ErrnoException).code === "ENOENT" ? new Error("ORAS 1.3.5 is required on PATH. Install https://github.com/oras-project/oras/releases/tag/v1.3.5") : error; });
         child.on("close", (code, signal) => {
+          stderr = (stderr + diagnostics.flush()).slice(-64 * 1024);
           clearTimeout(timeout); if (force !== undefined) clearTimeout(force);
           process.removeListener("SIGINT", cancelled); process.removeListener("SIGTERM", cancelled);
           if (failure !== undefined) reject(failure);
