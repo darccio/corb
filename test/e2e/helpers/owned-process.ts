@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { spawn } from "node:child_process";
 
 interface OwnedPid { pid: number; parent: number; session: number; start: string; args: string[] }
-export interface OwnedResult { code: number | null; output: string; pids: OwnedPid[]; forced: number[]; survivors: number[]; error?: Error }
+export interface OwnedResult { code: number | null; output: string; pids: OwnedPid[]; forced: number[]; survivors: number[]; uncertain: boolean; error?: Error }
 let unsafe = false;
 function identity(pid: number): Omit<OwnedPid, "args"> | undefined {
   try {
@@ -21,9 +21,20 @@ export async function runOwnedProcess(command: string, args: string[], options: 
   if (unsafe) throw Error("previous owned process cleanup was uncertain; refusing another VM group");
   const child = spawn(command, args, { cwd: options.cwd, env: options.env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
   const known = new Map<number, OwnedPid>(); const forced = new Set<number>(); const observed = new Set<number>();
-  let output = ""; let outputBytes = 0; let error: Error | undefined; let forceTimer: ReturnType<typeof setTimeout> | undefined;
+  let output = ""; let outputBytes = 0; let error: Error | undefined; let forceTimer: ReturnType<typeof setTimeout> | undefined; let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  let uncertain = false; let directExited = false; const unknown = new Set<number>();
+  let finishClose: (code: number | null) => void = () => {};
   const grace = options.graceMs ?? 10_000; const cleanup = options.cleanupMs ?? 5000;
-  const live = () => [...known.values()].filter((row) => identity(row.pid)?.start === row.start);
+  const uncertainError = (cause: unknown) => { uncertain = true; unsafe = true; error ??= cause instanceof Error ? cause : Error(String(cause)); };
+  const live = () => {
+    const result: OwnedPid[] = [];
+    for (const row of known.values()) {
+      if (row.pid === child.pid && directExited) continue;
+      try { if (identity(row.pid)?.start === row.start) result.push(row); }
+      catch (cause) { unknown.add(row.pid); uncertainError(cause); }
+    }
+    return result;
+  };
   function sample(notify = true) {
     if (child.pid === undefined) return;
     const rows = fs.readdirSync("/proc").filter((name) => /^\d+$/.test(name)).map((name) => identity(Number(name))).filter((row) => row !== undefined);
@@ -37,16 +48,25 @@ export async function runOwnedProcess(command: string, args: string[], options: 
       if (notify && !observed.has(row.pid) && known.get(row.pid)!.args.some((arg) => /(?:^|\/)qemu-system-/.test(arg))) { observed.add(row.pid); options.observe?.(row.pid, known.get(row.pid)!.args); }
     }
   }
+  function discover() { try { sample(false); } catch (cause) { uncertainError(cause); } }
   function signalOwned(signal: NodeJS.Signals) {
-    for (const row of live()) { try { process.kill(row.pid, signal); if (signal === "SIGKILL") forced.add(row.pid); } catch (cause) { if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause; } }
+    for (const row of live()) {
+      try { process.kill(row.pid, signal); if (signal === "SIGKILL") forced.add(row.pid); }
+      catch (cause) { if ((cause as NodeJS.ErrnoException).code !== "ESRCH") { unknown.add(row.pid); uncertainError(cause); } }
+    }
+  }
+  function killDirect() { try { if (child.kill("SIGKILL") && child.pid !== undefined) forced.add(child.pid); } catch (cause) { uncertainError(cause); } }
+  function force() {
+    discover(); killDirect(); signalOwned("SIGKILL");
+    child.stdout.destroy(); child.stderr.destroy();
   }
   const abort = (cause: unknown) => {
     error ??= cause instanceof Error ? cause : Error(String(cause));
     if (forceTimer !== undefined) return;
-    child.kill("SIGTERM");
+    try { child.kill("SIGTERM"); } catch (failure) { uncertainError(failure); }
     forceTimer = setTimeout(() => {
-      try { sample(false); signalOwned("SIGKILL"); } catch (failure) { error ??= failure as Error; }
-      child.stdout.destroy(); child.stderr.destroy();
+      force();
+      closeTimer = setTimeout(() => { uncertainError(Error("owned CLI close did not drain after escalation")); force(); finishClose(null); }, cleanup * 2 + 1000);
     }, grace);
   };
   const data = (chunk: Buffer) => {
@@ -59,26 +79,27 @@ export async function runOwnedProcess(command: string, args: string[], options: 
   const poll = setInterval(() => { try { sample(); } catch (cause) { abort(cause); } }, 100);
   let drainTask: Promise<void> | undefined;
   async function drain() {
-    try {
-      sample(false);
+    discover();
+    if (live().length > 0) {
+      error ??= Error("owned descendants survived CLI exit"); signalOwned("SIGTERM");
+      const termDeadline = Date.now() + cleanup;
+      while (live().length > 0 && Date.now() < termDeadline) { await sleep(20); discover(); }
       if (live().length > 0) {
-        error ??= Error("owned descendants survived CLI exit"); signalOwned("SIGTERM");
-        const termDeadline = Date.now() + cleanup;
-        while (live().length > 0 && Date.now() < termDeadline) { await sleep(20); sample(false); }
-        if (live().length > 0) { signalOwned("SIGKILL"); const killDeadline = Date.now() + cleanup; while (live().length > 0 && Date.now() < killDeadline) { await sleep(20); sample(false); } }
+        killDirect(); signalOwned("SIGKILL"); const killDeadline = Date.now() + cleanup;
+        while (live().length > 0 && Date.now() < killDeadline) { await sleep(20); discover(); }
       }
-    } catch (cause) { error ??= cause as Error; unsafe = true; }
+    }
   }
-  child.once("exit", () => { drainTask ??= drain(); });
+  child.once("exit", () => { directExited = true; if (child.pid !== undefined) unknown.delete(child.pid); drainTask ??= drain(); });
   let code: number | null = null;
   try {
     if (options.signal?.aborted) cancelled();
-    code = await new Promise<number | null>((resolve) => child.once("close", resolve));
+    code = await new Promise<number | null>((resolve) => { finishClose = resolve; child.once("close", resolve); });
   } finally {
-    clearTimeout(timer); clearInterval(poll); if (forceTimer !== undefined) clearTimeout(forceTimer);
+    clearTimeout(timer); clearInterval(poll); if (forceTimer !== undefined) clearTimeout(forceTimer); if (closeTimer !== undefined) clearTimeout(closeTimer);
     options.signal?.removeEventListener("abort", cancelled);
     await (drainTask ??= drain());
   }
-  const survivors = live().map((row) => row.pid); if (survivors.length > 0) { unsafe = true; error ??= Error("owned VM children survived bounded cleanup"); }
-  return { code, output, pids: [...known.values()], forced: [...forced], survivors, ...(error === undefined ? {} : { error }) };
+  const survivors = [...new Set([...live().map((row) => row.pid), ...unknown])]; if (survivors.length > 0) { unsafe = true; error ??= Error("owned VM children survived bounded cleanup"); }
+  return { code, output, pids: [...known.values()], forced: [...forced], survivors, uncertain, ...(error === undefined ? {} : { error }) };
 }
