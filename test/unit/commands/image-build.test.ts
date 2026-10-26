@@ -12,8 +12,8 @@ vi.mock("@earendil-works/gondolin", async (load) => ({
   importImageFromDirectory: mocks.importImage,
   tagImage: mocks.tag,
 }));
-vi.mock("../../../image/verify.ts", () => ({ verifyImage: mocks.verify }));
-vi.mock("../../../image/coherence.ts", () => ({ validateImagePackageCoherence: mocks.coherence }));
+vi.mock("../../../src/image/verify.ts", () => ({ verifyImage: mocks.verify }));
+vi.mock("../../../src/image/coherence.ts", () => ({ validateImagePackageCoherence: mocks.coherence }));
 import { imageBuild, runImageCommand } from "../../../src/commands/image.ts";
 const dirs: string[] = [];
 beforeEach(() => {
