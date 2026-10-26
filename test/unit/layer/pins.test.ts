@@ -86,6 +86,24 @@ describe("shareable pins", () => {
     expect(readLayerLock(dir)?.target).toEqual({ x86_64: pins(), aarch64: arm });
     expect(fs.statSync(target).mode & 0o777).toBe(0o600);
   });
+  it("preserves pins and symlink on a real filesystem write failure", () => {
+    const dir = temporary();
+    const store = path.join(dir, "readonly");
+    fs.mkdirSync(store);
+    const target = path.join(store, "pins.toml");
+    const prior = serializeLayerLock({ version: 1, target: { x86_64: pins() } });
+    fs.writeFileSync(target, prior);
+    fs.symlinkSync(target, path.join(dir, "corb.sum"));
+    fs.chmodSync(store, 0o500);
+    try {
+      expect(() => refreshLayerPins(dir, "x86_64", pins())).toThrow(/EACCES/);
+      expect(fs.readFileSync(target, "utf8")).toBe(prior);
+      expect(fs.lstatSync(path.join(dir, "corb.sum")).isSymbolicLink()).toBe(true);
+      expect(fs.readdirSync(store)).toEqual(["pins.toml"]);
+    } finally {
+      fs.chmodSync(store, 0o700);
+    }
+  });
   it("keeps the old target when the atomic rename fails and cleans its temporary file", () => {
     const dir = temporary();
     const file = path.join(dir, "corb.sum");
