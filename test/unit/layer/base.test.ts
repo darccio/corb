@@ -43,6 +43,19 @@ describe("portable base contract", () => {
       { ...sdk, checksums: { ...sdk.checksums, krunInitrd: hash() } },
     ]) expect(() => normalizePortableSdkManifest(value)).toThrow();
   });
+  it.each(["kernel", "initramfs", "rootfs", "krunKernel", "krunInitrd"])("rejects reserved manifest filename for %s before import", (role) => {
+    const { sdk, config, sizes, root, configBytes } = fixture(true);
+    const changed = { ...sdk, assets: { ...sdk.assets, [role]: "manifest.json" } };
+    expect(() => normalizePortableSdkManifest(changed)).toThrow("reserved manifest.json");
+    expect(() => projectPortableSdkManifest({ ...changed, buildTime: "local" })).toThrow("reserved manifest.json");
+    expect(() => serializeBaseManifest(config, changed, sizes)).toThrow("reserved manifest.json");
+    const sdkBytes = JSON.stringify(changed);
+    const manifest = JSON.parse(root);
+    manifest.layers[0].digest = `sha256:${sha256(sdkBytes)}`;
+    manifest.layers[0].size = Buffer.byteLength(sdkBytes);
+    sizes.set(manifest.layers[0].digest, Buffer.byteLength(sdkBytes));
+    expect(() => validateBaseArtifact(JSON.stringify(manifest), configBytes, sdkBytes, sizes)).toThrow("reserved manifest.json");
+  });
   it("rejects architecture and Alpine mismatches", () => {
     const { config, sdk, sizes } = fixture();
     expect(() => serializeBaseManifest({ ...config, arch: "aarch64" }, sdk, sizes)).toThrow("disagree");

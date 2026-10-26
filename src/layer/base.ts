@@ -50,6 +50,7 @@ export function normalizePortableSdkManifest(value: unknown): PortableSdkManifes
       continue;
     }
     assets[role] = string(rawAssets[role], `SDK assets.${role}`, /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/);
+    if (assets[role] === "manifest.json") fail(`SDK asset '${role}' uses reserved manifest.json filename`);
     checksums[role] = string(rawChecksums[role], `SDK checksums.${role}`, SHA256);
   }
   if (new Set(Object.values(assets)).size !== Object.keys(assets).length) fail("duplicate SDK asset filename");
