@@ -114,6 +114,9 @@ Candidate `060f7a11-e879-4101-bf84-11139ea34f6b` lost both its owned builder sou
 The valid package pointer stayed at `1c3392b5-5dcc-482c-827b-86d4b09b3cc2`.
 
 Host subprocess tests cover timeout, cancellation, parent SIGKILL, assertion failure, independent sessions and persistent discovery/identity errors.
+The checkpoint cleanup unit controls only the `qemu-img` process boundary and uses real owned filesystem files and pointer checks.
+Its two cases pass with an empty PATH and need no installed QEMU binary.
+The serial e2e case retains the real QEMU/SDK checkpoint move fault.
 A separate concurrency test stays disabled until the coordinator grants a two-VM slot after checking resources and backing.
 
 Local ORAS layout copies, exact CLI contracts, HTTPS scheme selection and real cancellation are transport checks.

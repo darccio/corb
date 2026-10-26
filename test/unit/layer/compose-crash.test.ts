@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ base: vi.fn(), graph: vi.fn(), verified: vi.fn(), current: vi.fn(), authenticate: vi.fn(), builder: vi.fn(), guest: vi.fn() }));
+const state = vi.hoisted(() => ({ base: vi.fn(), graph: vi.fn(), verified: vi.fn(), current: vi.fn(), authenticate: vi.fn(), builder: vi.fn(), guest: vi.fn(), disk: vi.fn() }));
+vi.mock("node:child_process", async (load) => ({ ...await load<object>(), execFileSync: state.disk }));
 vi.mock("../../../src/layer/local-base.ts", async (load) => ({ ...await load<object>(), resolveLayerBase: state.base, requireLayerExecution: () => {} }));
 vi.mock("../../../src/layer/graph.ts", async (load) => ({ ...await load<object>(), inputsForContext: state.graph }));
 vi.mock("../../../src/layer/vm.ts", async (load) => ({ ...await load<object>(), verifyLayerBase: state.verified, withLayerVm: state.builder, layerGuest: state.guest }));
@@ -25,6 +26,7 @@ it("removes only owned staging when generation setup fails", async () => {
   vi.spyOn(fs, "mkdirSync").mockImplementation(((directory: string, options: fs.MakeDirectoryOptions) => { if (/generations\/[a-f0-9-]+$/.test(directory)) throw Object.assign(new Error("generation permission failure"), { code: "EACCES" }); return mkdir(directory, options); }) as typeof fs.mkdirSync);
   await expect(composeLayer(context)).rejects.toThrow("generation permission failure");
   expect(fs.readdirSync(path.join(root, "cache/layer-inputs/v1/staging"))).toEqual([]);
+  expect(state.disk).not.toHaveBeenCalled();
 });
 
 it("removes its builder disk and a partial destination when SDK checkpoint creation fails", async () => {
@@ -37,15 +39,28 @@ it("removes its builder disk and a partial destination when SDK checkpoint creat
   state.base.mockResolvedValue({ manifest: { buildId: baseId, config: { arch: "x86_64" } }, assets: { rootfs: { path: raw } } }); state.graph.mockResolvedValue({ digest: "sha256:" + "a".repeat(64) }); state.current.mockResolvedValue(undefined); state.verified.mockResolvedValue({ baseline: { packages: [] } });
   state.authenticate.mockResolvedValue({ payloads: [], archives: [], input: root });
   state.guest.mockImplementation(async (_vm, action) => action === "database" ? { database: "", world: "" } : action === "runtime" ? [] : action === "record" ? { sha256: "a".repeat(64) } : { path: "/bin" });
+  state.disk.mockImplementation((command: string, argv: string[], options: unknown) => {
+    expect(command).toBe("qemu-img");
+    expect(argv).toEqual(["create", "-f", "qcow2", "-F", "raw", "-b", raw, expect.stringMatching(/\/generations\/[a-f0-9-]+\/builder\.qcow2$/)]);
+    expect(options).toEqual({ timeout: 30_000, maxBuffer: 1024 * 1024 });
+    const filename = argv.at(-1)!;
+    expect(fs.statSync(filename).isFile()).toBe(true); expect(fs.statSync(filename).size).toBe(0);
+    expect(fs.statSync(filename).mode & 0o777).toBe(0o600);
+    fs.writeFileSync(filename, "unit checkpoint source"); return Buffer.alloc(0);
+  });
   let source: string | undefined; let destination: string | undefined;
   state.builder.mockImplementation(async (_base, _label, _hosts, callback, options) => {
-    source = options.builderDisk; expect(fs.statSync(source!).isFile()).toBe(true);
+    source = options.builderDisk; expect(fs.readFileSync(source!, "utf8")).toBe("unit checkpoint source");
+    expect(source!.startsWith(path.join(root, "state/layers/named/x86_64/bases", baseId, "generations") + path.sep)).toBe(true);
     return callback({ exec: async () => ({ ok: true, stdout: "", stderr: "" }), getHostPid: () => 123,
       checkpoint: async (filename: string) => { destination = filename; fs.writeFileSync(filename, "partial trailer"); throw Error("checkpoint write failed"); } });
   });
   const parent = path.join(root, "state/layers/named/x86_64/bases", baseId); fs.mkdirSync(parent, { recursive: true });
   const pointer = path.join(parent, "current.json"); fs.writeFileSync(pointer, "previous current");
   await expect(composeLayer(selectLayerWorkspace("named"))).rejects.toThrow("checkpoint write failed");
+  expect(state.disk).toHaveBeenCalledOnce();
+  expect(state.disk.mock.calls[0]![1].at(-1)).toBe(source);
+  expect(fs.readFileSync(raw)).toEqual(Buffer.alloc(4096));
   expect(fs.existsSync(source!)).toBe(false); expect(fs.existsSync(destination!)).toBe(false); expect(fs.readFileSync(pointer, "utf8")).toBe("previous current");
   expect(fs.readdirSync(path.join(root, "cache/layer-inputs/v1/staging"))).toEqual([]);
 });
