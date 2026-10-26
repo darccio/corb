@@ -25,6 +25,8 @@
 // and the exec's own normal completion) is the only reliable termination
 // primitive available.
 import { configureTrustedTls } from "./tls.ts";
+import type { ValidatedComposition } from "../layer/generation.ts";
+import { layerGuest } from "../layer/guest.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -800,6 +802,7 @@ export interface WorkspaceDirSpec {
 }
 
 export interface RunSessionOptions {
+  composition?: ValidatedComposition;
   /** Workspace directories to mount. Every entry's `name` must be unique. */
   dirs: WorkspaceDirSpec[];
   /** Which `dirs[].name` becomes Pi's cwd (`` `/work/${primary}` ``). Must match one entry in `dirs`. */
@@ -1021,7 +1024,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
   // "error clearly and immediately... before attempting to boot anything".
   const resolvedDirs = resolveWorkspaceDirs(options.dirs);
   const primaryEntry = findPrimaryEntry(resolvedDirs, options.primary);
-  const resolvedImage = resolveRuntimeImage(options.image);
+  const resolvedImage = options.composition === undefined ? resolveRuntimeImage(options.image) : { selector: options.composition.base.selector, assetDir: options.composition.base.directory, buildId: options.composition.base.manifest.buildId, arch: options.composition.base.manifest.config.arch };
 
   // `docs/design.md` §7's `"corb:<name>:<shortid>"` format. `shortid` is
   // minted here, before `VM.create()`, since `sessionLabel` is one of that
@@ -1198,8 +1201,9 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
     // unset for the same effect.
     const gitSshOptions = buildGitSshOptions(options.git, hostEnv, options.audit, sessionId);
 
-    vm = await VM.create({
-      sandbox: { imagePath: resolvedImage.assetDir },
+    if (options.composition !== undefined) await options.composition.recheck();
+    const vmOptions = {
+      sandbox: { imagePath: resolvedImage.assetDir, ...(options.composition === undefined ? {} : { vmm: "qemu" as const }) },
       dns: { mode: "synthetic", syntheticHostMapping: "per-host" },
       httpHooks: egressConfig.httpHooks,
       env: egressConfig.env,
@@ -1218,8 +1222,10 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
       ...(options.memory !== undefined ? { memory: options.memory } : {}),
       ...(options.cpus !== undefined ? { cpus: options.cpus } : {}),
       sessionLabel,
-    });
+    } satisfies Parameters<typeof VM.create>[0];
+    vm = options.composition === undefined ? await VM.create(vmOptions) : await options.composition.load().resume<VM>(vmOptions);
     configureTrustedTls(vm);
+    if (options.composition !== undefined) await layerGuest(vm, "runtime", { plan: options.composition.metadata.runtime, expected: options.composition.metadata.mapping });
 
     // Ingress (M9.4): host-to-guest reverse proxy exposing a single guest
     // loopback port, wired only when `--expose PORT` was passed
@@ -1281,6 +1287,7 @@ export async function runSession(options: RunSessionOptions): Promise<void> {
 
     const identity = await readGuestIdentity(vm);
     const guestEnv = buildGuestEnv(egressConfig.env, hostEnv, identity);
+    if (options.composition !== undefined) guestEnv.PATH = options.composition.metadata.path;
     if (options.brokered !== undefined) {
       await writeGuestPiAgentFiles(vm, identity, buildBrokeredGuestFiles(options.brokered, egressConfig.allowWebSockets));
     }

@@ -1,0 +1,81 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { afterEach, expect, it, vi } from "vitest";
+import { acquireWorkspaceLock, blobPath, boundedCopy, hashFile, layerState, publishBlob, publishBytes, verifyBlob } from "../../../src/layer/state.ts";
+import { sha256 } from "../../../src/layer/validate.ts";
+const directories: string[] = [];
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true }); });
+function setup() { const directory = fs.mkdtempSync(path.join(os.tmpdir(), "corb-cas-")); directories.push(directory); vi.stubEnv("CORB_CACHE_DIR", path.join(directory, "cache")); vi.stubEnv("CORB_STATE_DIR", path.join(directory, "state")); return directory; }
+it("publishes bytes once and rehashes existing complete objects", async () => {
+  setup();
+  const digest = await publishBytes("verified");
+  expect(await publishBytes("verified")).toBe(digest);
+  expect(fs.statSync(blobPath(digest)).mode & 0o777).toBe(0o400);
+  fs.chmodSync(blobPath(digest), 0o600);
+  fs.writeFileSync(blobPath(digest), "corrupt");
+  await expect(publishBytes("verified")).rejects.toThrow("corrupt");
+  expect(fs.readFileSync(blobPath(digest), "utf8")).toBe("corrupt");
+});
+it("rejects bad candidate data before publication", async () => {
+  const directory = setup(); const file = path.join(directory, "source"); fs.writeFileSync(file, "wrong");
+  await expect(publishBlob(file, `sha256:${sha256("expected")}`)).rejects.toThrow("mismatch");
+  expect(fs.existsSync(blobPath(sha256("expected")))).toBe(false);
+});
+it("rejects a symlink cache object and missing objects", async () => {
+  const directory = setup(); const file = path.join(directory, "source"); fs.writeFileSync(file, "x");
+  fs.symlinkSync(file, path.join(directory, "link"));
+  await expect(hashFile(path.join(directory, "link"))).rejects.toThrow("invalid");
+  await expect(verifyBlob(sha256("missing"))).rejects.toThrow("layer pull");
+});
+it("fails a live lock and releases only its own token", () => {
+  setup(); const release = acquireWorkspaceLock("named");
+  expect(() => acquireWorkspaceLock("named")).toThrow("live or uncertain");
+  const file = path.join(layerState("named"), "writer.json");
+  const replacement = { ...JSON.parse(fs.readFileSync(file, "utf8")), token: "other" };
+  fs.writeFileSync(file, JSON.stringify(replacement)); release();
+  expect(fs.existsSync(file)).toBe(true);
+});
+it("recovers only a provably dead owner", () => {
+  setup(); acquireWorkspaceLock("named");
+  const kill = vi.spyOn(process, "kill").mockImplementation(() => { throw Object.assign(new Error("dead"), { code: "ESRCH" }); });
+  const release = acquireWorkspaceLock("named"); release(); expect(kill).toHaveBeenCalled();
+  expect(fs.existsSync(path.join(layerState("named"), "writer.json"))).toBe(false);
+});
+it("does not recover uncertain ownership", () => {
+  setup(); acquireWorkspaceLock("named");
+  vi.spyOn(process, "kill").mockImplementation(() => { throw Object.assign(new Error("permission"), { code: "EPERM" }); });
+  expect(() => acquireWorkspaceLock("named")).toThrow("live or uncertain");
+});
+it("bounds streamed downloads", async () => {
+  const directory = setup();
+  await expect(boundedCopy(Readable.from([Buffer.alloc(4), Buffer.alloc(4)]), path.join(directory, "bounded"), 5)).rejects.toThrow("exceeds");
+});
+it("verifies copied candidate bytes before exposing a complete CAS object", async () => {
+  const directory = setup(); const file = path.join(directory, "source"); fs.writeFileSync(file, "expected");
+  const original = fs.copyFileSync;
+  vi.spyOn(fs, "copyFileSync").mockImplementation((source, destination, mode) => { fs.writeFileSync(source, "changed"); original(source, destination, mode); });
+  const digest = `sha256:${sha256("expected")}`;
+  await expect(publishBlob(file, digest)).rejects.toThrow("staged blob");
+  expect(fs.existsSync(blobPath(digest))).toBe(false);
+});
+it("rejects symlink and wrong-node metadata before any blocking read", async () => {
+  const directory = setup(); const { readJson } = await import("../../../src/layer/state.ts");
+  const target = path.join(directory, "target"); fs.writeFileSync(target, "{}");
+  fs.symlinkSync(target, path.join(directory, "link"));
+  const read = vi.spyOn(fs, "readSync");
+  expect(() => readJson(path.join(directory, "link"))).toThrow("regular file");
+  expect(() => readJson(directory)).toThrow("regular file");
+  expect(read).not.toHaveBeenCalled();
+});
+
+it("rejects replacement by a FIFO between stat and streaming without blocking", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const directory = setup(); const file = path.join(directory, "bytes"); const fifo = path.join(directory, "fifo"); fs.writeFileSync(file, "bytes");
+  expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+  const module = new URL("../../../src/layer/state.ts", import.meta.url).href;
+  const script = `import fs from "node:fs"; import { hashFile } from ${JSON.stringify(module)}; const stream=fs.createReadStream; fs.createReadStream=(...args)=>{fs.renameSync(${JSON.stringify(fifo)},${JSON.stringify(file)});return stream(...args)}; try{await hashFile(${JSON.stringify(file)});process.exitCode=2}catch(error){console.log(error.message)}`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 2000 });
+  expect(result.error).toBeUndefined(); expect(result.status).toBe(0); expect(result.stdout).toContain("file changed while reading");
+});

@@ -149,7 +149,7 @@ describe("layer trust and inspection", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     await runRunCommand(["--workspace", "sdk", "--dry-run"]);
     expect(log).toHaveBeenCalledWith(expect.stringContaining("pins: missing"));
-    await expect(runRunCommand(["--workspace", "sdk", "--trust-config"])).rejects.toThrow("image integration implementation");
+    await expect(runRunCommand(["--workspace", "sdk", "--trust-config"])).rejects.toThrow("missing pins");
     expect(fs.existsSync(path.join(configDir, "trusted.json"))).toBe(false);
   });
 });

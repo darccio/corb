@@ -182,7 +182,7 @@ Node and curl retain their separate trusted TLS checks.
 
 ## Workspace layer input boundary
 
-Workspace layers share authenticated inputs. Integration will compose them on a compatible local base with a real package solver and signed scripts.
+Workspace layers share authenticated inputs. Corb composes them on a compatible local base with a real package solver and signed scripts.
 The conditional filesystem-delta spike supplies evidence only. Its delta model is not the production contract.
 
 A reusable input artifact carries signed indexes, the candidate dependency closure and optional complete SDK archives.
@@ -196,14 +196,14 @@ Every actual addition must match a bundled exact package identity.
 Unbundled alternatives, unresolved dependencies, replacement, upgrade, downgrade, reinstall and removal are compatibility errors.
 Shared input bytes stay fixed. Corb does not promise compatibility with arbitrary bases from the same Alpine branch.
 
-The first integration targets native Linux `x86_64` with QEMU. The contracts also preserve `aarch64` pins.
+Execution targets native Linux `x86_64` with QEMU. The contracts also preserve `aarch64` pins.
 
 Pure validators reject unknown metadata, subjects, nested image indexes, descriptor URLs and unsupported media types or algorithms.
 Roles identify data, never extraction paths. Transport must copy blobs into an OCI content-addressed layout.
 Input metadata is limited to 1 MiB each for root and config, 1024 descriptors and 512 MiB per blob.
 The complete graph is limited to 32 GiB.
 
-Integration must verify each SDK archive digest before extraction and validate effective extended-header paths before stripping components.
+Corb verifies each SDK archive digest before extraction and validates effective extended-header paths before stripping components.
 Only regular files and directories are permitted.
 Symlinks, hardlinks, devices, sockets, FIFOs, duplicate paths and special permissions or capability metadata are forbidden.
 Each payload permits at most 2 GiB expanded bytes, 100000 entries and 4096 UTF-8 bytes per final relative path.
@@ -226,7 +226,30 @@ It cannot follow symlinks, remove existing files or recursively change children.
 Layer-enabled configurations also protect the Corb cache and actual SDK image store from every hosted mount.
 This includes external stores, read-only mounts, positional mounts and CLI overrides.
 The guard checks both containment directions after resolving symlinks.
-Integration must also protect the actual bound base and generation directories before credentials or VM creation.
+Corb also protects the actual bound base and generation directories before credentials or VM creation.
 
 The trust hash includes only the recipe and selected shareable pins. This includes any artifact binding.
 Local generation IDs, paths, receipts, numeric accounts and source labels never enter it.
+
+
+Composition preserves the original base-only coherence report unchanged.
+A separate check binds existing package identities, native bytes and the complete protected baseline to authenticated signed additions.
+Legitimate ownership-table changes do not require identical APK database serialization.
+
+The protected baseline includes security-tool ancestors. Payload roots and ancestors must remain root-owned and immutable.
+Corb also rejects copies of the known authenticated external installer in the persistent root filesystem.
+The installer mount stays root-only and outside PATH. A temporary `/sbin/apk` exists only during the signed transaction and is removed on failure too.
+
+Bare signed hooks receive frozen local repository and no-network defaults through temporary APK config, restored afterward.
+Package scripts still run with only declared build network access.
+
+Every HTTP-capable resolver, builder, verifier and resumed session uses the same bounded trusted-TLS repair.
+Builders have no personal mounts, agent session, credentials or SSH egress.
+Input mounts contain only authenticated bytes. No host cache or installer enters the checkpoint.
+The complete SDK PATH receives checks beyond the seven base gates, which explicitly use the base PATH.
+Runtime directories are restored before any dropped-privilege workload.
+
+Run hashes generation metadata, checkpoint, input graph and canonical base assets before credential access and again at VM creation.
+It bounds and validates the disk trailer before the SDK loader, then inspects the direct canonical qcow2 backing path before resume.
+A mismatch requires explicit recomposition. Corb never repairs a checkpoint by changing its backing.
+See [registry trust and crash limits](layers.md#registry-and-local-state-limits) for host transport boundaries.

@@ -171,8 +171,34 @@ Field boundaries and config order keep the input sequence distinct.
 This tag identifies effective build inputs. It does not identify a reproducible disk or an immutable package repository snapshot.
 Keep exact asset checksums and the Gondolin build ID when recording local images.
 
-`image ls`, `image verify`, and `image pin` are planned and are not implemented
-commands.
+## Image inspection and sharing
+
+```bash
+corb image pin [--workspace NAME]
+corb image layer build [--workspace NAME]
+corb image layer push REGISTRY/REPOSITORY:TAG [--workspace NAME] [--registry-config FILE] [--ca-file FILE]
+corb image layer pull [--workspace NAME] [--registry-config FILE] [--ca-file FILE]
+corb image ls [--json]
+corb image verify [SELECTOR]
+corb image push REGISTRY/REPOSITORY:TAG [--image SELECTOR] [--registry-config FILE] [--ca-file FILE]
+corb image pull REGISTRY/REPOSITORY@sha256:DIGEST [--tag REF] [--registry-config FILE] [--ca-file FILE]
+```
+
+Commands reject unknown flags and extra positional arguments.
+Layer commands select the winning workspace by explicit name or ordinary cwd selection.
+An explicit name needs no hosted directory or primary mount.
+
+Pin refreshes authenticated inputs. Build composes the exact cached inputs on the selected local base.
+Layer push publishes inputs and binds their immutable digest in `corb.sum`. Layer pull uses that locked digest and composes locally.
+These commands never write `trusted.json`.
+Base push/pull never changes workspace pins or composition pointers.
+
+Listing reports SDK refs and known local composition records without a VM, network or writes.
+Its version-1 JSON explicitly identifies the refs-only inventory. Untagged objects may be absent.
+
+Verify resolves a selector locally. It uses the ordinary base by default and requires package coherence plus all seven gates.
+It neither repairs nor tags the image.
+See [the complete sharing workflow and limits](layers.md).
 
 ## Current CLI limits
 

@@ -524,3 +524,33 @@ Status values:
 | R21 | Gondolin's HTTP relay corrupts large compressed responses, strips `content-encoding` without guaranteeing the body is actually decompressed | Found dogfooding: Pi's `/model` catalog refresh (`https://pi.dev/api/models/providers/<id>`, a ~162 KiB `content-encoding: gzip` response) consistently failed with `Could not refresh <provider>; showing cached models.` even after the host itself was correctly allowlisted and confirmed reachable (real `200`s in the audit log). Root cause, isolated by running `pi update --models --force` directly in a real booted `corb:0.1.0` VM (bypassing the interactive TUI entirely) and reading the exact error: `Error: Could not refresh model catalogs: openrouter: Unexpected token '(', "(<binary garbage>"... is not valid JSON`, the response body handed to the guest's `fetch()`/`.json()` is still raw gzip bytes. Read from the installed SDK's own source (`qemu/http.js`, the same file R20 touches): once an upstream response arrives with a `content-encoding` header, Gondolin's relay unconditionally deletes both `content-encoding` and `content-length` from what it forwards to the guest, on the assumption that the body it relays is already decompressed, an assumption that does not hold for at least this real, reproducible case. Confirmed the origin genuinely does compress by default (`curl -D- https://pi.dev/api/models/providers/openrouter` shows `content-encoding: gzip`) and genuinely honors a plain client request to skip it (`curl -H 'accept-encoding: identity' ...` gets an uncompressed, correctly-sized body back with no `content-encoding` header at all), so the origin is not the problem, Gondolin's relay is. **Fix, corb-side (no Gondolin patch available):** `forceIdentityAcceptEncoding()` (`src/vm/egress.ts`), wired as an unconditional wrapper around `buildEgressConfig`'s `onRequest` (outside `composeOnRequest`'s policy hooks, none of which need to rewrite a request), sets `Accept-Encoding: identity` on every outbound guest request, so no upstream ever has a reason to compress a response in the first place. This avoids the relay bug before it corrupts output. Verified in a real booted VM: the identical `pi update --models --force` invocation that reliably reproduced `Unexpected token '(' ... is not valid JSON` reports `Model catalogs refreshed` once this header is forced, with `openrouter.ai`'s own (uncompressed, small-response) POST traffic unaffected either way. | closed |
 | R22 | Workspace toolchain disk layers | DAR-15 confirms flat qemu checkpoints with working Go, PostgreSQL, mounts, egress, ingress, and isolated root writes. Package triggers restore `su`, so builds must repeat removals and check protected base hashes. A moved backing path changes the checkpoint hash in place, so builds must serialize rebases and update local metadata. The stock Git TLS gate still fails. See `docs/spike-results.md` DAR-15 for limits and evidence. | go with limits, production work remains |
 | R23 | Missing and stale APK database records | Gondolin unpacks rootfs packages without registering them. DAR-15 confirms 13 missing non-kernel capabilities and verifies that registration covers them. It still leaves OpenSSL 3.5.4 database records over signed 3.5.9 bytes and changes the SSH provider. Later tool installs preserve protected files after cleanup. Base registration and version reconciliation need a production decision, as described in `docs/spike-results.md` DAR-15. | open |
+
+
+## DAR-23 production composition notes
+
+The DAR-15/DAR-16 measurements above remain historical spike evidence.
+Production uses authenticated input graphs and real per-base composition, rather than installed-state deltas.
+The coherent base `8d1ad38c-602a-50b2-a6b4-247a2b6824bc` passed package coherence and all seven production gates.
+
+A real `tree=2.2.1-r0` composition added only tree while retaining its existing musl provider.
+A complete Go 1.27.3 payload passed the same gates and two sequential uid-1000 test/build/run workloads.
+The source-controlled serial lifecycle tests repeat these paths with private state and failure controls.
+Remote HTTPS registry/auth acceptance and packaged Redis startup remain DAR-21 work.
+
+Source details that constrain production:
+
+- A live checkpoint retains builder clone options. Corb reloads stored checkpoint bytes and supplies complete verifier or run options.
+- The SDK trailer loader checks safe integers and file bounds but has no small metadata cap. Corb limits the trailer to 64 KiB and requires a regular non-symlink file first.
+- The SDK compares resolved backing path spelling before rebasing in place. Corb requires the exact canonical direct backing before SDK resume.
+- The seven gates set their own base PATH. Corb separately checks the complete SDK PATH and supplies it to Pi.
+- APK 3.0.8 recursive fetch ignores installed state and conflicts. Corb separately simulates the actual add against the base.
+- Bare signed hooks do not inherit parent APK options. Corb supplies temporary frozen default config and proves a sanitized child query uses it.
+- APK local repository URLs append the architecture. The read-only repository layout retains that directory.
+- Installed npm packages ship compiled JavaScript. The single verifier lives in `src/image` and compiles to `dist/image`. Checkout-only image files are thin bridges.
+- ORAS 1.3.5 blob fetch needs an explicit output option. Its localhost default also permits HTTP. Corb forces false-valued plain-HTTP options on remote sides.
+
+Canonical base assets and refs stay unchanged during tests. Checkpoints are disk caches and resume through a full boot.
+See [the sharing guide](layers.md) for exact public interfaces and boundaries.
+
+The [production validation report](layer-validation.md) records final image/input/generation identities, measured tests, failure recovery and cleanup.
+It keeps source mismatches and unverified remote/service cases separate from the historical spike evidence.

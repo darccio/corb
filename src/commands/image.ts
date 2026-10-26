@@ -25,7 +25,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
   buildAssets,
@@ -39,15 +39,9 @@ import {
   type LocalImageRef,
 } from "@earendil-works/gondolin";
 
-// image/verify.ts (M1.4) lives outside src/ deliberately — it is not part
-// of tsc's compiled program (tsconfig.json's rootDir is "src", and a static
-// import of a file outside it fails to compile with TS6059). Loading it
-// through a dynamic import() whose specifier is a runtime-computed string
-// (never a string literal) keeps tsc from trying to resolve or include it
-// in the program at all, so it never hits that rootDir check; Node's own
-// native TypeScript support (the same "erasable syntax" support
-// `src/cli.ts` relies on for `npm run dev`) then loads and runs it directly,
-// whether corb is running from a dev checkout or from `dist/cli.js`.
+import { verifyImage } from "../image/verify.ts";
+import { validateImagePackageCoherence } from "../image/coherence.ts";
+
 interface GateResult {
   name: string;
   ok: boolean;
@@ -64,11 +58,7 @@ type VerifyImageFn = (
   options?: { allowedHosts?: string[]; sessionLabel?: string },
 ) => Promise<VerifyReport>;
 
-async function loadVerifyImage(): Promise<VerifyImageFn> {
-  const verifyPath = path.join(packageRoot(), "image", "verify.ts");
-  const mod = (await import(pathToFileURL(verifyPath).href)) as { verifyImage: VerifyImageFn };
-  return mod.verifyImage;
-}
+async function loadVerifyImage(): Promise<VerifyImageFn> { return verifyImage; }
 
 function moduleDir(): string {
   return path.dirname(fileURLToPath(import.meta.url));
@@ -259,10 +249,6 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
   // already-written buildAssets() output is left on disk (useful for
   // debugging) but nothing gets imported or tagged.
   process.stderr.write(`corb image build: validating package coherence at ${result.outputDir}\n`);
-  const coherencePath = path.join(packageRoot(), "image", "coherence.ts");
-  const { validateImagePackageCoherence } = await import(pathToFileURL(coherencePath).href) as {
-    validateImagePackageCoherence: (assetDir: string) => Promise<void>;
-  };
   await validateImagePackageCoherence(result.outputDir);
   process.stderr.write(`corb image build: verifying guest image at ${result.outputDir}\n`);
   const verifyImage = await loadVerifyImage();
@@ -297,6 +283,35 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
 
 export async function runImageCommand(argv: string[]): Promise<void> {
   const [sub, ...rest] = argv;
+  if (sub === "ls" || sub === "verify") {
+    const { runImageLs, runImageVerify } = await import("./image-local.ts");
+    if (sub === "ls") runImageLs(rest);
+    else await runImageVerify(rest);
+    return;
+  }
+  if (sub === "push" || sub === "pull") {
+    const { runImagePush, runImagePull } = await import("./image-base.ts");
+    if (sub === "push") await runImagePush(rest);
+    else await runImagePull(rest);
+    return;
+  }
+  if (sub === "layer") {
+    const [operation, ...args] = rest;
+    if (operation === "build") {
+      const { runLayerBuild } = await import("./image-layer.ts");
+      await runLayerBuild(args);
+    } else if (operation === "push" || operation === "pull") {
+      const { runLayerPush, runLayerPull } = await import("./image-layer-transport.ts");
+      if (operation === "push") await runLayerPush(args);
+      else await runLayerPull(args);
+    } else throw new Error(`unsupported image layer command '${operation ?? ""}'`);
+    return;
+  }
+  if (sub === "pin") {
+    const { runLayerPin } = await import("./image-layer.ts");
+    await runLayerPin(rest);
+    return;
+  }
   if (sub === "build") {
     const report = await imageBuild(rest);
     console.log(`corb image build: done in ${(report.buildMs / 1000).toFixed(1)}s`);
@@ -313,5 +328,5 @@ export async function runImageCommand(argv: string[]): Promise<void> {
     console.log(`corb image build: gondolin image store at ${report.imageStoreDirectory}`);
     return;
   }
-  throw new Error(`corb image: unsupported subcommand '${sub ?? ""}' (only 'build' exists so far)`);
+  throw new Error(`corb image: unsupported subcommand '${sub ?? ""}'`);
 }
