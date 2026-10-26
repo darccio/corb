@@ -50,7 +50,7 @@ export async function assertExistingBase(sdk: PortableSdkManifest): Promise<stri
   const directory = getImageObjectDirectory(sdk.buildId);
   if (!fs.existsSync(directory)) return undefined;
   const existing = await resolveLayerBase(sdk.buildId);
-  if (existing.manifest.config.arch !== sdk.config.arch || !same(existing.manifest.checksums, sdk.checksums)) fail("existing SDK object has inconsistent essential role bytes or architecture");
+  if (!same(existing.manifest.config, sdk.config) || !same(existing.manifest.checksums, sdk.checksums)) fail("existing SDK object has inconsistent portable config, essential role bytes or architecture");
   return existing.directory;
 }
 export async function runImagePull(argv: string[]): Promise<void> {
@@ -73,7 +73,7 @@ export async function runImagePull(argv: string[]): Promise<void> {
       const result = importImageFromDirectory(assets); imported = result; existing = result.assetDir;
     } else imported = { buildId: graph.sdk.buildId, assetDir: existing };
     const base = await resolveLayerBase(imported.assetDir);
-    if (base.manifest.buildId !== graph.sdk.buildId || !same(base.manifest.checksums, graph.sdk.checksums) || base.manifest.config.arch !== graph.sdk.config.arch) fail("imported SDK object differs from authenticated portable assets");
+    if (base.manifest.buildId !== graph.sdk.buildId || !same(base.manifest.checksums, graph.sdk.checksums) || !same(base.manifest.config, graph.sdk.config)) fail("imported SDK object differs from authenticated portable assets");
     await verifyLocalBase(base); await recheckLayerBase(base);
     verified = true;
     if (args.tag !== undefined) { tagAttempted = true; tagImage(base.manifest.buildId, args.tag, base.manifest.config.arch); tagged = true; }

@@ -108,6 +108,7 @@ Replace `DIGEST` with the full printed digest.
 A base push verifies the local image, preserves exact raw SDK asset bytes and prints its immutable reference.
 A base pull validates the graph, asset hashes and recomputed SDK build ID before import, then repeats production verification.
 An existing exact object can have different harmless manifest formatting, filenames or local build metadata.
+Its normalized architecture, distro and Alpine release projection must agree with the artifact.
 
 An inconsistent existing object is an error.
 Without `--tag`, pull imports untagged and prints its build ID and directory.

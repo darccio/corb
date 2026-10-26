@@ -22,5 +22,6 @@ it("accepts an existing exact SDK object with harmless manifest and filename dif
   fs.writeFileSync(path.join(directory, "manifest.json"), JSON.stringify({ version: 1, buildId, assets, checksums, config: { ...config, source: "/other/recipe" }, buildTime: "other time" }, null, 4));
   const portable = { version: 1 as const, buildId, assets: { kernel: "kernel", initramfs: "init", rootfs: "root" }, checksums, config };
   expect(await assertExistingBase(portable)).toBe(directory);
+  await expect(assertExistingBase({ ...portable, config: { ...config, alpine: { version: "3.22.0" } } })).rejects.toThrow("inconsistent portable config");
   fs.writeFileSync(path.join(directory, assets.rootfs), "tampered"); await expect(assertExistingBase(portable)).rejects.toThrow("base asset");
 });

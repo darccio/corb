@@ -11,7 +11,7 @@ vi.mock("../../../src/layer/vm.ts", () => ({ verifyLocalBase: mocks.verify }));
 import { runImagePull, runImagePush } from "../../../src/commands/image-base.ts";
 const dirs: string[] = [];
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.clearAllMocks(); for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
-function fixture() {
+function fixture(remoteVersion = "3.23.0") {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-base-report-")); dirs.push(root);
   vi.stubEnv("GONDOLIN_IMAGE_STORE", path.join(root, "store")); vi.stubEnv("CORB_CACHE_DIR", path.join(root, "cache"));
   const bytes = { kernel: "kernel", initramfs: "init", rootfs: "root" }; const checksums = Object.fromEntries(Object.entries(bytes).map(([role, data]) => [role, sha256(data)])) as PortableSdkManifest["checksums"];
@@ -20,9 +20,10 @@ function fixture() {
   const assets = Object.fromEntries(Object.entries(bytes).map(([role, data]) => { const filename = path.join(directory, sdk.assets[role as keyof typeof sdk.assets]!); fs.writeFileSync(filename, data); return [role, { path: filename, sha256: sha256(data), size: Buffer.byteLength(data) }]; }));
   fs.writeFileSync(path.join(directory, "manifest.json"), JSON.stringify(sdk));
   const base = { directory, manifest: sdk, assets, branch: "v3.23" }; mocks.resolve.mockResolvedValue(base);
-  const config = { version: 1 as const, arch: "x86_64" as const, "alpine-version": "3.23.0" };
-  const rootBytes = serializeBaseManifest(config, sdk, new Map(Object.entries(bytes).map(([role, data]) => [`sha256:${checksums[role as keyof typeof checksums]}`, Buffer.byteLength(data)])));
-  mocks.metadata.mockResolvedValue({ root: Buffer.from(rootBytes), config: serializeBaseConfig(config), sdk: serializePortableSdkManifest(sdk), manifest: JSON.parse(rootBytes) });
+  const remoteSdk = { ...sdk, config: { ...sdk.config, alpine: { version: remoteVersion } } };
+  const config = { version: 1 as const, arch: "x86_64" as const, "alpine-version": remoteVersion };
+  const rootBytes = serializeBaseManifest(config, remoteSdk, new Map(Object.entries(bytes).map(([role, data]) => [`sha256:${checksums[role as keyof typeof checksums]}`, Buffer.byteLength(data)])));
+  mocks.metadata.mockResolvedValue({ root: Buffer.from(rootBytes), config: serializeBaseConfig(config), sdk: serializePortableSdkManifest(remoteSdk), manifest: JSON.parse(rootBytes) });
   return { root, sdk, directory };
 }
 it("reports a real SDK failure after the requested ref was already written", async () => {
@@ -40,4 +41,16 @@ it("preserves the verified push verdict when reporting fails afterward", async (
   await expect(runImagePush(["registry.example/base:tag"])).rejects.toThrow("closed output");
   expect(stderr.mock.calls.flat().join("")).toContain(`publication verified at ${immutable}`);
   expect(stderr.mock.calls.flat().join("")).not.toContain("Publication was not verified");
+});
+
+it("rejects a remote Alpine projection mismatch before verification or a requested ref write", async () => {
+  const { root } = fixture("3.22.0");
+  await expect(runImagePull(["registry.example/base@sha256:" + "a".repeat(64), "--tag", "private:bad"])).rejects.toThrow("inconsistent portable config");
+  expect(mocks.verify).not.toHaveBeenCalled(); expect(fs.existsSync(path.join(root, "store/refs/private/bad"))).toBe(false);
+});
+it("rechecks normalized projection agreement after resolving an existing object", async () => {
+  fixture(); const original = await mocks.resolve(); mocks.resolve.mockResolvedValueOnce(original).mockResolvedValueOnce({ ...original, manifest: { ...original.manifest, config: { ...original.manifest.config, alpine: { version: "3.22.0" } } } });
+  const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  await expect(runImagePull(["registry.example/base@sha256:" + "a".repeat(64)])).rejects.toThrow("differs from authenticated portable assets");
+  expect(mocks.verify).not.toHaveBeenCalled(); expect(stderr).toHaveBeenCalled();
 });
