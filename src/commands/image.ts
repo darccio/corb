@@ -15,20 +15,12 @@
 //      directory straight to tagImage() (skipping the import) resolves the
 //      buildId fine but then fails at ensureImageObjectExists because
 //      nothing has been copied into the store yet.
-//   3. tagImage(buildId, targetReference, arch) writes a ref symlink
-//      (getImageStoreDirectory()/refs/<name>/<tag>/<arch> -> the object
-//      dir) pointing at the imported object. Called twice here: once for
-//      the full content-hash tag, once for the moving `corb:<pkgVersion>`
-//      alias.
+//   3. tagImage writes the requested ref. Default builds also write the
+//      version alias. An explicit --tag writes only that ref.
 //
-// Note the two distinct hashes in play: Gondolin's own `buildId` is a
-// UUID derived from the manifest's asset checksums (see
-// build/shared.js `computeAssetBuildId`) and is purely an implementation
-// detail of the SDK's object store. Corb's own tag
-// (`corb:<pkgVersion>-<arch>-<hash>`) is computed independently below from
-// the effective BuildConfig plus the bytes of every postBuild.copy source
-// file (which is where the guest binaries and overlay data enter the
-// image) — this is Corb's own scheme, not something the SDK provides.
+// Gondolin derives its build ID from asset checksums. Corb derives its tag
+// from effective build inputs. Repository changes can alter output bytes
+// without changing Corb's input tag.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -144,21 +136,25 @@ function corbCacheDir(): string {
   return process.env.CORB_CACHE_DIR ?? path.join(os.homedir(), ".cache", "corb");
 }
 
-/**
- * Corb's own content hash for the image tag: the effective BuildConfig
- * (after the --arch override is applied) plus the bytes of every
- * postBuild.copy source file, in config order. This is what actually
- * changes when the guest binaries (dropcap) or the overlay data
- * (suid-allowlist.txt, image.json) change, which the BuildConfig JSON alone
- * would not capture.
- */
-function computeContentHash(config: BuildConfig, configDir: string): string {
+/** Hash the effective config and referenced file bytes in config order. */
+export function computeContentHash(config: BuildConfig, configDir: string): string {
   const hash = createHash("sha256");
-  hash.update(JSON.stringify(config));
-  for (const entry of config.postBuild?.copy ?? []) {
+  const field = (name: string, value: string | Buffer): void => {
+    const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
+    hash.update(`${Buffer.byteLength(name)}:${name}${bytes.length}:`);
+    hash.update(bytes);
+  };
+  field("corb-build-inputs-v2", JSON.stringify(config));
+  for (const name of ["rootfsInit", "initramfsInit", "rootfsInitExtra"] as const) {
+    const filename = config.init?.[name];
+    if (filename !== undefined) {
+      field(`init.${name}`, fs.readFileSync(path.resolve(configDir, filename)));
+    }
+  }
+  for (const [index, entry] of (config.postBuild?.copy ?? []).entries()) {
     const src = path.resolve(configDir, entry.src);
-    hash.update(entry.dest);
-    hash.update(fs.readFileSync(src));
+    field(`postBuild.copy.${index}.dest`, entry.dest);
+    field(`postBuild.copy.${index}.bytes`, fs.readFileSync(src));
   }
   return hash.digest("hex").slice(0, 8);
 }
@@ -197,7 +193,7 @@ export interface ImageBuildReport {
   buildMs: number;
   verify: VerifyReport;
   primaryTag: LocalImageRef;
-  aliasTag: LocalImageRef;
+  aliasTag: LocalImageRef | undefined;
   imageStoreDirectory: string;
 }
 
@@ -276,7 +272,9 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
 
   const imported = importImageFromDirectory(result.outputDir);
   const primaryTag = tagImage(imported.buildId, primaryReference, config.arch);
-  const aliasTag = tagImage(imported.buildId, movingAlias, config.arch);
+  const aliasTag = opts.tagOverride === undefined
+    ? tagImage(imported.buildId, movingAlias, config.arch)
+    : undefined;
 
   return {
     configPath: opts.configPath,
@@ -301,9 +299,11 @@ export async function runImageCommand(argv: string[]): Promise<void> {
     console.log(
       `corb image build: tagged ${report.primaryTag.reference} (${JSON.stringify(report.primaryTag.targets)})`,
     );
-    console.log(
-      `corb image build: tagged ${report.aliasTag.reference} (${JSON.stringify(report.aliasTag.targets)})`,
-    );
+    if (report.aliasTag !== undefined) {
+      console.log(
+        `corb image build: tagged ${report.aliasTag.reference} (${JSON.stringify(report.aliasTag.targets)})`,
+      );
+    }
     console.log(`corb image build: gondolin image store at ${report.imageStoreDirectory}`);
     return;
   }
