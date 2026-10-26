@@ -2,14 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { runOwnedProcess } from "./helpers/owned-process.ts";
 import { selectLayerWorkspace } from "../../src/layer/context.ts";
 import { bindLayerArtifact } from "../../src/layer/pins.ts";
-import { runLayerBuild } from "../../src/commands/image-layer.ts";
 import { resolveRuntimeImage } from "../../src/vm/image.ts";
 
-const enabled = process.env.CORB_E2E === "1";
+const enabled = process.env.CORB_E2E === "1" && process.platform === "linux" && process.arch === "x64";
 const repo = process.cwd();
 const digest = (filename: string) => execFileSync("sha256sum", [filename], { encoding: "utf8", timeout: 120_000 }).split(" ")[0]!;
 const goDefinition = `[image.layer]
@@ -43,27 +43,14 @@ describe.skipIf(!enabled)("production layer lifecycle (serial real VMs)", () => 
     return { pointer, directory: path.join(dir, "generations", JSON.parse(fs.readFileSync(pointer, "utf8")).generation) };
   };
   async function cli(args: string[], expected = 0) {
-    const child = spawn(process.execPath, ["src/cli.ts", ...args], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
-    let text = ""; const pids = new Set<number>(); const descendants = new Set([child.pid!]);
-    const append = (chunk: Buffer) => { text += chunk.toString(); if (text.length > 8 * 1024 ** 2) child.kill("SIGTERM"); };
-    child.stdout.on("data", append); child.stderr.on("data", append);
-    const sample = () => {
-      const rows = execFileSync("ps", ["-eo", "pid=,ppid=,comm="], { encoding: "utf8", timeout: 5000 }).trim().split("\n").map((row) => row.trim().split(/\s+/));
-      for (let pass = 0; pass < 5; pass++) for (const [pid, parent, name] of rows) if (descendants.has(Number(parent))) {
-        descendants.add(Number(pid)); if (name?.startsWith("qemu-system")) pids.add(Number(pid));
-      }
-    };
-    const poll = setInterval(sample, 200); const timeout = setTimeout(() => child.kill("SIGTERM"), 14 * 60_000);
-    const kill = setTimeout(() => child.kill("SIGKILL"), 15 * 60_000);
-    let code: number | null;
-    try { code = await new Promise<number | null>((resolve, reject) => { child.on("error", reject); child.on("close", resolve); }); }
-    finally { clearInterval(poll); clearTimeout(timeout); clearTimeout(kill); }
-    for (const match of text.matchAll(/(?:host PID|builder host PID) (\d+)/g)) pids.add(Number(match[1]));
-    for (const pid of pids) { let alive = false; try { process.kill(pid, 0); alive = true; } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; } expect(alive, `VM ${pid} survived CLI exit`).toBe(false); }
-    records.push({ args, code, pids: [...pids] });
-    fs.writeFileSync(path.join(root, `command-${records.length}.log`), text, { mode: 0o600 });
-    expect(code, text.slice(-16000)).toBe(expected); return text;
+    const result = await runOwnedProcess(process.execPath, ["src/cli.ts", ...args], { cwd: repo, env });
+    const pids = result.pids.filter((row) => row.args.some((arg) => /(?:^|\/)qemu-system-/.test(arg))).map((row) => row.pid);
+    records.push({ args, code: result.code, pids });
+    fs.writeFileSync(path.join(root, `command-${records.length}.log`), result.output, { mode: 0o600 });
+    expect(result.survivors).toEqual([]); expect(result.error, result.output.slice(-16000)).toBeUndefined();
+    expect(result.code, result.output.slice(-16000)).toBe(expected); return result.output;
   }
+
   const run = (workspace: string, trust = false) => cli(["run", "--workspace", workspace, ...(trust ? ["--trust-config"] : []), "--", "--extension", "/work/project/probe.mjs", "--print", "unused"]);
   beforeAll(() => {
     const parent = process.env.CORB_E2E_LAYER_ROOT ?? path.join(repo, "image/build/dar-23/e2e");
@@ -163,23 +150,18 @@ describe.skipIf(!enabled)("production layer lifecycle (serial real VMs)", () => 
   it("cleans both real checkpoint files after an induced SDK move failure", async () => {
     const original = fs.readFileSync(file("package")); const pins = fs.readFileSync(sum("package")); const current = generation("package"); const pointer = fs.readFileSync(current.pointer);
     fs.writeFileSync(file("package"), original.toString().replace("[image.layer]", '[image.layer]\ncommands=["true"]'));
-    let source: string | undefined; let destination: string | undefined;
     try {
       await cli(["image", "pin", "--workspace", "package"]);
-      for (const [key, value] of Object.entries(env)) if (value !== undefined && key !== "PATH") vi.stubEnv(key, value);
-      const rename = fs.renameSync;
-      vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
-        if (String(from).endsWith("/builder.qcow2") && String(to).endsWith("/checkpoint.qcow2")) {
-          source = String(from); destination = String(to); fs.writeFileSync(to, "owned partial checkpoint");
-          throw Object.assign(Error("induced checkpoint move failure"), { code: "EIO" });
-        }
-        return rename(from, to);
-      });
-      await expect(runLayerBuild(["--workspace", "package"])).rejects.toThrow("induced checkpoint move failure");
-      expect(source).toBeDefined(); expect(fs.existsSync(source!)).toBe(false); expect(fs.existsSync(destination!)).toBe(false);
+      const result = await runOwnedProcess(process.execPath, [path.join(repo, "test/e2e/fixtures/checkpoint-failure.ts")], { cwd: repo, env });
+      fs.writeFileSync(path.join(root, "checkpoint-failure.log"), result.output, { mode: 0o600 });
+      expect(result.error, result.output).toBeUndefined(); expect(result.code, result.output).toBe(0); expect(result.survivors).toEqual([]);
+      const match = /CORB_CHECKPOINT_FAILURE=(\{.+\})/.exec(result.output); expect(match).not.toBeNull();
+      const evidence = JSON.parse(match![1]!); expect(evidence.sourceExists).toBe(false); expect(evidence.destinationExists).toBe(false);
+      expect(fs.existsSync(evidence.source)).toBe(false); expect(fs.existsSync(evidence.destination)).toBe(false);
+      fs.writeFileSync(path.join(root, "checkpoint-failure.json"), JSON.stringify({ ...evidence, pids: result.pids, forced: result.forced }, null, 2), { mode: 0o600 });
       expect(fs.readFileSync(current.pointer)).toEqual(pointer);
       expect(fs.readdirSync(path.join(root, "cache/layer-inputs/v1/staging"))).toEqual([]);
-    } finally { vi.restoreAllMocks(); vi.unstubAllEnvs(); fs.writeFileSync(file("package"), original); fs.writeFileSync(sum("package"), pins); }
+    } finally { fs.writeFileSync(file("package"), original); fs.writeFileSync(sum("package"), pins); fs.writeFileSync(current.pointer, pointer); }
   }, 14 * 60_000);
   it("rejects a requested replacement of the base SSH provider without replacing pins", async () => {
     const original = fs.readFileSync(file("package")); const pins = fs.readFileSync(sum("package")); const current = generation("package"); const pointer = fs.readFileSync(current.pointer);

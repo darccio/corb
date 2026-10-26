@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { runOwnedProcess } from "./helpers/owned-process.ts";
 import { expect, it } from "vitest";
-const enabled = process.env.CORB_E2E === "1" && process.env.CORB_E2E_LAYER_CONCURRENCY === "1";
+const enabled = process.env.CORB_E2E === "1" && process.env.CORB_E2E_LAYER_CONCURRENCY === "1" && process.platform === "linux" && process.arch === "x64";
 const hash = (filename: string) => execFileSync("sha256sum", [filename], { encoding: "utf8", timeout: 120_000 }).split(" ")[0]!;
 
 // The coordinator must grant a separate two-VM slot before enabling this test.
@@ -24,31 +25,22 @@ it.skipIf(!enabled)("resumes two isolated overlays without changing the generati
   for (const token of ["A", "B"]) for (const suffix of ["started", "json"]) fs.rmSync(path.join(root, `project/concurrent-${token}.${suffix}`), { force: true });
   const records: Array<{ token: string; code: number | null; output: string; vms: Array<{ pid: number; overlay: string }> }> = [];
   async function run(token: string) {
-    const child = spawn(process.execPath, ["src/cli.ts", "run", "--workspace", "go", ...(token === "prime" ? ["--trust-config"] : []), "--", "--extension", "/work/project/concurrent.mjs", "--print", token], { env, stdio: ["ignore", "pipe", "pipe"] });
-    let output = ""; const descendants = new Set([child.pid!]); const vms = new Map<number, string>(); let observedError: unknown;
-    child.stdout.on("data", (data) => { output += data; if (output.length > 1024 ** 2) child.kill("SIGTERM"); }); child.stderr.on("data", (data) => { output += data; if (output.length > 1024 ** 2) child.kill("SIGTERM"); });
-    child.on("error", (error) => { observedError = error; });
-    const poll = setInterval(() => {
-      try {
-        const rows = execFileSync("ps", ["-eo", "pid=,ppid=,comm=,args="], { encoding: "utf8", timeout: 5000 }).split("\n").map((row) => row.trim().split(/\s+/));
-        for (let pass = 0; pass < 5; pass++) for (const [pid, parent, name, ...args] of rows) if (descendants.has(Number(parent))) {
-          descendants.add(Number(pid)); if (!name?.startsWith("qemu-system") || vms.has(Number(pid))) continue;
-          const argv = args.join(" "); expect(argv).toContain("-m 1G -smp 2");
-          const overlay = /-drive file=([^,]+),format=qcow2/.exec(argv)?.[1]; expect(overlay).toBeDefined(); expect(overlay).not.toBe(checkpoint);
-          const info = JSON.parse(execFileSync("qemu-img", ["info", "--force-share", "--output=json", overlay!], { encoding: "utf8", timeout: 5000 }));
-          expect(info["backing-filename"]).toBe(checkpoint); vms.set(Number(pid), overlay!);
-        }
-      } catch (error) { observedError = error; child.kill("SIGTERM"); }
-    }, 100);
-    const timer = setTimeout(() => child.kill("SIGTERM"), 120_000); const kill = setTimeout(() => child.kill("SIGKILL"), 130_000);
-    let code: number | null;
-    try { code = await new Promise<number | null>((resolve) => child.on("close", resolve)); }
-    finally { clearInterval(poll); clearTimeout(timer); clearTimeout(kill); }
-    records.push({ token, code, output, vms: [...vms].map(([pid, overlay]) => ({ pid, overlay })) });
-    if (observedError) throw observedError; expect(code, output).toBe(0); expect(output).toContain(token === "prime" ? "CORB_RESUME_PRIMED" : `CORB_RESUME_ISOLATED_${token}`);
+    const vms = new Map<number, string>();
+    const result = await runOwnedProcess(process.execPath, ["src/cli.ts", "run", "--workspace", "go", ...(token === "prime" ? ["--trust-config"] : []), "--", "--extension", "/work/project/concurrent.mjs", "--print", token], { env, timeoutMs: 120_000,
+      observe: (pid, args) => {
+        const argv = args.join(" "); expect(argv).toContain("-m 1G -smp 2");
+        const overlay = /-drive file=([^,]+),format=qcow2/.exec(argv)?.[1]; expect(overlay).toBeDefined(); expect(overlay).not.toBe(checkpoint);
+        const info = JSON.parse(execFileSync("qemu-img", ["info", "--force-share", "--output=json", overlay!], { encoding: "utf8", timeout: 5000 }));
+        expect(info["backing-filename"]).toBe(checkpoint); vms.set(pid, overlay!);
+      },
+    });
+    records.push({ token, code: result.code, output: result.output, vms: [...vms].map(([pid, overlay]) => ({ pid, overlay })) });
+    expect(result.survivors).toEqual([]); expect(result.error, result.output).toBeUndefined(); expect(result.code, result.output).toBe(0);
+    expect(result.output).toContain(token === "prime" ? "CORB_RESUME_PRIMED" : `CORB_RESUME_ISOLATED_${token}`);
     expect(vms.size).toBe(1);
     for (const [pid, overlay] of vms) { expect(fs.existsSync(overlay)).toBe(false); expect(() => process.kill(pid, 0)).toThrow(); }
   }
+
   try {
     await run("prime"); const outcomes = await Promise.allSettled([run("A"), run("B")]);
     for (const outcome of outcomes) if (outcome.status === "rejected") throw outcome.reason;
