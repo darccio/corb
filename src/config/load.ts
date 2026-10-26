@@ -34,6 +34,7 @@ import {
   type PartialVmConfig,
   type PartialVmLimits,
 } from "./schema.ts";
+import type { LayerImageConfig } from "../layer/pins.ts";
 import { validateMountTargets } from "./guestpaths.ts";
 import { builtinGitRules } from "./gitprotect.ts";
 
@@ -100,6 +101,7 @@ export interface EffectivePolicyConfig {
  * itself always produces a concrete value for those regardless of input.
  */
 export interface EffectiveConfig {
+  image?: LayerImageConfig;
   version?: number;
   name?: string;
   vm?: PartialVmConfig;
@@ -510,6 +512,7 @@ function finalizePolicy(merged: PartialPolicyConfig | undefined): EffectivePolic
  */
 export function mergeConfigLayers(layers: ConfigLayer[]): EffectiveConfig {
   // `workspaces` stays personal and is deliberately excluded from the merge and trust hash.
+  let image: LayerImageConfig | undefined;
   let version: number | undefined;
   let name: string | undefined;
   let vm: PartialVmConfig | undefined;
@@ -522,6 +525,7 @@ export function mergeConfigLayers(layers: ConfigLayer[]): EffectiveConfig {
   let audit: PartialAuditConfig | undefined;
 
   for (const layer of [BUILTIN_DEFAULTS, ...layers]) {
+    image = layer.image === undefined ? image : structuredClone(layer.image);
     version = layer.version ?? version;
     name = layer.name ?? name;
     vm = mergeVmConfig(vm, layer.vm);
@@ -545,6 +549,9 @@ export function mergeConfigLayers(layers: ConfigLayer[]): EffectiveConfig {
     })),
     policy: finalizePolicy(policy),
   };
+  if (image !== undefined) {
+    result.image = image;
+  }
   if (version !== undefined) {
     result.version = version;
   }

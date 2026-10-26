@@ -15,6 +15,8 @@
 // falls out of TOML's own nesting rather than being a schema choice.
 import { parse, TomlError } from "smol-toml";
 import path from "node:path";
+import { normalizeLayerDefinition, LayerValidationError } from "../layer/definition.ts";
+import type { LayerImageConfig } from "../layer/pins.ts";
 import { DurationOverflowError, MAX_SETTIMEOUT_MS, parseDuration } from "../util/duration.ts";
 import { expandHomePrefix } from "./paths.ts";
 
@@ -209,6 +211,7 @@ export interface PartialWorkspacesConfig {
  * produces, live there, not here.
  */
 export interface ConfigLayer {
+  image?: LayerImageConfig;
   version?: number;
   name?: string;
   vm?: PartialVmConfig;
@@ -738,7 +741,7 @@ function parseWorkspacesConfig(value: unknown, sourceLabel: string): PartialWork
   return result;
 }
 
-const TOP_LEVEL_KEYS = ["version", "name", "vm", "agent", "secrets", "egress", "git", "dir", "policy", "audit", "workspaces"] as const;
+const TOP_LEVEL_KEYS = ["version", "name", "vm", "agent", "secrets", "egress", "git", "dir", "policy", "audit", "workspaces", "image"] as const;
 
 export interface ParseConfigLayerOptions {
   scope?: "global" | "workspace";
@@ -770,6 +773,19 @@ export function parseConfigLayer(toml: string, sourceLabel: string, options: Par
   }
 
   const layer: ConfigLayer = {};
+  if (table.image !== undefined) {
+    if (options.scope !== "workspace") {
+      throw new ConfigParseError(sourceLabel, "[image] is only allowed in a workspace corb.toml", "image");
+    }
+    const image = expectTable(table.image, "image", sourceLabel);
+    assertKnownKeys(image, ["layer"], "image", sourceLabel);
+    try {
+      layer.image = { layer: normalizeLayerDefinition(image.layer) };
+    } catch (error) {
+      if (!(error instanceof LayerValidationError)) throw error;
+      throw new ConfigParseError(sourceLabel, error.message, "image.layer");
+    }
+  }
   if (table.version !== undefined) {
     const version = expectNumber(table.version, "version", sourceLabel);
     if (version !== CURRENT_CONFIG_VERSION) {
