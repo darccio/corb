@@ -285,9 +285,14 @@ export async function runImageCommand(argv: string[]): Promise<void> {
   const [sub, ...rest] = argv;
   if (sub === "layer") {
     const [operation, ...args] = rest;
-    if (operation !== "build") throw new Error(`unsupported image layer command '${operation ?? ""}'`);
-    const { runLayerBuild } = await import("./image-layer.ts");
-    await runLayerBuild(args);
+    if (operation === "build") {
+      const { runLayerBuild } = await import("./image-layer.ts");
+      await runLayerBuild(args);
+    } else if (operation === "push" || operation === "pull") {
+      const { runLayerPush, runLayerPull } = await import("./image-layer-transport.ts");
+      if (operation === "push") await runLayerPush(args);
+      else await runLayerPull(args);
+    } else throw new Error(`unsupported image layer command '${operation ?? ""}'`);
     return;
   }
   if (sub === "pin") {

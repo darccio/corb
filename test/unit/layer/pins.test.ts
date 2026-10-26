@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertCompatiblePackagePlan, assertPinsMatchDefinition, hashRecipePins, normalizeTargetPins, parseLayerLock, readLayerLock, recipePins, refreshLayerPins, serializeLayerLock, validateApkindexChecksum } from "../../../src/layer/pins.ts";
+import { bindLayerArtifact, assertCompatiblePackagePlan, assertPinsMatchDefinition, hashRecipePins, normalizeTargetPins, parseLayerLock, readLayerLock, recipePins, refreshLayerPins, serializeLayerLock, validateApkindexChecksum } from "../../../src/layer/pins.ts";
 import { validateArtifactReference } from "../../../src/layer/reference.ts";
 import { checksum, definition, hash, pins } from "./fixtures.ts";
 
@@ -174,4 +174,15 @@ describe("immutable artifact references", () => {
   it.each(["org/layer:latest", `org/layer@sha256:${hash()}`, `https://ghcr.io/org/layer@sha256:${hash()}`, `user@ghcr.io/org/layer@sha256:${hash()}`, `ghcr.io:0/org/layer@sha256:${hash()}`, `ghcr.io:65536/org/layer@sha256:${hash()}`, `ghcr.io/Org/layer@sha256:${hash()}`, `ghcr.io/org/../layer@sha256:${hash()}`, `ghcr.io/org/layer@sha256:${hash("A")}`, `ghcr.io/org/layer@sha256:${hash()}?q`])("rejects invalid reference %s", (value) => {
     expect(() => validateArtifactReference(value)).toThrow();
   });
+});
+
+it("binds only the selected target through a lockfile symlink", () => {
+  const dir = temporary(); const target = path.join(dir, "real.sum"); const arm = pins(); arm.index = arm.index.map((row) => ({ ...row, url: row.url.replace("x86_64", "aarch64") }));
+  fs.writeFileSync(target, serializeLayerLock({ version: 1, target: { x86_64: pins(), aarch64: arm } })); fs.symlinkSync("real.sum", path.join(dir, "corb.sum")); const artifact = `registry.example/team/input@sha256:${hash()}`;
+  bindLayerArtifact(dir, "x86_64", pins(), artifact);
+  expect(readLayerLock(dir)?.target).toEqual({ x86_64: { ...pins(), artifact }, aarch64: arm }); expect(fs.lstatSync(path.join(dir, "corb.sum")).isSymbolicLink()).toBe(true); expect(fs.statSync(target).mode & 0o777).toBe(0o600);
+});
+it("preserves the old lock after a selected-pin mismatch during artifact binding", () => {
+  const dir = temporary(); const file = path.join(dir, "corb.sum"); const before = serializeLayerLock({ version: 1, target: { x86_64: pins() } }); fs.writeFileSync(file, before);
+  expect(() => bindLayerArtifact(dir, "x86_64", { ...pins(), "definition-sha256": hash("9") }, `registry.example/team/input@sha256:${hash()}`)).toThrow("pins changed"); expect(fs.readFileSync(file, "utf8")).toBe(before);
 });

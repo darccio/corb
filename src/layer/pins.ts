@@ -225,3 +225,20 @@ export function assertCompatiblePackagePlan(pins: LayerRecipePins, actions: read
     if (bundled === undefined || !same(packageIdentity(identity), packageIdentity({ ...bundled }))) fail(`incompatible base: unbundled package identity '${action.name}'`);
   }
 }
+
+/** Bind a verified published graph without changing other targets or the recipe identity. */
+export function bindLayerArtifact(workspaceDir: string, arch: LayerArch, expected: LayerTargetPins, artifact: string): LayerLock {
+  validateArtifactReference(artifact);
+  const snapshot = captureLockSnapshot(path.join(workspaceDir, "corb.sum"));
+  if (snapshot.bytes === undefined) fail("pins disappeared before artifact publication");
+  const prior = parseLayerLock(snapshot.bytes.toString("utf8"));
+  if (!same(prior.target[arch], normalizeTargetPins(expected, arch))) fail("selected pins changed before artifact publication");
+  const next: LayerLock = { version: 1, target: { ...prior.target, [arch]: { ...expected, artifact } } };
+  const staging = path.join(path.dirname(snapshot.target), `.${path.basename(snapshot.target)}.bind-${process.pid}-${randomUUID()}`);
+  try {
+    writeFileSecure(staging, serializeLayerLock(next));
+    assertLockSnapshot(snapshot);
+    fs.renameSync(staging, snapshot.target);
+  } finally { fs.rmSync(staging, { force: true }); }
+  return normalizeLayerLock(next);
+}
