@@ -27,3 +27,8 @@ it("accepts real APK decimal summaries and rejects missing summaries", () => {
   expect(parsePackagePlan("(1/1) Installing go (1.26.0-r0)\nOK: 170.5 MiB in 61 packages", existing, pins())).toHaveLength(1);
   expect(() => parsePackagePlan("(1/1) Installing go (1.26.0-r0)", existing, pins())).toThrow("summary");
 });
+it("requires a sanitized APK child to use exact frozen repository defaults", async () => {
+  const { validateHookRepositoryQuery } = await import("../../../src/layer/plan.ts");
+  expect(validateHookRepositoryQuery("/corb-layer-input/repositories/community/x86_64/go-1.26.0-r0.apk\n/corb-layer-input/repositories/main/x86_64/musl-1.2.5-r0.apk\n", pins(), "x86_64")).toEqual(["go", "musl"]);
+  for (const output of ["https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/go-1.26.0-r0.apk", "/corb-layer-input/repositories/main/x86_64/musl-1.2.5-r0.apk", "/corb-layer-input/repositories/community/x86_64/go-other.apk", "ERROR: unknown request"]) expect(() => validateHookRepositoryQuery(output, pins(), "x86_64")).toThrow();
+});

@@ -10,7 +10,7 @@ import { requireLayerExecution, recheckLayerBase, resolveLayerBase } from "./loc
 import { baseGenerationRoot, compositionKey, COMPOSITION_POLICY, currentGeneration, inspectCheckpointBacking, inspectCheckpointTrailer, validateGeneration, type GenerationMetadata } from "./generation.ts";
 import { atomicJson, hashFile, privateDirectory } from "./state.ts";
 import { BASE_PATH, layerExec, layerGuest, VERIFIER_HOSTS, verifyLayerBase, verifyProductionVm, withLayerVm } from "./vm.ts";
-import { parseInstalledIdentities, parsePackagePlan, assertPackageIdentities } from "./plan.ts";
+import { parseInstalledIdentities, parsePackagePlan, assertPackageIdentities, validateHookRepositoryQuery } from "./plan.ts";
 import { fail, sha256 } from "./validate.ts";
 import type { LayerContext } from "./context.ts";
 
@@ -46,6 +46,7 @@ export async function composeLayer(context: LayerContext, suppliedGraph?: InputG
     const built = await withLayerVm(base, "corb-layer-builder", context.definition["build-hosts"], async (vm) => {
       const processBaseline = await layerGuest(vm, "processes");
       let additions: ReturnType<typeof parsePackagePlan> = [];
+      let hookDefaults: { noNetwork: true; packages: string[] } | undefined;
       if (context.definition.packages.length > 0) {
         const requested = context.pins!.package.filter((row) => row.requested).map((row) => `${row.name}=${row.version}`);
         const simulated = await layerExec(vm, [...APK_PREFIX, "add", "--simulate", ...requested]);
@@ -53,6 +54,10 @@ export async function composeLayer(context: LayerContext, suppliedGraph?: InputG
         additions = parsePackagePlan(simulated.stdout, baseline.packages, context.pins!);
         await layerGuest(vm, "apk-context-start");
         try {
+          const child = await layerExec(vm, ["/usr/bin/env", "-i", `PATH=${BASE_PATH}`, "/sbin/apk", "fetch", "--recursive", "--url", "--simulate", ...requested]);
+          if (!child.ok) fail("sanitized bare APK child rejected its frozen defaults");
+          hookDefaults = { noNetwork: true, packages: validateHookRepositoryQuery(child.stdout + child.stderr, context.pins!, context.arch) };
+          process.stderr.write("corb image: sanitized bare APK child uses frozen repository defaults\n");
           const installed = await layerExec(vm, [...APK_PREFIX, "add", ...requested], 5 * 60_000);
           process.stderr.write(installed.stdout + installed.stderr);
           if (!installed.ok) fail("signed APK transaction failed");
@@ -71,7 +76,7 @@ export async function composeLayer(context: LayerContext, suppliedGraph?: InputG
         if (!result.ok) fail(`unpinned root step failed (${result.exitCode})`);
       }
       await layerGuest(vm, "stop", processBaseline);
-      const plan = { baseline, world: after.world, ...(prepared.installer?.binary === undefined ? {} : { installer: { sha256: sha256(prepared.installer.binary), size: prepared.installer.binary.length } }), additions, archives: prepared.archives, payloads: prepared.payloads, runtime: context.definition["runtime-dir"], mapping };
+      const plan = { baseline, world: after.world, ...(hookDefaults === undefined ? {} : { hookDefaults }), ...(prepared.installer?.binary === undefined ? {} : { installer: { sha256: sha256(prepared.installer.binary), size: prepared.installer.binary.length } }), additions, archives: prepared.archives, payloads: prepared.payloads, runtime: context.definition["runtime-dir"], mapping };
       const evidence = await layerGuest<{ path: string }>(vm, "verify", plan);
       const guestEvidence = await layerGuest<{ sha256: string }>(vm, "record", evidence);
       const finalDatabase = await layerGuest<{ database: string; world: string }>(vm, "database");

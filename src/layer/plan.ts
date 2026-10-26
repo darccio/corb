@@ -58,3 +58,16 @@ export function assertPackageIdentities(before: readonly InstalledIdentity[], af
     if (actual === undefined || actual.V !== pin.version || actual.C !== pin["apkindex-checksum"] || !["x86_64", "noarch"].includes(actual.A)) fail(`composition package identity mismatch '${pin.name}'`);
   }
 }
+
+/** A sanitized child APK must inherit only the frozen local repositories from its default config. */
+export function validateHookRepositoryQuery(output: string, pins: LayerRecipePins, arch: string): string[] {
+  const names = new Set<string>();
+  for (const line of output.trim().split("\n").filter(Boolean)) {
+    const match = pins.package.find((row) => line === `/corb-layer-input/repositories/${row.repository}/${arch}/${row.name}-${row.version}.apk`
+      || line === `file:///corb-layer-input/repositories/${row.repository}/${arch}/${row.name}-${row.version}.apk`);
+    if (match === undefined || names.has(match.name)) fail(`bare APK child escaped the frozen bundle: '${line}'`);
+    names.add(match.name);
+  }
+  if (!pins.package.filter((row) => row.requested).every((row) => names.has(row.name))) fail("bare APK child did not resolve every exact requested input through its frozen defaults");
+  return [...names].sort();
+}
