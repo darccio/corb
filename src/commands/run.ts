@@ -1,3 +1,5 @@
+import { preflightComposition } from "../layer/generation.ts";
+import { selectLayerWorkspace } from "../layer/context.ts";
 // Parse run flags and resolve the same config shown by explain and dry-run.
 // A named workspace without DIR does not mount cwd. Other omitted DIR values use cwd.
 // Persistent settings pass the trust gate before any session starts. CLI flags stay personal.
@@ -327,16 +329,16 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     return;
   }
 
-  if (resolved.fullConfig.image !== undefined) {
-    throw new Error("corb run: workspace layers require the image integration implementation. Use corb explain or corb run --dry-run to inspect this definition");
-  }
-
   // Trust gate (see module comment): evaluated against the *persistent*
   // config only, so CLI-added `--dir` directories never affect the verdict
   // and are never recorded by `acceptWorkspace`.
   if (resolved.trustEvaluation.verdict === "requires-confirmation" && !trustConfig) {
     throw new TrustConfirmationRequiredError(resolved, { dirFlags, ...(primaryFlag === undefined ? {} : { primary: primaryFlag }) });
   }
+  const composition = resolved.fullConfig.image === undefined ? undefined : await preflightComposition(
+    selectLayerWorkspace(workspace, undefined, dir),
+    resolved.fullConfig.dir.flatMap((entry) => entry.host === undefined ? [] : [entry.host]),
+  );
   if (trustConfig) {
     acceptWorkspace(resolved.trustKey, resolved.persistentConfig, Date.now());
   }
@@ -441,6 +443,7 @@ export async function runRunCommand(argv: string[]): Promise<void> {
   }
 
   await runSession({
+    ...(composition === undefined ? {} : { composition }),
     dirs,
     primary,
     piArgs: fullPiArgs,

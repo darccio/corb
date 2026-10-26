@@ -283,6 +283,18 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
 
 export async function runImageCommand(argv: string[]): Promise<void> {
   const [sub, ...rest] = argv;
+  if (sub === "layer") {
+    const [operation, ...args] = rest;
+    if (operation !== "build") throw new Error(`unsupported image layer command '${operation ?? ""}'`);
+    const { runLayerBuild } = await import("./image-layer.ts");
+    await runLayerBuild(args);
+    return;
+  }
+  if (sub === "pin") {
+    const { runLayerPin } = await import("./image-layer.ts");
+    await runLayerPin(rest);
+    return;
+  }
   if (sub === "build") {
     const report = await imageBuild(rest);
     console.log(`corb image build: done in ${(report.buildMs / 1000).toFixed(1)}s`);
@@ -299,5 +311,5 @@ export async function runImageCommand(argv: string[]): Promise<void> {
     console.log(`corb image build: gondolin image store at ${report.imageStoreDirectory}`);
     return;
   }
-  throw new Error(`corb image: unsupported subcommand '${sub ?? ""}' (only 'build' exists so far)`);
+  throw new Error(`corb image: unsupported subcommand '${sub ?? ""}'`);
 }

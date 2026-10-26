@@ -30,7 +30,7 @@ export interface VerifyImageOptions {
 
 const DEFAULT_ALLOWED_HOSTS = ["api.anthropic.com", "github.com"];
 
-// Array execution uses BASE_PATH and never reads a login profile.
+// Supply the base PATH explicitly for every gate command.
 const BASE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 function pass(name: string, detail: string): GateResult {

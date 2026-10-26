@@ -21,13 +21,9 @@ export function run(argv: string[] = process.argv.slice(2)): string {
   return STUB_MESSAGE;
 }
 
-// `image build` (M1.3), `run` (M1.6), `explain` (M2.5), `doctor` (M3.5),
-// `ls` (M8.4), `kill` (M8.5), `gc` (M8.6), `attach` (M8.7) and
-// `login`/`logout` (ADR 0012) and `workspace` (DAR-8) are the real subcommands so far. Everything
-// else — any other `image` subcommand — keeps printing the M1.1 stub exactly
-// as before; real subcommand parsing for the rest lands in later milestones.
+// Each command parses its own flags. Unknown top-level commands keep the historical stub.
 async function main(argv: string[]): Promise<void> {
-  if (argv[0] === "image" && argv[1] === "build") {
+  if (argv[0] === "image") {
     await runImageCommand(argv.slice(1));
     return;
   }
