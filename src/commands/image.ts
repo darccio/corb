@@ -283,6 +283,18 @@ export async function imageBuild(argv: string[]): Promise<ImageBuildReport> {
 
 export async function runImageCommand(argv: string[]): Promise<void> {
   const [sub, ...rest] = argv;
+  if (sub === "ls" || sub === "verify") {
+    const { runImageLs, runImageVerify } = await import("./image-local.ts");
+    if (sub === "ls") runImageLs(rest);
+    else await runImageVerify(rest);
+    return;
+  }
+  if (sub === "push" || sub === "pull") {
+    const { runImagePush, runImagePull } = await import("./image-base.ts");
+    if (sub === "push") await runImagePush(rest);
+    else await runImagePull(rest);
+    return;
+  }
   if (sub === "layer") {
     const [operation, ...args] = rest;
     if (operation === "build") {

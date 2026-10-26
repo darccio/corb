@@ -1,0 +1,21 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, expect, it, vi } from "vitest";
+vi.mock("../../../src/layer/vm.ts", async (load) => ({ ...await load<object>(), verifyLocalBase: vi.fn().mockResolvedValue({ ok: true, gates: [] }) }));
+import { listImageRefs } from "@earendil-works/gondolin";
+import { runImagePush } from "../../../src/commands/image-base.ts";
+import { computePortableBuildId } from "../../../src/layer/base.ts";
+import { OrasTransport } from "../../../src/layer/transport.ts";
+import { sha256 } from "../../../src/layer/validate.ts";
+const dirs: string[] = [];
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });
+it.each(["copy", "check"])("reports incomplete base publication after %s fails without writing local refs", async (stage) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-base-publication-")); dirs.push(root); vi.stubEnv("GONDOLIN_IMAGE_STORE", path.join(root, "store")); vi.stubEnv("CORB_CACHE_DIR", path.join(root, "cache"));
+  const directory = path.join(root, "base"); fs.mkdirSync(directory); const assets = { kernel: "kernel", initramfs: "initramfs", rootfs: "rootfs" }; const checksums = { kernel: sha256("kernel"), initramfs: sha256("initramfs"), rootfs: sha256("rootfs") };
+  for (const name of Object.values(assets)) fs.writeFileSync(path.join(directory, name), name);
+  fs.writeFileSync(path.join(directory, "manifest.json"), JSON.stringify({ version: 1, buildId: computePortableBuildId(checksums, "x86_64"), assets, checksums, config: { arch: "x86_64", distro: "alpine", alpine: { version: "3.23.0" } } }));
+  const before = listImageRefs(); vi.spyOn(OrasTransport.prototype, "run").mockImplementation(async (args) => { if (args[0] === "cp" && stage === "check") return "copied"; throw new Error("simulated remote failure"); }); const output = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  await expect(runImagePush(["registry.example/base:tag", "--image", directory])).rejects.toThrow("simulated remote failure");
+  expect(listImageRefs()).toEqual(before); expect(output.mock.calls.map((row) => String(row[0])).join("")).toContain("Remote blobs or the manifest may remain");
+});
