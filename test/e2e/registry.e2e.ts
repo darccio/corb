@@ -7,6 +7,7 @@ import { OrasTransport, registryFlags, pushArtifact, fetchArtifactMetadata, copy
 import { validateInputArtifact } from "../../src/layer/inputs.ts";
 import { blobPath, hashFile, publishBlob } from "../../src/layer/state.ts";
 import { sha256 } from "../../src/layer/validate.ts";
+import { readLayerLock, serializeLayerLock } from "../../src/layer/pins.ts";
 import { startDistribution } from "./helpers/distribution.ts";
 
 describe.skipIf(process.env.CORB_E2E !== "1")("authenticated HTTPS Distribution through real ORAS", () => {
@@ -73,10 +74,15 @@ describe.skipIf(process.env.CORB_E2E !== "1")("authenticated HTTPS Distribution 
     expect(() => validateInputArtifact(fetched.root, fetched.config, "x86_64", new Map(fetched.manifest.layers.map((row) => [row.digest, row.size])))).toThrow(/architecture|arch/);
   });
   it("keeps an old immutable lock valid after moving its explicit tag", async () => {
+    const workspace = path.join(root, "locked-workspace"); fs.mkdirSync(workspace, { mode: 0o700 });
+    const lockfile = path.join(workspace, "corb.sum"); fs.writeFileSync(lockfile, serializeLayerLock({ version: 1, target: { x86_64: { ...graph.config.pins, artifact: reference } } }), { flag: "wx", mode: 0o600 });
+    const lockedBytes = fs.readFileSync(lockfile);
     const definition = normalizeLayerDefinition({ packages: [], commands: ["echo moved"] });
     const moved = await publishInputGraph({ version: 1, definition, pins: { os: "linux", abi: "musl", "alpine-branch": "v3.23", "definition-sha256": hashLayerDefinition(definition), index: [], package: [] } }, "x86_64");
     expect(await pushArtifact(transport, `${fixture.host}/inputs:one`, moved.manifest, moved.digest, staging())).not.toBe(reference);
-    expect((await fetchArtifactMetadata(transport, reference, "input", staging())).root).toEqual(graph.rootBytes);
+    const lockedReference = readLayerLock(workspace)!.target.x86_64!.artifact!;
+    expect((await fetchArtifactMetadata(transport, lockedReference, "input", staging())).root).toEqual(graph.rootBytes);
+    expect(fs.readFileSync(lockfile)).toEqual(lockedBytes);
   });
   it("revalidates a corrupt complete cache object without overwriting it", async () => {
     const filename = blobPath(graph.digest); const valid = fs.readFileSync(filename); fs.chmodSync(filename, 0o600); fs.writeFileSync(filename, "corrupt-owned-object");

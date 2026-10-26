@@ -40,7 +40,7 @@ interface Party { name: string; root: string; env: NodeJS.ProcessEnv; base: stri
 
 describe.skipIf(!enabled)("packaged services and remote producer/recipient inputs (serial real VMs)", () => {
   let root: string; let runtime: string; let registry: Awaited<ReturnType<typeof startDistribution>>;
-  let a: Party; let b: Party; let c: Party; let sharedSum: Buffer; let sharedDefinition: Buffer; let inputDigest: string; let baseReference: string;
+  let a: Party; let b: Party; let sharedSum: Buffer; let sharedDefinition: Buffer; let inputDigest: string; let baseReference: string;
   const optionReceipts: string[] = [];
   const baseline = new Map<string, string>(); const records: Array<{ party: string; args: string[]; code: number | null; pids: number[]; forced: number[] }> = [];
   const file = (party: Party, workspace = "service") => path.join(party.root, "config/workspaces", workspace, "corb.toml");
@@ -79,7 +79,7 @@ describe.skipIf(!enabled)("packaged services and remote producer/recipient input
     if (!process.env.CORB_E2E_SERVICE_BASE_A || !process.env.CORB_E2E_SERVICE_BASE_B) throw Error("set distinct coherent CORB_E2E_SERVICE_BASE_A and CORB_E2E_SERVICE_BASE_B");
     const parent = process.env.CORB_E2E_LAYER_ROOT ?? path.join(repo, "image/build/dar-21"); fs.mkdirSync(parent, { recursive: true }); root = fs.mkdtempSync(path.join(parent, "service-"));
     runtime = fs.mkdtempSync(path.join(os.tmpdir(), "c21-")); fs.chmodSync(runtime, 0o700);
-    a = makeParty("a", fs.realpathSync(process.env.CORB_E2E_SERVICE_BASE_A)); b = makeParty("b", fs.realpathSync(process.env.CORB_E2E_SERVICE_BASE_B)); c = makeParty("base-recipient", b.base);
+    a = makeParty("a", fs.realpathSync(process.env.CORB_E2E_SERVICE_BASE_A)); b = makeParty("b", fs.realpathSync(process.env.CORB_E2E_SERVICE_BASE_B));
     for (const party of [a, b]) {
       const manifest = JSON.parse(fs.readFileSync(path.join(party.base, "manifest.json"), "utf8"));
       for (const name of ["manifest.json", ...Object.values(manifest.assets) as string[]]) baseline.set(path.join(party.base, name), digest(path.join(party.base, name)));
@@ -284,19 +284,22 @@ describe.skipIf(!enabled)("packaged services and remote producer/recipient input
   }, 12 * 60_000);
   it("distributes raw base assets independently and verifies before publishing a private tag", async () => {
     const current = generation(b); const pointer = fs.readFileSync(current.pointer);
+    const checkpointFile = path.join(current.directory, "checkpoint.qcow2"); const checkpoint = digest(checkpointFile);
+    const configFile = path.join(b.root, "config/config.toml"); const selectedConfig = fs.readFileSync(configFile);
+    const unchangedLayer = () => { expect(fs.readFileSync(current.pointer)).toEqual(pointer); expect(digest(checkpointFile)).toBe(checkpoint); expect(fs.readFileSync(configFile)).toEqual(selectedConfig); assertShared(); };
     const output = await cli(a, ["image", "push", "--image", a.base, ...flags(), `${registry.host}/bases:producer`]); baseReference = /corb image push: (\S+)/.exec(output)![1]!;
-    expect(fs.existsSync(path.join(c.root, "store/objects"))).toBe(false);
-    const pull = await cli(c, ["image", "pull", ...flags(), "--tag", "dar21-base:imported", baseReference]); expect(pull).toContain("tag=dar21-base:imported");
-    const source = JSON.parse(fs.readFileSync(path.join(a.base, "manifest.json"), "utf8")); const imported = path.join(c.root, "store/objects", source.buildId);
+    const objects = path.join(b.root, "store/objects"); expect(fs.existsSync(objects) ? fs.readdirSync(objects) : []).toEqual([]);
+    const pull = await cli(b, ["image", "pull", ...flags(), "--tag", "dar21-base:imported", baseReference]); expect(pull).toContain("tag=dar21-base:imported"); unchangedLayer();
+    const source = JSON.parse(fs.readFileSync(path.join(a.base, "manifest.json"), "utf8")); const imported = path.join(objects, source.buildId);
     const manifestFile = path.join(imported, "manifest.json"); const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
     expect(projectPortableSdkManifest(manifest)).toEqual(projectPortableSdkManifest(source)); expect(computePortableBuildId(manifest.checksums, manifest.config.arch)).toBe(source.buildId);
     for (const [role, filename] of Object.entries(manifest.assets) as Array<[string, string]>) expect(digest(path.join(imported, filename))).toBe(manifest.checksums[role]);
     manifest.buildTime = "2001-01-01T00:00:00.000Z"; fs.writeFileSync(manifestFile, JSON.stringify(manifest));
-    expect(await cli(c, ["image", "pull", ...flags(), baseReference])).toContain(source.buildId);
+    expect(await cli(b, ["image", "pull", ...flags(), baseReference])).toContain(source.buildId); unchangedLayer();
     const harmless = fs.readFileSync(manifestFile); manifest.config.alpine.version = "3.23.99"; fs.writeFileSync(manifestFile, JSON.stringify(manifest)); const inconsistent = fs.readFileSync(manifestFile);
-    try { expect(await cli(c, ["image", "pull", ...flags(), baseReference], 1)).toContain("inconsistent portable config"); expect(fs.readFileSync(manifestFile)).toEqual(inconsistent); expect(records.at(-1)!.pids).toEqual([]); }
+    try { expect(await cli(b, ["image", "pull", ...flags(), baseReference], 1)).toContain("inconsistent portable config"); expect(fs.readFileSync(manifestFile)).toEqual(inconsistent); expect(records.at(-1)!.pids).toEqual([]); }
     finally { fs.writeFileSync(manifestFile, harmless); }
-    expect(fs.readFileSync(current.pointer)).toEqual(pointer); assertShared();
+    unchangedLayer();
     const rootFile = path.join(a.root, "cache/layer-inputs/v1/blobs/sha256", baseReference.split("@sha256:")[1]!); const graph = JSON.parse(fs.readFileSync(rootFile, "utf8"));
     expect(graph.artifactType).toBe("application/vnd.corb.base.v1"); expect(JSON.stringify(graph)).not.toMatch(/checkpoint|source|\/home\//);
     for (const descriptor of [graph.config, graph.layers[0]]) { const bytes = fs.readFileSync(path.join(a.root, "cache/layer-inputs/v1/blobs/sha256", descriptor.digest.slice(7)), "utf8"); expect(bytes).not.toContain("checkpoint"); expect(bytes).not.toContain(repo); expect(bytes).not.toContain(a.base); }
