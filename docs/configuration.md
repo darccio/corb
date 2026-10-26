@@ -395,6 +395,10 @@ Corb creates or fixes only each declared directory before agent startup and ever
 It must not follow symlinks, delete files or change children recursively.
 The declaration starts no service. Service launch, supervision and startup scripts are not schema features.
 
+For packaged Redis, declare `/run/redis` and `/var/log/redis` with mode `0755` and owner/group `redis`.
+Keep the packaged configuration and persistent data directory unchanged.
+See the [service example](layers.md#sdk-inputs-and-runtime-directories) for explicit launch and shutdown limits.
+
 ### Shareable pins
 
 The winning workspace directory owns `corb.sum`, a strict version-1 TOML lockfile.

@@ -535,7 +535,8 @@ The coherent base `8d1ad38c-602a-50b2-a6b4-247a2b6824bc` passed package coherenc
 A real `tree=2.2.1-r0` composition added only tree while retaining its existing musl provider.
 A complete Go 1.27.3 payload passed the same gates and two sequential uid-1000 test/build/run workloads.
 The source-controlled serial lifecycle tests repeat these paths with private state and failure controls.
-Remote HTTPS registry/auth acceptance and packaged Redis startup remain DAR-21 work.
+DAR-23 left remote HTTPS/auth and packaged Redis acceptance to DAR-21.
+The dated acceptance note below records the later measured scope.
 
 Source details that constrain production:
 
@@ -553,4 +554,20 @@ Canonical base assets and refs stay unchanged during tests. Checkpoints are disk
 See [the sharing guide](layers.md) for exact public interfaces and boundaries.
 
 The [production validation report](layer-validation.md) records final image/input/generation identities, measured tests, failure recovery and cleanup.
-It keeps source mismatches and unverified remote/service cases separate from the historical spike evidence.
+The report separates measured production results from historical spikes. It records source mismatches and remaining limits.
+
+## DAR-21 production acceptance, 2026-10-26
+
+The serial suite passes 100 tests at `b03ad36`, with the separate two-VM case disabled under the one-VM limit.
+Official Distribution 3.1.2 and external ORAS 1.3.5 transfer input and separate raw-base graphs over authenticated HTTPS.
+Two coherent bases with different package/account state compose the same authenticated inputs and keep their own exact-base checkpoint caches.
+Actual create/resume option observations remain free of registry credential markers.
+
+Signed Redis 8.4.2-r0 uses its unmodified packaged config through explicit root build/preparation checks as the real Redis account.
+Production runtime restoration supplies its declared directories before fresh startup and own-base resume.
+The normal agent uses the loopback client. Ordinary shutdown stops the owned service before checkpointing.
+The missing-directory control fails for the measured log-path error.
+
+These checks provide no automatic boot service or public root service launcher.
+The [dated validation report](layer-validation.md#dar-21-production-acceptance-2026-10-26) records versions, digests, requests, gates, cleanup and later fixture refinements.
+It limits the Go evidence to pure Go on the measured native bases and leaves token/redirect behavior delegated to ORAS.
