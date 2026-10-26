@@ -8,11 +8,12 @@ export async function withBoundedVm<T, V extends { close(): Promise<void> }>(cre
   const sigint = () => stop("VM operation interrupted by SIGINT"); const sigterm = () => stop("VM operation interrupted by SIGTERM");
   process.on("SIGINT", sigint); process.on("SIGTERM", sigterm);
   const timer = setTimeout(() => stop("VM operation exceeded its overall limit"), timeoutMs);
+  let result: T;
   try {
     vm = await create();
     if (interrupted) throw interrupted;
     task = Promise.resolve().then(() => work(vm!));
-    return await Promise.race([task, interruption]);
+    result = await Promise.race([task, interruption]);
   } finally {
     clearTimeout(timer);
     try { if (vm) { try { closing(vm); } finally { await vm.close(); } } }
@@ -21,4 +22,6 @@ export async function withBoundedVm<T, V extends { close(): Promise<void> }>(cre
       process.off("SIGINT", sigint); process.off("SIGTERM", sigterm);
     }
   }
+  if (interrupted) throw interrupted;
+  return result;
 }

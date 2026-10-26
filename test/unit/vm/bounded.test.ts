@@ -24,3 +24,13 @@ it("closes the VM even when reporting cleanup fails", async () => {
   await expect(withBoundedVm(async () => ({ close }), async () => 1, () => { throw Error("output"); })).rejects.toThrow("output");
   expect(close).toHaveBeenCalledOnce();
 });
+it("propagates cancellation received while successful work is closing", async () => {
+  let release!: () => void; let closing!: () => void;
+  const closeStarted = new Promise<void>((resolve) => { closing = resolve; });
+  const closed = new Promise<void>((resolve) => { release = resolve; });
+  const vm = { close: async () => { closing(); await closed; } };
+  const pending = withBoundedVm(async () => vm, async () => "success", () => {});
+  const rejection = expect(pending).rejects.toThrow("SIGTERM"); await closeStarted;
+  const listener = process.listeners("SIGTERM").at(-1)!; listener("SIGTERM"); release();
+  await rejection; expect(process.listeners("SIGTERM")).not.toContain(listener);
+});
