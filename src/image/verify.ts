@@ -1,3 +1,4 @@
+import { withBoundedVm } from "../vm/bounded.ts";
 // Run the seven production gates before Corb publishes an image or a composition.
 // The compiled CLI and source checkout use this same implementation.
 // image/verify.ts keeps the historical source checkout import path.
@@ -379,7 +380,7 @@ export async function withImageVm<T>(
   const allowedHosts = options.allowedHosts ?? DEFAULT_ALLOWED_HOSTS;
   const { httpHooks, env } = createHttpHooks({ allowedHosts, allowedInternalHosts: [] });
 
-  const vm = await VM.create({
+  return withBoundedVm(() => VM.create({
     sandbox: { imagePath: assetDir },
     memory: "1G",
     cpus: 2,
@@ -390,19 +391,9 @@ export async function withImageVm<T>(
     // Git TLS checks need the same internal gate mount as ordinary sessions.
     vfs: { mounts: { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() } },
     sessionLabel: options.sessionLabel ?? "corb-image-verify",
-  });
-
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    configureTrustedTls(vm);
-    const timeout = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { void vm.close(); reject(new Error("image verification exceeded 15 minutes")); }, 15 * 60_000); });
-    return await Promise.race([check(vm), timeout]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-    const pid = vm.getHostPid?.();
-    if (pid !== undefined && pid !== null) process.stderr.write(`corb image: closing verifier host PID ${pid}\n`);
-    await vm.close();
-  }
+  }),
+  async (vm) => { configureTrustedTls(vm); return check(vm); },
+  (vm) => { process.stderr.write(`corb image: closing verifier host PID ${vm.getHostPid?.() ?? "unknown"}\n`); });
 }
 
 /** Boot an image, run the seven gates, and close the VM on every result. */

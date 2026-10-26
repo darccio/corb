@@ -4,6 +4,7 @@ import { configureTrustedTls } from "../vm/tls.ts";
 import { buildGateConfigMount, GATE_CONFIG_RAW_ROOT } from "../vm/session.ts";
 import { requireLayerExecution, type LayerBase } from "./local-base.ts";
 import { fail } from "./validate.ts";
+import { withBoundedVm } from "../vm/bounded.ts";
 import type { ApkKeys } from "./apk.ts";
 import type { InstalledIdentity } from "./plan.ts";
 
@@ -39,23 +40,11 @@ export async function withLayerVm<T>(base: LayerBase, label: string, hosts: stri
     ssh: { allowedHosts: [] }, allowWebSockets: false,
     vfs: { mounts: { ...(options.verifier ? { [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount() } : {}), ...options.mounts } }, sessionLabel: label,
   };
-  let vm: VM | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    vm = options.checkpoint === undefined ? await VM.create(vmOptions) : await options.checkpoint.resume<VM>(vmOptions);
-    configureTrustedTls(vm);
-    const active = vm;
-    const timeout = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { void active.close(); reject(new Error("layer VM exceeded 15 minute overall limit")); }, 15 * 60_000); });
-    const result = await Promise.race([callback(vm), timeout]);
-    return result;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-    if (vm !== undefined) {
-      const pid = vm.getHostPid();
-      process.stderr.write(`corb image: closing ${label}${pid === undefined || pid === null ? "" : ` (host PID ${pid})`}\n`);
-      await vm.close();
-    }
-  }
+  return withBoundedVm(
+    () => options.checkpoint === undefined ? VM.create(vmOptions) : options.checkpoint.resume<VM>(vmOptions),
+    async (vm) => { configureTrustedTls(vm); return callback(vm); },
+    (vm) => { const pid = vm.getHostPid(); process.stderr.write(`corb image: closing ${label}${pid === undefined || pid === null ? "" : ` (host PID ${pid})`}\n`); },
+  );
 }
 export async function verifyLayerBase(base: LayerBase): Promise<{ baseline: BaseSnapshot; verification: Verification }> {
   return withLayerVm(base, "corb-layer-base-verifier", VERIFIER_HOSTS, async (vm) => {
