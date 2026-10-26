@@ -58,7 +58,7 @@ describe("image verifier", () => {
     expect(wrapped.close).toHaveBeenCalledOnce();
     const options = state.create.mock.calls[0]![0];
     expect(options.vfs.mounts[GATE_CONFIG_RAW_ROOT]).toBeDefined();
-    expect(options).toMatchObject({ memory: "1G", cpus: 2, startTimeoutMs: 45_000 });
+    expect(options).toMatchObject({ memory: "1G", cpus: 2, startTimeoutMs: 45_000, ssh: { allowedHosts: [] }, allowWebSockets: false });
     const allowed = await options.httpHooks.isIpAllowed({ hostname: "github.com", ip: "140.82.114.3", family: 4, port: 443, protocol: "https" });
     expect(allowed).toBe(true);
     expect(await options.httpHooks.isIpAllowed({ hostname: "unexpected.example", ip: "203.0.113.1", family: 4, port: 443, protocol: "https" })).toBe(false);

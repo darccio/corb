@@ -385,6 +385,8 @@ export async function withImageVm<T>(
     memory: "1G",
     cpus: 2,
     startTimeoutMs: 45_000,
+    ssh: { allowedHosts: [] },
+    allowWebSockets: false,
     dns: { mode: "synthetic", syntheticHostMapping: "per-host" },
     httpHooks,
     env,
