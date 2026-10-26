@@ -34,12 +34,15 @@ export async function runImagePush(argv: string[]): Promise<void> {
   const graph = validateBaseArtifact(root, configBytes, sdkBytes, sizes);
   const staging = ownedLayerStaging();
   let transferStage: string | undefined;
+  let published: string | undefined;
   try {
     await recheckLayerBase(base);
     const immutable = await pushArtifact(new OrasTransport(args.registry), args.reference, graph.manifest, digest, staging, (stage) => { transferStage = stage; });
+    published = immutable;
     console.log(`corb image push: ${immutable}`);
   } catch (error) {
-    if (transferStage !== undefined) process.stderr.write(`corb image push: ${transferStage} transfer to ${args.reference} failed (expected ${digest}). Remote blobs or the manifest may remain. Publication was not verified. Local refs remain unchanged.\n`);
+    if (published !== undefined) process.stderr.write(`corb image push: publication verified at ${published}. Local refs remain unchanged. Reporting the result failed.\n`);
+    else if (transferStage !== undefined) process.stderr.write(`corb image push: ${transferStage} transfer to ${args.reference} failed (expected ${digest}). Remote blobs or the manifest may remain. Publication was not verified. Local refs remain unchanged.\n`);
     throw error;
   } finally { removeLayerStaging(staging); }
 }
@@ -53,6 +56,7 @@ export async function assertExistingBase(sdk: PortableSdkManifest): Promise<stri
 export async function runImagePull(argv: string[]): Promise<void> {
   const args = parseBaseCommandArgs(argv, "pull"); const transport = new OrasTransport(args.registry); const staging = ownedLayerStaging();
   let imported: { buildId: string; assetDir: string } | undefined;
+  let verified = false; let tagAttempted = false; let tagged = false;
   try {
     const fetched = await fetchArtifactMetadata(transport, args.reference, "base", staging);
     const sizes = new Map(fetched.manifest.layers.map((row) => [row.digest, row.size]));
@@ -71,10 +75,14 @@ export async function runImagePull(argv: string[]): Promise<void> {
     const base = await resolveLayerBase(imported.assetDir);
     if (base.manifest.buildId !== graph.sdk.buildId || !same(base.manifest.checksums, graph.sdk.checksums) || base.manifest.config.arch !== graph.sdk.config.arch) fail("imported SDK object differs from authenticated portable assets");
     await verifyLocalBase(base); await recheckLayerBase(base);
-    if (args.tag !== undefined) tagImage(base.manifest.buildId, args.tag, base.manifest.config.arch);
+    verified = true;
+    if (args.tag !== undefined) { tagAttempted = true; tagImage(base.manifest.buildId, args.tag, base.manifest.config.arch); tagged = true; }
     console.log(`corb image pull: buildId=${base.manifest.buildId} assets=${base.directory}${args.tag === undefined ? " (untagged)" : ` tag=${args.tag}`}`);
   } catch (error) {
-    if (imported !== undefined) process.stderr.write(`corb image pull: verified bytes remain imported at ${imported.assetDir}. Image verification or tagging did not finish.\n`);
+    if (imported !== undefined) {
+      const status = !verified ? "Production image verification did not finish." : tagged ? `Production image verification and tag ${args.tag} completed. Reporting the result failed.` : tagAttempted ? `Production image verification completed. Tag ${args.tag} was attempted and may already point to this image; inspect local refs before retrying.` : "Production image verification completed. Reporting the result failed.";
+      process.stderr.write(`corb image pull: authenticated bytes remain imported at ${imported.assetDir}. ${status}\n`);
+    }
     throw error;
   } finally { removeLayerStaging(staging); }
 }
