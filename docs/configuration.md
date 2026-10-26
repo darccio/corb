@@ -359,6 +359,7 @@ Build hosts and archive download hosts grant no runtime access.
 ### SDK payloads
 
 Each `[[image.layer.payload]]` has the following fields. Only complete `tar.gz` SDK trees are supported.
+The URL needs no filename suffix. Integration validates the archive bytes.
 
 | Field | Contract |
 | --- | --- |

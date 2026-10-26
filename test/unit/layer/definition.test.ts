@@ -39,13 +39,17 @@ describe("workspace layer definition", () => {
   });
   it.each([
     { name: "Go" }, { url: "http://go.dev/go.tar.gz" }, { url: "https://user:pass@go.dev/go.tar.gz" },
-    { url: "https://go.dev/go.tar.gz?x" }, { url: "https://go.dev/go.zip" }, { sha256: "A".repeat(64) },
+    { url: "https://go.dev/go.tar.gz?x" }, { url: "https://go.dev/download#archive" }, { sha256: "A".repeat(64) },
     { destination: "/opt/corb/toolchains/gopher" }, { destination: "/opt/corb/toolchains/go/../go" },
     { destination: "/opt/corb/toolchains/go//sdk" }, { "strip-components": 17 }, { "strip-components": -1 },
     { path: ["bin", "bin"] }, { path: ["../bin"] }, { path: ["/bin"] }, { path: ["bin/./tools"] }, { path: [""] },
     { arch: "amd64" }, { extra: true },
   ])("rejects unsafe payload %j", (change) => {
     expect(() => normalizeLayerDefinition({ packages: [], payload: [{ ...payload(), ...change }] })).toThrow();
+  });
+  it("accepts an HTTPS archive endpoint without a filename suffix", () => {
+    const entry = { ...payload(), url: "https://example.com/download/sdk" };
+    expect(normalizeLayerDefinition({ packages: [], payload: [entry] }).payload[0]?.url).toBe(entry.url);
   });
   it("preserves SDK and PATH order and reports architecture mismatch", () => {
     const first = { ...payload(), name: "z", destination: "/opt/corb/toolchains/z", path: ["tools", "bin"] };

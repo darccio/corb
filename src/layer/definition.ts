@@ -66,8 +66,7 @@ function payload(value: unknown): LayerPayload {
   let url: URL;
   try { url = new URL(rawUrl); } catch { fail("payload.url must be an absolute HTTPS archive URL"); }
   if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== ""
-    || rawUrl.slice(8).split("/")[0]!.includes("@") || !rawUrl.startsWith("https://") || /[\s\\]/.test(rawUrl) || rawUrl.includes("?") || rawUrl.includes("#")
-    || !url.pathname.endsWith(".tar.gz")) fail("payload.url must be an HTTPS tar.gz archive without credentials, query or fragment");
+    || rawUrl.slice(8).split("/")[0]!.includes("@") || !rawUrl.startsWith("https://") || /[\s\\]/.test(rawUrl) || rawUrl.includes("?") || rawUrl.includes("#")) fail("payload.url must be HTTPS without credentials, query or fragment");
   const destination = normalizedPosixPath(entry.destination, "payload.destination", true);
   if (!containsPosix(`/opt/corb/toolchains/${name}`, destination)) fail(`payload.destination must be under /opt/corb/toolchains/${name}`);
   const paths = array(entry.path ?? [], "payload.path").map((value) => normalizedPosixPath(value, "payload.path", false));
