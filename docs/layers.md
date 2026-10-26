@@ -12,6 +12,10 @@ Choose a coherent local Corb base with `[vm].image` in personal or workspace set
 A base must pass package coherence and all seven production image gates.
 Older images without the coherence report need a new base build or a separately distributed base.
 
+Initial composition runs only on native Linux `x86_64` with QEMU.
+The recipient base must match the locked Alpine branch, even for `packages = []`.
+Other valid target tables stay in the lockfile without execution.
+
 Put the recipe in the selected workspace's `corb.toml`, outside all hosted mounts.
 For example:
 

@@ -540,7 +540,7 @@ Remote HTTPS registry/auth acceptance and packaged Redis startup remain DAR-21 w
 Source details that constrain production:
 
 - A live checkpoint retains builder clone options. Corb reloads stored checkpoint bytes and supplies complete verifier or run options.
-- The SDK trailer loader can allocate from an unchecked trailer length. Corb bounds it and requires a regular non-symlink file first.
+- The SDK trailer loader checks safe integers and file bounds but has no small metadata cap. Corb limits the trailer to 64 KiB and requires a regular non-symlink file first.
 - The SDK compares resolved backing path spelling before rebasing in place. Corb requires the exact canonical direct backing before SDK resume.
 - The seven gates set their own base PATH. Corb separately checks the complete SDK PATH and supplies it to Pi.
 - APK 3.0.8 recursive fetch ignores installed state and conflicts. Corb separately simulates the actual add against the base.
