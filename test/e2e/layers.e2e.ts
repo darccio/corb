@@ -38,7 +38,7 @@ describe.skipIf(!enabled)("production layer lifecycle (serial real VMs)", () => 
   const sum = (workspace: string) => path.join(path.dirname(file(workspace)), "corb.sum");
   const generation = (workspace: string) => {
     const bases = path.join(root, "state/layers", workspace, "x86_64/bases");
-    const dir = path.join(bases, fs.readdirSync(bases)[0]!);
+    const dir = path.join(bases, JSON.parse(fs.readFileSync(path.join(base, "manifest.json"), "utf8")).buildId);
     const pointer = path.join(dir, "current.json");
     return { pointer, directory: path.join(dir, "generations", JSON.parse(fs.readFileSync(pointer, "utf8")).generation) };
   };
@@ -120,7 +120,8 @@ describe.skipIf(!enabled)("production layer lifecycle (serial real VMs)", () => 
         if (kind === "backing") { execFileSync("qemu-img", ["rebase", "-u", "-f", "qcow2", "-F", "raw", "-b", path.join(base, "foreign-rootfs"), disk]); metadata.checkpoint.sha256 = digest(disk); }
         fs.writeFileSync(metadataFile, JSON.stringify(metadata)); fs.writeFileSync(path.join(clone, "complete.json"), JSON.stringify({ version: 1, metadataSha256: digest(metadataFile) }));
         fs.writeFileSync(current.pointer, JSON.stringify({ version: 1, generation: id }));
-        expect(await cli(["run", "--workspace", "go"], 1)).toMatch(/checkpoint|generation|backing/); expect(records.at(-1)!.pids).toEqual([]);
+        const failure = await cli(["run", "--workspace", "go"], 1);
+        expect(failure).toContain(kind === "bytes" ? "checkpoint hash mismatch" : kind === "foreign" ? "local generation does not match the selected source, recipe, inputs or exact base" : "Refusing SDK backing mutation"); expect(records.at(-1)!.pids).toEqual([]);
       } finally { fs.writeFileSync(current.pointer, pointer); fs.rmSync(clone, { recursive: true, force: true }); }
     }
   }, 180_000);
@@ -143,6 +144,17 @@ describe.skipIf(!enabled)("production layer lifecycle (serial real VMs)", () => 
     fs.writeFileSync(global, original.toString().replace(JSON.stringify(base), JSON.stringify(second)));
     try {
       const result = await cli(["image", "layer", "build", "--workspace", "go"]); expect(result).toContain(metadata.inputDigest); expect(result).toContain(secondManifest.buildId); expect(secondManifest.buildId).not.toBe(metadata.base.manifest.buildId);
+      const secondRoot = path.join(path.dirname(path.dirname(current.pointer)), secondManifest.buildId);
+      const secondPointer = JSON.parse(fs.readFileSync(path.join(secondRoot, "current.json"), "utf8"));
+      const secondDirectory = path.join(secondRoot, "generations", secondPointer.generation);
+      const secondMetadata = JSON.parse(fs.readFileSync(path.join(secondDirectory, "metadata.json"), "utf8"));
+      expect(secondMetadata.base.manifest.buildId).toBe(secondManifest.buildId); expect(secondMetadata.inputDigest).toBe(metadata.inputDigest);
+      expect(secondMetadata.recipePinsSha256).toBe(metadata.recipePinsSha256); expect(secondMetadata.compositionKey).not.toBe(metadata.compositionKey);
+      expect(secondMetadata.packageCoherence).toBe(true); expect(secondMetadata.verification.gates.filter((gate: { ok: boolean }) => gate.ok)).toHaveLength(7);
+      expect(digest(path.join(secondDirectory, "checkpoint.qcow2"))).toBe(secondMetadata.checkpoint.sha256);
+      const backing = JSON.parse(execFileSync("qemu-img", ["info", "--output=json", path.join(secondDirectory, "checkpoint.qcow2")], { encoding: "utf8", timeout: 30_000 }));
+      expect(backing["backing-filename"]).toBe(secondMetadata.base.assets.rootfs.path);
+      expect(secondMetadata.base.assets.rootfs.path).toBe(path.join(second, secondManifest.assets.rootfs));
       expect(fs.readFileSync(sum("go"))).toEqual(pins); expect(fs.readFileSync(current.pointer)).toEqual(pointer);
       expect(digest(path.join(current.directory, "checkpoint.qcow2"))).toBe(metadata.checkpoint.sha256);
     } finally { fs.writeFileSync(global, original); }
@@ -173,23 +185,25 @@ describe.skipIf(!enabled)("production layer lifecycle (serial real VMs)", () => 
     const original = fs.readFileSync(file("package")); const pins = fs.readFileSync(sum("package")); const current = generation("package"); const pointer = fs.readFileSync(current.pointer);
     fs.writeFileSync(file("package"), original.toString().replace('packages=["tree"]', 'packages=["openssh-client-default"]'));
     try {
-      expect(await cli(["image", "pin", "--workspace", "package"], 1)).toMatch(/base|transaction|conflict|replacement|Purging/);
+      expect(await cli(["image", "pin", "--workspace", "package"], 1)).toMatch(/corb layer: incompatible base: (?:requested APK world rejected|planned (?:Purging|Replacing|Upgrading|Downgrading|Reinstalling))/);
       expect(fs.readFileSync(sum("package"))).toEqual(pins); expect(fs.readFileSync(current.pointer)).toEqual(pointer);
     } finally { fs.writeFileSync(file("package"), original); }
   }, 14 * 60_000);
   it.each([
-    ["go", "chmod 0777 /opt/corb/toolchains/go", /SDK|payload/],
-    ["go", "chmod 0777 /opt/corb/toolchains", /SDK|payload/],
-    ["go", "chmod 0777 /usr/local/bin", /protected/],
-    ["package", "printf changed >> /usr/local/libexec/real-git", /protected|native/],
-    ["package", "chmod u+s /bin/busybox", /protected|native|SUID|suid/],
-    ["package", "cp /corb-layer-input/bin/apk.static /usr/local/bin/copied-installer", /installer/],
+    ["go", "chmod 0777 /opt/corb/toolchains/go", "SDK ancestor is writable or unsafe /opt/corb/toolchains/go"],
+    ["go", "chmod 0777 /opt/corb/toolchains", "SDK ancestor is writable or unsafe /opt/corb/toolchains"],
+    ["go", "chmod 0777 /usr/local/bin", "complete protected baseline changed"],
+    ["package", "printf changed >> /usr/local/libexec/real-git", "complete protected baseline changed"],
+    ["package", "cp /bin/busybox /usr/local/bin/suid-probe && chmod 4755 /usr/local/bin/suid-probe", "SUID/SGID privilege restored /usr/local/bin/suid-probe"],
+    ["package", "cp /corb-layer-input/bin/apk.static /usr/local/bin/copied-installer", "authenticated APK installer was copied into the checkpoint: /usr/local/bin/copied-installer"],
   ])("preserves a valid generation after rejecting %s command %s", async (workspace, command, reason) => {
     const original = fs.readFileSync(file(workspace)); const pins = fs.readFileSync(sum(workspace)); const current = generation(workspace); const pointer = fs.readFileSync(current.pointer);
     fs.writeFileSync(file(workspace), original.toString().replace("[image.layer]", `[image.layer]\ncommands=${JSON.stringify([command])}`));
     try {
       await cli(["image", "pin", "--workspace", workspace]);
-      expect(await cli(["image", "layer", "build", "--workspace", workspace], 1)).toMatch(reason);
+      const failure = await cli(["image", "layer", "build", "--workspace", workspace], 1);
+      expect(failure).toContain(`corb image layer: unpinned root step: ${JSON.stringify(command)}`);
+      expect(failure).toContain(`Error: ${reason}\n`);
       expect(fs.readFileSync(current.pointer)).toEqual(pointer);
     } finally { fs.writeFileSync(file(workspace), original); fs.writeFileSync(sum(workspace), pins); fs.writeFileSync(current.pointer, pointer); }
     expect(await cli(["image", "layer", "build", "--workspace", workspace])).toContain("already installed");
