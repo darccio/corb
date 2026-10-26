@@ -179,3 +179,54 @@ The measured repair makes fresh, verified TLS 1.3 handshakes when a client offer
 It keeps protocol versions, ciphers, certificate checks, HTTP policy, and command shims intact.
 The image gate tests both Git paths as root and through `dropcap` as uid 1000.
 Node and curl retain their separate trusted TLS checks.
+
+## Workspace layer input boundary
+
+Workspace layers share authenticated inputs. Integration will compose them on a compatible local base with a real package solver and signed scripts.
+The conditional filesystem-delta spike supplies evidence only. Its delta model is not the production contract.
+
+A reusable input artifact carries signed indexes, the candidate dependency closure and optional complete SDK archives.
+It never carries a base disk, installed filesystem delta, checkpoint, exact SDK build ID or host path.
+Artifact config contains the normalized definition and recipe pins without an artifact binding.
+Its own digest cannot enter that config.
+
+A recipient base can satisfy dependencies with existing providers when its solver accepts them without changing the base.
+Candidate closure rows do not require installation on every recipient.
+Every actual addition must match a bundled exact package identity.
+Unbundled alternatives, unresolved dependencies, replacement, upgrade, downgrade, reinstall and removal are compatibility errors.
+Shared input bytes stay fixed. Corb does not promise compatibility with arbitrary bases from the same Alpine branch.
+
+The first integration targets native Linux `x86_64` with QEMU. The contracts also preserve `aarch64` pins.
+
+Pure validators reject unknown metadata, subjects, nested image indexes, descriptor URLs and unsupported media types or algorithms.
+Roles identify data, never extraction paths. Transport must copy blobs into an OCI content-addressed layout.
+Input metadata is limited to 1 MiB each for root and config, 1024 descriptors and 512 MiB per blob.
+The complete graph is limited to 32 GiB.
+
+Integration must verify each SDK archive digest before extraction and validate effective extended-header paths before stripping components.
+Only regular files and directories are permitted.
+Symlinks, hardlinks, devices, sockets, FIFOs, duplicate paths and special permissions or capability metadata are forbidden.
+Each payload permits at most 2 GiB expanded bytes, 100000 entries and 4096 UTF-8 bytes per final relative path.
+Extraction must stay under its declared destination, normalize ownership to root and retain only readable immutable modes and execute bits.
+The complete SDK PATH must preserve policygate Git/gh resolution and all seven forbidden-name checks.
+
+Base distribution uses a separate artifact type and never becomes an input artifact dependency.
+It carries a portable SDK manifest and exact raw kernel, initramfs, rootfs and configured krun assets.
+The portable projection retains the content-derived SDK ID, assets, checksums, architecture, distro and Alpine version.
+It strips build times and local build paths. No checkpoint belongs in this format.
+
+Base metadata is limited to 1 MiB each for root, config and SDK manifest, with at most six descriptors.
+Raw assets permit 8 GiB each and 32 GiB for the graph. They use no compression.
+Validators check configured roles, hashes, observed raw sizes, architecture and the recomputed SDK ID.
+
+Runtime directory restoration is declarative. It starts no service and executes no user startup text.
+It must run before agent startup on fresh compositions and every checkpoint resume.
+It cannot follow symlinks, remove existing files or recursively change children.
+
+Layer-enabled configurations also protect the Corb cache and actual SDK image store from every hosted mount.
+This includes external stores, read-only mounts, positional mounts and CLI overrides.
+The guard checks both containment directions after resolving symlinks.
+Integration must also protect the actual bound base and generation directories before credentials or VM creation.
+
+The trust hash includes only the recipe and selected shareable pins. This includes any artifact binding.
+Local generation IDs, paths, receipts, numeric accounts and source labels never enter it.

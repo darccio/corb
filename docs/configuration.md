@@ -308,3 +308,117 @@ rejected because they are not wired to Pi. An empty extension list is accepted.
 
 Multiple named agent profiles are also not implemented.
 There is one agent declaration per effective configuration.
+
+## Workspace layer recipes
+
+`[image.layer]` belongs only in a workspace `corb.toml`.
+Even an empty global `[image]` table is an error.
+`[vm].image` still selects the local base.
+The workspace owns one complete recipe. Recipe lists do not merge across sources.
+Corb rejects unknown fields and user-written `image.pins`.
+
+```toml
+[image.layer]
+packages = ["go", "make"]
+commands = []
+build-hosts = ["dl-cdn.alpinelinux.org"]
+hosts = ["proxy.golang.org"]
+
+[[image.layer.runtime-dir]]
+path = "/var/log/myapp"
+mode = "0755"
+owner = "agent"
+group = "agent"
+```
+
+The parser and inspection commands support these contracts now.
+Workspace layer support for image pin/build/push/pull arrives in the integration issue.
+A real run with a layer stops before credentials or VM creation until that integration lands.
+
+`corb explain` and `corb run --dry-run` need neither pins nor a local generation.
+Missing pins show `corb image pin --workspace <name>`. This command is not available yet.
+Malformed or stale pins are errors during inspection.
+
+`packages` is required. Keep `packages = []` for recipes that contain only SDK archives or commands.
+Names must match `^[a-z0-9][a-z0-9+_.-]*$` and identify real Alpine `P:` records.
+Constraints, virtual dependencies, URLs and APK filenames are errors.
+At least one package, payload or command is required.
+Package and host lists become sorted sets.
+
+`commands` defaults to `[]`. Corb preserves each command's bytes and their order.
+Entries must be nonempty strings without NUL.
+These are unpinned root install steps. Integration will run each separately with `/bin/sh -ec` from `/`.
+They cannot change base or pinned package records or silently add dependencies.
+
+`build-hosts` defaults to `["dl-cdn.alpinelinux.org"]`. An explicit list replaces that default.
+`hosts` defaults to `[]` and implies runtime egress through the existing host policy.
+Patterns use the existing `*` substring wildcard rule.
+Schemes, paths, ports, whitespace and empty patterns are errors.
+Build hosts and archive download hosts grant no runtime access.
+
+### SDK payloads
+
+Each `[[image.layer.payload]]` has the following fields. Only complete `tar.gz` SDK trees are supported.
+The URL needs no filename suffix. Integration validates the archive bytes.
+
+| Field | Contract |
+| --- | --- |
+| `name` | Unique identifier matching `^[a-z0-9][a-z0-9_-]*$`. |
+| `url` | Absolute HTTPS archive URL without user information, query or fragment. |
+| `sha256` | Expected archive digest, with 64 lowercase hexadecimal characters. |
+| `arch` | Exactly `x86_64` or `aarch64`. It must match the selected target. |
+| `destination` | Normalized absolute POSIX path at or below `/opt/corb/toolchains/<name>`. |
+| `strip-components` | Integer from 0 through 16. Default: 0. |
+| `path` | Ordered relative directory paths under the destination. Default: `[]`. |
+
+For Go, use `name="go"`, `destination="/opt/corb/toolchains/go"`, `strip-components=1` and `path=["bin"]`.
+Choose the architecture, URL and digest through explicit review of an official Go archive.
+Corb does not discover toolchain versions or read hidden version overrides.
+A digest pins bytes. It does not authenticate a publisher.
+
+Payload order and each `path` list determine the PATH prefix before the ordinary base PATH.
+Duplicate PATH entries and overlapping destinations are errors. Dot and dot-dot path components are also errors.
+Architecture mismatches fail before downloads, builds or boots.
+
+### Runtime directories
+
+Each `[[image.layer.runtime-dir]]` has exactly `path`, `mode`, `owner` and `group`.
+`path` must be normalized and strictly below `/run` or `/var/log`.
+The root paths, duplicates and overlap with internal mount or credential roots are errors.
+Corb sorts entries by path.
+
+`mode` is a four-character octal string from `0000` through `0777`. Its default is `0755`.
+Required owner and group names must match `^[a-z_][a-z0-9_-]*[$]?$`.
+Integration resolves numeric ownership from the actual composed guest accounts. Those numbers stay local.
+
+Integration will create or fix only each declared directory before agent startup and every checkpoint resume.
+It must not follow symlinks, delete files or change children recursively.
+The declaration starts no service. Service launch, supervision and startup scripts are not schema features.
+
+### Shareable pins
+
+The winning workspace directory owns `corb.sum`, a strict version-1 TOML lockfile.
+It preserves independent `target.x86_64` and `target.aarch64` tables.
+A target fixes Linux, musl, the Alpine branch and the normalized definition hash.
+Package recipes also require signed main/community index identities, one static installer and all candidate closure archives.
+Payload-only and command-only recipes have no index, installer or package rows.
+
+Package rows fix name, version, repository, observed APKINDEX `Q1` checksum, archive SHA-256 and a `requested` boolean.
+The requested rows equal the recipe package names exactly.
+Closure collection must not omit a dependency because the producer base already provides it.
+An optional artifact binds the target to `REGISTRY/REPOSITORY@sha256:<digest>`.
+Tag-only and inferred registry references are errors.
+
+The definition hash covers normalized UTF-8 JSON in this field order:
+`packages`, `commands`, `build-hosts`, `hosts`, `payload`, `runtime-dir`.
+It includes defaults, sorted sets and preserved command, payload and PATH order.
+Recipe pins have a separate canonical JSON hash without their artifact binding.
+Refreshing one target preserves other valid targets and clears the selected target's artifact.
+An existing lockfile symlink keeps its link when Corb atomically replaces the validated real target.
+Corb refuses to overwrite malformed old content.
+
+Pins contain no base tag, SDK build ID, host path, timestamp, account number or checkpoint hash.
+Local generations, output hashes, compatibility receipts and account mappings stay in local state.
+Local generation publication never edits `corb.sum`.
+Every added, changed or removed recipe or selected target requires fresh trust acceptance.
+Changes to another target do not change selected trust inputs.
