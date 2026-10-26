@@ -1,5 +1,7 @@
 import { preflightComposition } from "../layer/generation.ts";
-import { selectLayerWorkspace } from "../layer/context.ts";
+import { selectLayerWorkspace, type LayerContext } from "../layer/context.ts";
+import { hashLayerDefinition } from "../layer/definition.ts";
+import { same, fail } from "../layer/validate.ts";
 // Parse run flags and resolve the same config shown by explain and dry-run.
 // A named workspace without DIR does not mount cwd. Other omitted DIR values use cwd.
 // Persistent settings pass the trust gate before any session starts. CLI flags stay personal.
@@ -308,6 +310,18 @@ function toWorkspaceDirSpec(entry: DirConfig): WorkspaceDirSpec {
   return spec;
 }
 
+export function assertTrustedLayerContext(resolved: ResolvedWorkspace, context: LayerContext): void {
+  const selected = resolved.selectedWorkspace;
+  const original = resolved.workspaces.workspaces.find((entry) => entry.name === selected?.name);
+  const image = resolved.fullConfig.image;
+  if (selected === undefined || original === undefined || image === undefined || context.selected.name !== selected.name
+    || context.selected.entry.corbToml !== selected.corbToml || context.selected.entry.realPath !== original.realPath
+    || context.selected.entry.source !== original.source || hashLayerDefinition(context.definition) !== hashLayerDefinition(image.layer)
+    || !same(context.pins, image.pins) || context.config.vm?.image !== resolved.fullConfig.vm?.image) {
+    fail("workspace layer changed after trust evaluation. Retry corb run to review the current source, pins and base");
+  }
+}
+
 export async function runRunCommand(argv: string[]): Promise<void> {
   const { dir, dirExplicit, workspace, piArgs, dryRun, dirFlags, primary: primaryFlag, trustConfig, expose } = parseRunArgs(argv);
 
@@ -335,9 +349,10 @@ export async function runRunCommand(argv: string[]): Promise<void> {
   if (resolved.trustEvaluation.verdict === "requires-confirmation" && !trustConfig) {
     throw new TrustConfirmationRequiredError(resolved, { dirFlags, ...(primaryFlag === undefined ? {} : { primary: primaryFlag }) });
   }
-  const composition = resolved.fullConfig.image === undefined ? undefined : await preflightComposition(
-    selectLayerWorkspace(workspace, undefined, dir),
-    resolved.fullConfig.dir.flatMap((entry) => entry.host === undefined ? [] : [entry.host]),
+  const layerContext = resolved.fullConfig.image === undefined ? undefined : selectLayerWorkspace(workspace, undefined, dir);
+  if (layerContext !== undefined) assertTrustedLayerContext(resolved, layerContext);
+  const composition = layerContext === undefined ? undefined : await preflightComposition(
+    layerContext, resolved.fullConfig.dir.flatMap((entry) => entry.host === undefined ? [] : [entry.host]),
   );
   if (trustConfig) {
     acceptWorkspace(resolved.trustKey, resolved.persistentConfig, Date.now());

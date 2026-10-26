@@ -11,7 +11,7 @@ import { baseGenerationRoot, compositionKey, COMPOSITION_POLICY, currentGenerati
 import { atomicJson, hashFile, privateDirectory } from "./state.ts";
 import { BASE_PATH, layerExec, layerGuest, VERIFIER_HOSTS, verifyLayerBase, verifyProductionVm, withLayerVm } from "./vm.ts";
 import { parseInstalledIdentities, parsePackagePlan, assertPackageIdentities } from "./plan.ts";
-import { fail } from "./validate.ts";
+import { fail, sha256 } from "./validate.ts";
 import type { LayerContext } from "./context.ts";
 
 export function displayLayerPlan(context: LayerContext): void {
@@ -70,10 +70,10 @@ export async function composeLayer(context: LayerContext, suppliedGraph?: InputG
         process.stderr.write((result.stdout + result.stderr).slice(-64 * 1024));
         if (!result.ok) fail(`unpinned root step failed (${result.exitCode})`);
       }
-      const plan = { baseline, world: after.world, additions, archives: prepared.archives, payloads: prepared.payloads, runtime: context.definition["runtime-dir"], mapping };
+      await layerGuest(vm, "stop", processBaseline);
+      const plan = { baseline, world: after.world, ...(prepared.installer?.binary === undefined ? {} : { installer: { sha256: sha256(prepared.installer.binary), size: prepared.installer.binary.length } }), additions, archives: prepared.archives, payloads: prepared.payloads, runtime: context.definition["runtime-dir"], mapping };
       const evidence = await layerGuest<{ path: string }>(vm, "verify", plan);
       const guestEvidence = await layerGuest<{ sha256: string }>(vm, "record", evidence);
-      await layerGuest(vm, "stop", processBaseline);
       const finalDatabase = await layerGuest<{ database: string; world: string }>(vm, "database");
       assertPackageIdentities(baseline.packages, parseInstalledIdentities(finalDatabase.database), additions);
       if (finalDatabase.world !== after.world) fail("APK world changed outside the signed transaction");

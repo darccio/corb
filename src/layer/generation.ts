@@ -12,7 +12,7 @@ import { isSameOrDescendant, realpathOrResolve } from "../config/hostpaths.ts";
 import type { LayerContext } from "./context.ts";
 import type { Verification } from "./vm.ts";
 
-export const COMPOSITION_POLICY = "corb-composition-v1";
+export const COMPOSITION_POLICY = "corb-composition-v2";
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 export interface GenerationMetadata {
   version: 1; policy: typeof COMPOSITION_POLICY; workspace: string; source: string; definitionSha256: string; recipePinsSha256: string;
@@ -27,7 +27,7 @@ export function compositionKey(context: LayerContext, base: LayerBase, graph: In
     recipePinsSha256: hashRecipePins(context.pins!, context.arch), inputDigest: graph.digest }));
 }
 export function inspectCheckpointTrailer(filename: string, baseId: string): { hash: string; data: unknown } {
-  const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
   try {
     const stat = fs.fstatSync(fd);
     if (!stat.isFile() || stat.size < 16) fail("checkpoint requires a regular qcow2 file and bounded trailer");
@@ -66,8 +66,9 @@ export async function validateGeneration(context: LayerContext, base: LayerBase,
   if (metadata.packageCoherence !== true || verification?.ok !== true || verification.gates?.length !== 7 || required.some((name) => verification.gates.filter((gate) => gate.name === name && gate.ok === true).length !== 1)) fail("local generation lacks seven-gate and package-coherence success");
   if (!Array.isArray(metadata.mapping) || typeof metadata.path !== "string") fail("invalid generation runtime metadata");
   if (await hashFile(path.join(directory, "evidence.json"), 64 * 1024 ** 2) !== metadata.evidenceSha256) fail("composition evidence changed");
-  const evidence = JSON.parse(fs.readFileSync(path.join(directory, "evidence.json"), "utf8")) as { world?: unknown };
+  const evidence = JSON.parse(fs.readFileSync(path.join(directory, "evidence.json"), "utf8")) as { world?: unknown; installer?: { sha256?: unknown; size?: unknown } };
   if (typeof evidence.world !== "string") fail("composition lacks complete APK world evidence. Run corb image layer build or pull");
+  if (context.pins?.installer !== undefined && (evidence.installer === undefined || typeof evidence.installer.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(evidence.installer.sha256) || !Number.isSafeInteger(evidence.installer.size) || (evidence.installer.size as number) <= 0 || (evidence.installer.size as number) > 16 * 1024 ** 2)) fail("missing authenticated installer absence evidence. Run corb image layer build or pull");
   const checkpoint = path.join(directory, "checkpoint.qcow2");
   if (await hashFile(checkpoint) !== metadata.checkpoint.sha256) fail("checkpoint hash mismatch. Run corb image layer build or pull");
   const trailer = inspectCheckpointTrailer(checkpoint, base.manifest.buildId);
@@ -90,6 +91,7 @@ export async function preflightComposition(context: LayerContext, hosts: readonl
   const current = await currentGeneration(context, base, graph);
   if (current === undefined) fail(`missing exact-base composition. Run corb image layer build --workspace ${context.selected.name} or corb image layer pull --workspace ${context.selected.name}`);
   assertCompositionMounts(hosts, current.directory, base);
+  context.recheck();
   return { ...current, context, graph,
     recheck: async () => {
       context.recheck(); const latestBase = await resolveLayerBase(context.config.vm?.image);

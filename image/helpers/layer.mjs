@@ -80,10 +80,18 @@ export function restoreRuntimeDirs(plan, expected) {
   }
   return mapping;
 }
-function protectedFiles() {
-  const files = [];
-  for (const root of protectedRoots) walk(root, (filename, stat) => files.push(attributes(filename, stat)));
-  return files;
+export function protectedAncestors(paths) {
+  const parents = new Set();
+  for (const filename of paths) {
+    let parent = path.dirname(filename);
+    for (;;) { parents.add(parent); if (parent === "/") break; parent = path.dirname(parent); }
+  }
+  return [...parents].sort().map((filename) => attributes(filename));
+}
+function protectedFiles(native = []) {
+  const files = new Map(protectedAncestors([...protectedRoots, ...native.map((row) => row.path)]).map((row) => [row.path, row]));
+  for (const root of protectedRoots) walk(root, (filename, stat) => files.set(filename, attributes(filename, stat)));
+  return [...files.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 }
 function nativeFiles() {
   const files = [];
@@ -116,13 +124,42 @@ export function snapshot() {
   const alpineVersion = fs.readFileSync("/etc/alpine-release", "utf8").trim();
   const distro = /^ID=(.+)$/m.exec(fs.readFileSync("/etc/os-release", "utf8"))?.[1]?.replaceAll('"', "");
   assert(process.platform === "linux" && distro === "alpine" && /^\d+\.\d+(?:\.\d+)?$/.test(alpineVersion), "unsupported guest OS or Alpine release");
-  return { os: process.platform, arch: process.arch === "x64" ? "x86_64" : process.arch === "arm64" ? "aarch64" : process.arch, alpineVersion, world: fs.readFileSync("/etc/apk/world", "utf8"), database, packages: packageIdentities(database), accounts: accounts(), keys, protected: protectedFiles(), native: nativeFiles() };
+  const native = nativeFiles();
+  const protectedBaseline = protectedFiles(native);
+  for (const row of protectedBaseline.filter((entry) => entry.type === "directory")) assert(row.uid === 0 && row.gid === 0 && (row.mode & 0o022) === 0, `unsafe protected base directory ${row.path}`);
+  return { os: process.platform, arch: process.arch === "x64" ? "x86_64" : process.arch === "arm64" ? "aarch64" : process.arch, alpineVersion, world: fs.readFileSync("/etc/apk/world", "utf8"), database, packages: packageIdentities(database), accounts: accounts(), keys, protected: protectedBaseline, native };
 }
-function compareFiles(expected) {
+export function compareFiles(expected) {
   for (const row of expected) assert(JSON.stringify(attributes(row.path)) === JSON.stringify(row), `protected file changed ${row.path}`);
 }
+export function assertInstallerAbsent(identity, root = "/") {
+  if (identity === undefined) return;
+  assert(/^[a-f0-9]{64}$/.test(identity.sha256) && Number.isSafeInteger(identity.size) && identity.size > 0 && identity.size <= 16 * 1024 * 1024, "invalid authenticated installer identity");
+  const device = fs.lstatSync(root).dev;
+  let count = 0;
+  function inspect(filename) {
+    const stat = fs.lstatSync(filename);
+    if (stat.dev !== device || stat.isSymbolicLink()) return;
+    assert(++count <= 1000000, "installer absence scan exceeds one million entries");
+    if (stat.isDirectory()) for (const name of fs.readdirSync(filename)) inspect(path.join(filename, name));
+    else if (stat.isFile() && stat.size === identity.size) assert(digest(fs.readFileSync(filename)) !== identity.sha256, `authenticated APK installer was copied into the checkpoint: ${filename}`);
+  }
+  inspect(root);
+}
+export function assertSdkDirectoryChain(destination) {
+  assert(typeof destination === "string" && destination.startsWith("/opt/corb/toolchains/") && path.posix.normalize(destination) === destination, "invalid SDK destination");
+  let current = "/";
+  for (const component of destination.split("/").filter(Boolean)) {
+    current = path.posix.join(current, component);
+    const stat = fs.lstatSync(current);
+    assert(stat.isDirectory() && !stat.isSymbolicLink() && fs.realpathSync(current) === current && stat.uid === 0 && stat.gid === 0 && (stat.mode & 0o022) === 0 && (stat.mode & 0o001) !== 0, `SDK ancestor is writable or unsafe ${current}`);
+  }
+  assert((fs.lstatSync(destination).mode & 0o7777) === 0o555, "SDK destination root mode changed");
+}
 export function verifyComposition(plan) {
-  assert(JSON.stringify(protectedFiles()) === JSON.stringify(plan.baseline.protected), "complete protected baseline changed");
+  assertInstallerAbsent(plan.installer);
+  assert(JSON.stringify(protectedFiles(plan.baseline.native)) === JSON.stringify(plan.baseline.protected), "complete protected baseline changed");
+  compareFiles(plan.baseline.protected);
   compareFiles(plan.baseline.native);
   const actualAccounts = accounts();
   for (const kind of ["users", "groups"]) for (const account of plan.baseline.accounts[kind]) assert(JSON.stringify(actualAccounts[kind].find((entry) => entry.name === account.name)) === JSON.stringify(account), `base account changed ${account.name}`);
@@ -172,6 +209,7 @@ export function verifyComposition(plan) {
     }
   }
   for (const payload of plan.payloads) {
+    assertSdkDirectoryChain(payload.destination);
     const expected = payload.tree.entries;
     const actual = [];
     walk(payload.destination, (filename, stat) => {
@@ -190,14 +228,14 @@ export function verifyComposition(plan) {
   assert(!exists("/sbin/apk") && !exists("/sbin/apk.static"), "APK installer remains in checkpoint");
   const runtime = restoreRuntimeDirs(plan.runtime, plan.mapping);
   for (const root of ["/bin", "/sbin", "/usr", "/opt"]) walk(root, (filename, stat) => { if (stat.isFile()) assert((stat.mode & 0o6000) === 0, `SUID/SGID privilege restored ${filename}`); });
-  return { version: 1, packages: current, accounts: actualAccounts, runtime, protected: plan.baseline.protected, payloads: plan.payloads.map((row) => ({ name: row.name, hash: row.tree.hash })), path: toolPath.join(":") };
+  return { version: 1, packages: current, accounts: actualAccounts, runtime, protected: plan.baseline.protected, payloads: plan.payloads.map((row) => ({ name: row.name, hash: row.tree.hash, root: attributes(row.destination), ancestors: protectedAncestors([path.posix.join(row.destination, "_entry")]) })), path: toolPath.join(":") };
 }
 export function copyPayloads(payloads) {
   for (const payload of payloads) {
     assert(payload.destination === `/opt/corb/toolchains/${payload.name}` || payload.destination.startsWith(`/opt/corb/toolchains/${payload.name}/`), "unsafe SDK destination");
     assert(!exists(payload.destination), "SDK destination already exists");
     let parent = path.posix.dirname(payload.destination);
-    while (parent !== "/") { const stat = exists(parent); assert(stat === undefined || (stat.isDirectory() && !stat.isSymbolicLink()), "unsafe SDK parent"); parent = path.posix.dirname(parent); }
+    while (parent !== "/") { const stat = exists(parent); assert(stat === undefined || (stat.isDirectory() && !stat.isSymbolicLink() && stat.uid === 0 && stat.gid === 0 && (stat.mode & 0o022) === 0), "unsafe SDK parent"); parent = path.posix.dirname(parent); }
     fs.mkdirSync(payload.destination, { recursive: true, mode: 0o755 });
     for (const entry of payload.tree.entries) {
       const target = path.posix.join(payload.destination, entry.path);

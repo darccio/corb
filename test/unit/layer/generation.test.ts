@@ -37,3 +37,11 @@ it("guards external base/generation mounts and their symlinks in both overlap di
   for (const host of [dir, base, path.join(base, "child"), link, generation, path.join(generation, "child")]) expect(() => assertCompositionMounts([host], generation, bound)).toThrow("overlaps");
   expect(() => assertCompositionMounts([path.join(dir, "safe")], generation, bound)).not.toThrow();
 });
+it("rejects a FIFO checkpoint in a bounded child before SDK loading", async () => {
+  const { spawnSync } = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+  const { dir } = fixture(); const fifo = path.join(dir, "checkpoint-fifo"); expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+  const module = new URL("../../../src/layer/generation.ts", import.meta.url).href;
+  const script = `import { inspectCheckpointTrailer } from ${JSON.stringify(module)}; try { inspectCheckpointTrailer(${JSON.stringify(fifo)}, "base"); process.exitCode=2; } catch(error) { console.log(error.message); }`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 2000 });
+  expect(result.error).toBeUndefined(); expect(result.status).toBe(0); expect(result.stdout).toContain("regular qcow2 file");
+});

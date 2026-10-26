@@ -20,3 +20,23 @@ it("rejects a local composition before credential reads, broker startup, audit c
   await expect(runRunCommand(["--workspace", "named", "--trust-config"])).rejects.toThrow("checkpoint backing changed");
   expect(state.broker).not.toHaveBeenCalled(); expect(state.session).not.toHaveBeenCalled(); expect(state.audit).not.toHaveBeenCalled(); expect(fs.existsSync(path.join(config, "trusted.json"))).toBe(false);
 });
+it.each(["recipe", "pins", "base", "source"])("rejects %s switched after trust input resolution", async (kind) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "corb-run-selection-race-")); dirs.push(root); const config = path.join(root, "config"); const workspace = path.join(config, "workspaces", "named"); const project = path.join(root, "project");
+  fs.mkdirSync(workspace, { recursive: true }); fs.mkdirSync(project);
+  const file = path.join(workspace, "corb.toml"); const original = `[agent]\nprovider="openai-codex"\n[image.layer]\npackages=[]\ncommands=["true"]\n[[dir]]\nname="project"\nhost=${JSON.stringify(project)}\n`;
+  fs.writeFileSync(file, original);
+  vi.stubEnv("CORB_CONFIG_DIR", config); vi.stubEnv("CORB_STATE_DIR", path.join(root, "state")); vi.stubEnv("CORB_CACHE_DIR", path.join(root, "cache")); vi.stubEnv("GONDOLIN_IMAGE_STORE", path.join(root, "store"));
+  const { normalizeLayerDefinition, hashLayerDefinition } = await import("../../../src/layer/definition.ts");
+  const { serializeLayerLock } = await import("../../../src/layer/pins.ts");
+  const read = fs.readFileSync; let switched = false;
+  const mutate = () => {
+    switched = true;
+    if (kind === "recipe") fs.writeFileSync(file, original.replace('commands=["true"]', 'commands=["false"]'));
+    else if (kind === "base") fs.writeFileSync(path.join(config, "config.toml"), '[vm]\nimage="private:other-base"\n');
+    else if (kind === "source") { const other = path.join(config, "other.toml"); fs.writeFileSync(other, original); fs.unlinkSync(file); fs.symlinkSync(other, file); }
+    else fs.writeFileSync(path.join(workspace, "corb.sum"), serializeLayerLock({ version: 1, target: { x86_64: { os: "linux", abi: "musl", "alpine-branch": "v3.23", "definition-sha256": hashLayerDefinition(normalizeLayerDefinition({ packages: [], commands: ["true"] })), index: [], package: [] } } }));
+  };
+  vi.spyOn(fs, "readFileSync").mockImplementation(((filename: string, ...args: unknown[]) => { try { return Reflect.apply(read, fs, [filename, ...args]); } finally { if (filename === path.join(config, "trusted.json") && !switched) mutate(); } }) as typeof fs.readFileSync);
+  await expect(runRunCommand(["--workspace", "named", "--trust-config"])).rejects.toThrow("changed after trust evaluation");
+  expect(state.preflight).not.toHaveBeenCalled(); expect(state.broker).not.toHaveBeenCalled(); expect(state.audit).not.toHaveBeenCalled(); expect(fs.existsSync(path.join(config, "trusted.json"))).toBe(false);
+});
