@@ -411,7 +411,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   const rules = opts.rules;
   const onDeny = opts.onDeny;
   const hasCopyOnWrite = rules.some((rule) => rule.mode === "copy-on-write");
-  const backendAny = (hasCopyOnWrite
+  const copyOnWrite = hasCopyOnWrite
     ? withCopyOnWrite(backend, (target) => matchRule(rules, toRulePath(target))?.mode === "copy-on-write", (target, requested, op, origin) => {
         const originalRule = matchRule(rules, toRulePath(origin));
         const rule = originalRule?.mode === "copy-on-write" ? originalRule : matchRule(rules, toRulePath(target));
@@ -423,7 +423,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
           auditAndThrow(op, op, toRulePath(normalizeGuestPath(requested)), decision.outcome, decision.rule, `${decision.rule?.reason ?? "denied by policy"} (via resolved path '${toRulePath(target)}')`);
         }
       })
-    : backend) as ProviderLike;
+    : undefined;
+  const backendAny = (copyOnWrite?.provider ?? backend) as ProviderLike;
 
   // The symlink-bypass defense (`resolveForRecheck`/`resolveForRecheckSync`
   // below) has no way to function without a real `realpath`/`realpathSync`
@@ -1549,6 +1550,12 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   for (const [name, factory] of Object.entries(optionalFactories)) {
     if (typeof backendAny[name] === "function") {
       handlers[name] = factory();
+    }
+  }
+
+  if (copyOnWrite) {
+    for (const [method, handler] of Object.entries(handlers)) {
+      handlers[method] = (...args: unknown[]) => copyOnWrite.withRequest(method, args, () => (handler as AnyFn)(...args));
     }
   }
 

@@ -203,6 +203,49 @@ describe("copy-on-write", () => {
     expect(backend.readFileSync("/ordinary", "utf8")).toBe("keep");
   });
 
+  it.each(["async", "sync"] as const)("isolates canonical audit paths across parallel aliases with a %s second call", async (secondMode) => {
+    const { backend, wrapped, events } = fixture([
+      { glob: "config", mode: "copy-on-write", reason: "first file" },
+      { glob: "config.other", mode: "copy-on-write", reason: "second file" },
+    ]);
+    backend.writeFileSync("/config.other", "second");
+    backend.symlinkSync("config", "/alias-a");
+    backend.symlinkSync("config.other", "/alias-b");
+    const first = wrapped.open("/alias-a", "r+");
+    const second = secondMode === "sync" ? wrapped.openSync("/alias-b", "r+") : wrapped.open("/alias-b", "r+");
+    const [firstHandle, secondHandle] = await Promise.all([first, second]);
+    await firstHandle.write(Buffer.from("A"), 0, 1, 0);
+    await secondHandle.write(Buffer.from("B"), 0, 1, 0);
+    await firstHandle.close();
+    await secondHandle.close();
+    expect(events.map((event) => [event.path, event.op, event.rule?.reason]).sort()).toEqual([
+      ["alias-a", "write", "first file"],
+      ["alias-b", "write", "second file"],
+    ]);
+    expect(backend.readFileSync("/config", "utf8")).toBe("original");
+    expect(backend.readFileSync("/config.other", "utf8")).toBe("second");
+  });
+
+  it("keeps both rename paths and copy destinations in their requested spelling", async () => {
+    const { backend, wrapped, events } = fixture([{ glob: "private/config*", mode: "copy-on-write", reason: "private" }]);
+    backend.mkdirSync("/private");
+    backend.writeFileSync("/private/config", "host");
+    backend.symlinkSync("private", "/shortcut");
+    await wrapped.writeFile("/shortcut/config.lock", "guest");
+    events.length = 0;
+    await wrapped.rename("/shortcut/config.lock", "/shortcut/config");
+    expect(events.map((event) => [event.path, event.op])).toEqual([
+      ["shortcut/config.lock", "rename"],
+      ["shortcut/config", "rename"],
+    ]);
+    await wrapped.copyFile("/config", "/shortcut/config.copy");
+    expect(events.at(-1)?.path).toBe("shortcut/config.copy");
+    expect(events.at(-1)?.op).toBe("copy-dest");
+    expect(backend.readFileSync("/private/config", "utf8")).toBe("host");
+    expect(backend.existsSync("/private/config.lock")).toBe(false);
+    expect(backend.existsSync("/private/config.copy")).toBe(false);
+  });
+
   it("preserves stricter first-match and resolved-target rules", async () => {
     const { backend, wrapped } = fixture([
       { glob: "secret", mode: "deny-read", reason: "secret" },

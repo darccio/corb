@@ -1,4 +1,5 @@
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { isWriteFlag, MemoryProvider } from "@earendil-works/gondolin";
@@ -9,7 +10,11 @@ import type { FsOpKind } from "./policy.ts";
 type Method = (...args: any[]) => any;
 type Provider = Record<string, any>;
 type Entry = string | { name: string };
-type CopyOperation = "write" | "mutate" | "rename" | "link";
+type CopyOperation = "write" | "mutate" | "rename" | "link" | "copy-dest";
+interface CopyOnWriteView<P> {
+  readonly provider: P;
+  withRequest<R>(method: string, args: readonly unknown[], callback: () => R): R;
+}
 
 function error(code: string, target: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`${code}: copy-on-write '${target}'`), { code, path: target });
@@ -20,7 +25,8 @@ function missing(err: unknown): boolean {
 }
 
 /** Keep private copies for covered paths until this provider becomes unreachable. */
-export function withCopyOnWrite<P extends object>(backend: P, covered: (target: string) => boolean, onWrite: (target: string, requested: string, op: CopyOperation, origin: string) => void, checkAccess: (target: string, op: FsOpKind, requested: string) => void): P {
+export function withCopyOnWrite<P extends object>(backend: P, covered: (target: string) => boolean, onWrite: (target: string, requested: string, op: CopyOperation, origin: string) => void, checkAccess: (target: string, op: FsOpKind, requested: string) => void): CopyOnWriteView<P> {
+  const requests = new AsyncLocalStorage<{ method: string; args: readonly unknown[] }>();
   const lower = backend as Provider;
   const upper = new MemoryProvider() as unknown as Provider;
   const changed = new Set<string>();
@@ -105,11 +111,23 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
     identities.set(target, { pins: 0 });
   }
 
-  function notify(target: string, raw: string, op: CopyOperation): void {
-    const normalized = normalizeGuestPath(raw);
-    const origin = covered(normalized) ? normalized : origins.get(target) ?? normalized;
+  function requestedPath(raw: string, sourceEndpoint = false): string {
+    const context = requests.getStore();
+    const twoPaths = context && ["rename", "link", "copyFile", "symlink"].includes(context.method);
+    const index = twoPaths && !sourceEndpoint ? 1 : 0;
+    const requested = context?.args[index];
+    return normalizeGuestPath(typeof requested === "string" ? requested : raw);
+  }
+
+  function verify(target: string, op: FsOpKind, raw: string, sourceEndpoint = false): void {
+    checkAccess(target, op, requestedPath(raw, sourceEndpoint));
+  }
+
+  function notify(target: string, raw: string, op: CopyOperation, sourceEndpoint = false): void {
+    const requested = requestedPath(raw, sourceEndpoint);
+    const origin = covered(requested) ? requested : origins.get(target) ?? normalizeGuestPath(raw);
     origins.set(target, origin);
-    onWrite(target, normalized, op, origin);
+    onWrite(target, requested, requests.getStore()?.method === "copyFile" ? "copy-dest" : op, origin);
   }
 
   function mark(target: string, raw = target, op: CopyOperation = "write"): void {
@@ -182,7 +200,7 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
     const writing = isWriteFlag(flags);
     const creates = /[wa]/.test(flags);
     const target = resolve(raw, true, creates);
-    checkAccess(target, writing ? "write" : "read", raw);
+    verify(target, writing ? "write" : "read", raw);
     if (!isCovered(raw, target)) return lower.openSync(target, flags, mode);
     if (flags.includes("x") && exists(target)) throw error("EEXIST", target);
     if (exists(target)) copyUp(target);
@@ -197,7 +215,7 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
 
   function readFile(raw: string, options?: any): any {
     const target = resolve(raw);
-    checkAccess(target, "read", raw);
+    verify(target, "read", raw);
     return source(target).readFileSync(target, options);
   }
 
@@ -215,7 +233,7 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
 
   function readdir(raw: string, options?: any): Entry[] {
     const target = resolve(raw);
-    checkAccess(target, "read", raw);
+    verify(target, "read", raw);
     if (!lstat(target).isDirectory()) throw error("ENOTDIR", target);
     const entries = new Map<string, Entry>();
     try {
@@ -238,7 +256,7 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
 
   function unlink(raw: string, directory = false): void {
     const target = resolve(raw, false);
-    checkAccess(target, "mutate", raw);
+    verify(target, "mutate", raw);
     if (!isCovered(raw, target)) return lower[directory ? "rmdirSync" : "unlinkSync"](target);
     const stat = lstat(target);
     if (directory && !stat.isDirectory()) throw error("ENOTDIR", target);
@@ -261,7 +279,7 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
       mkdir(path.posix.dirname(normalized), options);
       target = resolve(normalized, false, true);
     }
-    checkAccess(target, "mutate", raw);
+    verify(target, "mutate", raw);
     if (!isCovered(raw, target)) return lower.mkdirSync(target, options);
     if (exists(target)) {
       if (options?.recursive && lstat(target).isDirectory()) return;
@@ -276,8 +294,8 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
   function rename(rawOld: string, rawNew: string): void {
     const old = resolve(rawOld, false);
     const dest = resolve(rawNew, false, true);
-    checkAccess(old, "rename", rawOld);
-    checkAccess(dest, "rename", rawNew);
+    verify(old, "rename", rawOld, true);
+    verify(dest, "rename", rawNew);
     const oldCovered = isCovered(rawOld, old);
     const newCovered = isCovered(rawNew, dest);
     if (!oldCovered && !newCovered) return lower.renameSync(old, dest);
@@ -312,15 +330,15 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
       identities.set(destination, identities.get(entry)!);
       identities.delete(entry);
     }
-    notify(old, rawOld, "rename");
+    notify(old, rawOld, "rename", true);
     notify(dest, rawNew, "rename");
   }
 
   function link(rawOld: string, rawNew: string): void {
     const old = resolve(rawOld, false);
     const dest = resolve(rawNew, false, true);
-    checkAccess(old, "link", rawOld);
-    checkAccess(dest, "link", rawNew);
+    verify(old, "link", rawOld, true);
+    verify(dest, "link", rawNew);
     const oldCovered = isCovered(rawOld, old);
     const newCovered = isCovered(rawNew, dest);
     if (!oldCovered && !newCovered) return lower.linkSync(old, dest);
@@ -335,7 +353,7 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
 
   function symlink(target: string, raw: string, type?: string): void {
     const dest = resolve(raw, false, true);
-    checkAccess(dest, "link", raw);
+    verify(dest, "link", raw);
     if (!isCovered(raw, dest)) return lower.symlinkSync(target, dest, type);
     if (exists(dest)) throw error("EEXIST", dest);
     parent(dest);
@@ -346,8 +364,8 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
   function copyFile(rawSrc: string, rawDest: string, mode = 0): void {
     const src = resolve(rawSrc);
     const dest = resolve(rawDest, true, true);
-    checkAccess(src, "copy-source", rawSrc);
-    checkAccess(dest, "copy-dest", rawDest);
+    verify(src, "copy-source", rawSrc, true);
+    verify(dest, "copy-dest", rawDest);
     if (!isCovered(rawDest, dest) && !changed.has(src)) return lower.copyFileSync(src, dest, mode);
     if ((mode & constants.COPYFILE_EXCL) && exists(dest)) throw error("EEXIST", dest);
     writeFile(rawDest, readFile(src));
@@ -355,9 +373,9 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
 
   function access(raw: string, mode = 0): void {
     const target = resolve(raw);
-    checkAccess(target, "access-exists", raw);
-    if (mode & (constants.R_OK | constants.X_OK)) checkAccess(target, "access-read", raw);
-    if (mode & constants.W_OK) checkAccess(target, "access-write", raw);
+    verify(target, "access-exists", raw);
+    if (mode & (constants.R_OK | constants.X_OK)) verify(target, "access-read", raw);
+    if (mode & constants.W_OK) verify(target, "access-write", raw);
     if (isCovered(raw, target)) {
       source(target).accessSync(target, mode & ~constants.W_OK);
       return;
@@ -377,7 +395,7 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
     appendFile: (raw, data, options) => writeFile(raw, data, options, true),
     stat: (raw, options) => {
       const target = resolve(raw);
-      checkAccess(target, "stat", raw);
+      verify(target, "stat", raw);
       const result = source(target).statSync(target, options);
       const pins = identities.get(target)?.pins;
       if (pins) result.nlink = typeof result.nlink === "bigint" ? result.nlink - BigInt(pins) : result.nlink - pins;
@@ -385,15 +403,15 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
     },
     lstat: (raw, options) => {
       const target = resolve(raw, false);
-      checkAccess(target, "stat", raw);
+      verify(target, "stat", raw);
       const result = source(target).lstatSync(target, options);
       const pins = identities.get(target)?.pins;
       if (pins) result.nlink = typeof result.nlink === "bigint" ? result.nlink - BigInt(pins) : result.nlink - pins;
       return result;
     },
     realpath: (raw) => resolve(raw),
-    readlink: (raw, options) => { const target = resolve(raw, false); checkAccess(target, "readlink", raw); return source(target).readlinkSync(target, options); },
-    exists: (raw) => { try { checkAccess(resolve(raw), "exists", raw); return true; } catch { return false; } },
+    readlink: (raw, options) => { const target = resolve(raw, false); verify(target, "readlink", raw); return source(target).readlinkSync(target, options); },
+    exists: (raw) => { try { verify(resolve(raw), "exists", raw); return true; } catch { return false; } },
     readdir,
     mkdir,
     unlink,
@@ -410,11 +428,15 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
     handlers[`${name}Sync`] = operation;
     handlers[name] = async (...args: any[]) => operation(...args);
   }
-  return new Proxy(backend, {
+  const provider = new Proxy(backend, {
     get(target, key) {
       const member = Reflect.get(target, key, target);
       if (typeof key === "string" && typeof member === "function" && Object.hasOwn(handlers, key)) return handlers[key];
       return typeof member === "function" ? member.bind(target) : member;
     },
   });
+  return {
+    provider,
+    withRequest: (method, args, callback) => requests.run({ method: method.replace(/Sync$/, ""), args }, callback),
+  };
 }
