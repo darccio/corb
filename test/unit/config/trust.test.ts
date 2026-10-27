@@ -70,6 +70,13 @@ describe("config/trust: built-in Git protection", () => {
     expect(evaluateTrust(previous, current).widened.map((change) => change.field)).toContain("dir.repo.builtin-rules");
   });
 
+  it("requires confirmation when an accepted deny-write config rule becomes copy-on-write", () => {
+    const current = config();
+    const previous = structuredClone(current);
+    for (const rule of previous.dir[0]!["builtin-rules"]) rule.mode = "deny-write";
+    expect(evaluateTrust(previous, current).verdict).toBe("requires-confirmation");
+  });
+
   it("compares built-in rule reasons and order like user rules", () => {
     const previous = config();
     const reordered = structuredClone(previous);

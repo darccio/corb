@@ -20,13 +20,8 @@ import type { LayerImageConfig } from "../layer/pins.ts";
 import { DurationOverflowError, MAX_SETTIMEOUT_MS, parseDuration } from "../util/duration.ts";
 import { expandHomePrefix } from "./paths.ts";
 
-/**
- * Exactly the four `[[dir]].rules[]` modes the implementation plan's
- * `corb.toml` spec uses (including `shadow-write`, absent from
- * `docs/design.md` §3's three-mode `GlobRuleMode` — that doc is stale here;
- * this is the current, authoritative set).
- */
-export const RULE_MODES = ["deny-write", "deny-read", "hidden", "shadow-write"] as const;
+/** Supported per-path rule modes. */
+export const RULE_MODES = ["deny-write", "deny-read", "hidden", "shadow-write", "copy-on-write"] as const;
 export type RuleMode = (typeof RULE_MODES)[number];
 
 /** `[[dir]].mode` — the directory's own mode, distinct from a rule's `mode`. */

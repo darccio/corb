@@ -61,9 +61,13 @@ describe.skipIf(!process.env.CORB_E2E)("git-protection e2e (real VM boot)", () =
       vfs: { mounts: {
         [rawWorkspacePath(DIR_NAME)]: withGlobPolicy(new RealFSProvider(hostRepo), {
           rules: toGlobRules(DIR_NAME, builtinGitRules()),
+          onDeny: () => {},
         }),
         [GATE_CONFIG_RAW_ROOT]: buildGateConfigMount(),
       } },
+      memory: "1G",
+      cpus: 2,
+      startTimeoutMs: 60_000,
       sessionLabel: "corb-e2e-git-protection",
     });
   }, 180_000);
@@ -88,14 +92,13 @@ describe.skipIf(!process.env.CORB_E2E)("git-protection e2e (real VM boot)", () =
       },
       stdout: "buffer",
       stderr: "buffer",
+      signal: AbortSignal.timeout(30_000),
     });
   }
 
   it.each([
     ["hook write", "printf 'malicious hook' > .git/hooks/pre-commit"],
     ["directory moved into hooks", "mv prepared-hook .git/hooks/x"],
-    ["shell config write", "printf '[core]\\n\\thooksPath=/tmp/x\\n' >> .git/config"],
-    ["unshimmed git config", "/usr/local/libexec/real-git config core.hooksPath /tmp/x"],
     ["commondir write", "printf '/tmp/evil' > .git/commondir"],
   ])("denies %s as the agent user", async (_name, command) => {
     const result = await guestShell(command);
@@ -105,6 +108,27 @@ describe.skipIf(!process.env.CORB_E2E)("git-protection e2e (real VM boot)", () =
     expect(fs.existsSync(path.join(hostRepo, ".git/commondir"))).toBe(false);
     expect(fs.existsSync(path.join(hostRepo, ".git/hooks/pre-commit"))).toBe(false);
     expect(fs.existsSync(path.join(hostRepo, ".git/hooks/x"))).toBe(false);
+  });
+
+  it("keeps remote config private and visible across guest commands", async () => {
+    const added = await guestShell("git remote add x https://example.invalid/team/repo.git && git remote -v");
+    expect(added.ok, `exit ${added.exitCode}: ${added.stderr}`).toBe(true);
+    expect(added.stdout).toContain("x\thttps://example.invalid/team/repo.git (fetch)");
+    expect(added.stdout).toContain("x\thttps://example.invalid/team/repo.git (push)");
+    const later = await guestShell("git remote -v");
+    expect(later.ok, later.stderr).toBe(true);
+    expect(later.stdout).toContain("x\thttps://example.invalid/team/repo.git");
+    expect(fs.readFileSync(path.join(hostRepo, ".git/config"))).toEqual(originalConfig);
+    expect(fs.existsSync(path.join(hostRepo, ".git/config.lock"))).toBe(false);
+    expect(execFileSync("git", ["remote", "-v"], { cwd: hostRepo, encoding: "utf8" })).toBe("");
+  });
+
+  it("accepts shell and unshimmed config changes only in the guest", async () => {
+    const result = await guestShell("printf '[corb]\\n\\tprivate = shell\\n' >> .git/config && /usr/local/libexec/real-git config corb.private updated && /usr/local/libexec/real-git config --get corb.private");
+    expect(result.ok, `exit ${result.exitCode}: ${result.stderr}`).toBe(true);
+    expect(result.stdout).toBe("updated\n");
+    expect(fs.readFileSync(path.join(hostRepo, ".git/config"))).toEqual(originalConfig);
+    expect(fs.existsSync(path.join(hostRepo, ".git/config.lock"))).toBe(false);
   });
 
   it("still allows status, add and commit through the git shim", async () => {

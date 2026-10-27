@@ -33,8 +33,8 @@
 // This module has no opinion on how that classification happens.
 //
 // Rule model: reuses `RuleMode` from `src/config/schema.ts` (M2.1) directly,
-// per that module's own comment: "the current, authoritative set" of four
-// modes (`deny-write`, `deny-read`, `hidden`, `shadow-write`) — not a fourth,
+// per that module's own comment: "the current, authoritative set" of five
+// modes (`deny-write`, `deny-read`, `hidden`, `shadow-write`, `copy-on-write`) — not a fourth,
 // redeclared copy of the same union, and not `docs/design.md` §3's own
 // `GlobRuleMode`, which named only three and is now stale (fixed by this item
 // — see the diff to that file's semantics matrix). `GlobRule` below is
@@ -171,7 +171,7 @@ export type FsErrno = "ENOENT" | "EACCES";
  * The result of one `decideFsAccess` call. Three shapes, not two — `shadow-write`
  * needs an outcome that is neither a plain allow nor a plain deny:
  *
- * - `{ kind: "allow" }` — proceed against the real backend.
+ * - `{ kind: "allow" }` — proceed against the storage provider.
  * - `{ kind: "deny", errno }` — refuse, surfaced to the guest as `errno`.
  * - `{ kind: "shadowed" }` — appears to succeed from the guest's perspective,
  *   but M5.3 must route the operation through shadow storage
@@ -265,25 +265,26 @@ const DENY_EACCES: FsAccessOutcome = { kind: "deny", errno: "EACCES" };
  *   existence and shape, not content.
  *
  * `mode: undefined` (no rule matched) is handled separately in
- * `decideFsAccess`, not as a fifth column here — every real column in
+ * `decideFsAccess`, not as a separate column here — every real column in
  * `docs/design.md` §3's own matrix agrees it is always `allow`, so there is
  * no per-operation variation to tabulate for it.
  */
+// The copy-on-write provider supplies its session view for every allowed operation.
 const TABLE: Record<FsOpKind, Record<RuleMode, FsAccessOutcome>> = {
-  read: { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  write: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED },
-  stat: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  mutate: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED },
-  rename: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED },
-  "copy-source": { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  "copy-dest": { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED },
-  link: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED },
-  "access-exists": { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  "access-read": { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  "access-write": { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  readlink: { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  exists: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW },
-  realpath: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW },
+  read: { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  write: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  stat: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  mutate: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  rename: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  "copy-source": { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  "copy-dest": { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  link: { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  "access-exists": { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  "access-read": { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  "access-write": { "deny-write": DENY_EACCES, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  readlink: { "deny-write": ALLOW, "deny-read": DENY_EACCES, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  exists: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  realpath: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: DENY_ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
 };
 
 /**

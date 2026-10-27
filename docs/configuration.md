@@ -193,13 +193,22 @@ Global directory entries are included in every run. Read [Workspace
 resolution](workspaces.md#configuration-resolution) for precedence and
 positional-directory behavior.
 
-Rule modes are `hidden`, `deny-read`, `deny-write`, and `shadow-write`. Shadow
-writes go to memory instead of changing the host file. Reads, metadata, and
-listings still show the host file. This mode does not provide an overlay.
+Rule modes are `hidden`, `deny-read`, `deny-write`, `shadow-write`, and `copy-on-write`.
+Shadow writes go to memory instead of changing the host file. Reads, metadata,
+and listings still show the host file. This mode does not provide an overlay.
+
+`copy-on-write` keeps session copies in memory. Reads, metadata, and listings
+show the guest's changes. Create, rename, and unlink share this private view.
+Rename and hard-link operations across the covered boundary fail with `EXDEV`.
+Covered directory renames must keep every child inside the covered set.
+Other directory renames that can move protected children still fail.
+
+The host files stay unchanged. Corb drops the copies when the session ends.
+The session audit log marks these writes and states that Corb will drop them.
 
 ### Built-in Git protection
 
-Every read/write mount gets built-in `deny-write` rules before its user rules.
+Every read/write mount gets built-in Git rules before its user rules.
 This applies even when the mount has no Git repository at startup. Read-only
 mounts get no built-in rules because their provider already blocks writes.
 
@@ -219,9 +228,12 @@ The rules protect these paths relative to the mount root:
 
 The `.git` rule protects that entry itself. It also blocks creating or replacing
 a root Git directory or gitfile. `config*` covers config files and their locks.
-It includes `config.worktree`. Directory renames into or out of a protected
-subtree fail too. Ordinary edits, `git add`, `git commit`, and unrelated
-directory renames remain available.
+It includes `config.worktree`. These config patterns use `copy-on-write`.
+The other patterns use `deny-write`.
+
+Directory renames into or out of a
+protected subtree fail too. Ordinary edits, `git add`, `git commit`, and
+unrelated directory renames remain available.
 
 `protect-git` is a per-directory boolean that defaults to true. To disable it
 for the positional directory, use a host-less entry with its basename:
@@ -238,12 +250,12 @@ when Corb adds these rules during an upgrade. Adding user rules still narrows
 policy. `corb explain` shows the built-in rules separately. JSON stores them
 in `builtin-rules`, which cannot be set in TOML.
 
-The protection blocks config writes needed by `git remote add`, `branch -u`,
-`push -u`, `checkout --track`, and `submodule init` inside the guest.
-[DAR-19](https://linear.app/darccio/issue/DAR-19/copy-on-write-path-rule-mode-so-the-guest-can-change-git-config-safely)
-tracks support for safe config edits. `git init` and `git clone <url> .` fail
-at the mount root. A submodule branch named `config` becomes read-only because
-its metadata path matches `config*`.
+Config writes from `git remote add`, `branch -u`, `push -u`, `checkout --track`,
+and `submodule init` stay private to the session. Later guest commands see them.
+The Git command shim still blocks direct `git config` calls.
+Changing an accepted config rule from `deny-write` to `copy-on-write` requires confirmation.
+`git init` and `git clone <url> .` still fail at the mount root.
+A submodule branch named `config` has session-only metadata because its path matches `config*`.
 
 Read the [security limits](security.md#git-metadata-protection) before running
 host Git against files the agent changed.
