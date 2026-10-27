@@ -572,6 +572,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
    * every call site already branched on, plus the resolved absolute path
    * that made the decision (`docs/adr/0011-close-open-race-with-resolved-path.md`).
    *
+   * Writes and copy destinations also resolve an existing leaf.
+   * Their lower calls use that canonical leaf.
    * `resolvedAbs` is `resolveForRecheck`'s `absPath` when a recheck actually
    * ran and found something to resolve; it falls back to the original,
    * unresolved `normalizedAbs` unchanged when `resolveForRecheck` returned
@@ -615,8 +617,9 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
     const recheck = await resolveForRecheck(normalizedAbs, createPath, op, syscall);
-    if (createPath && (op === "write" || op === "copy-dest") && hasCopyOnWrite) {
-      const leaf = await resolveForRecheck(normalizedAbs, false, op, syscall);
+    let leaf: RecheckResult | undefined;
+    if (createPath && (op === "write" || op === "copy-dest")) {
+      leaf = await resolveForRecheck(normalizedAbs, false, op, syscall);
       if (leaf) {
         const resolved = decideFsAccessForPath(rules, leaf.rulePath, op);
         if (resolved.outcome.kind === "deny") auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, resolved.rule?.reason ?? "denied by policy");
@@ -627,7 +630,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
     }
     // Preserve a covered spelling when it aliases an uncovered target.
-    const resolvedAbs = primary.rule?.mode === "copy-on-write" ? normalizedAbs : recheck?.absPath ?? normalizedAbs;
+    const resolvedAbs = primary.rule?.mode === "copy-on-write" ? normalizedAbs : leaf?.absPath ?? recheck?.absPath ?? normalizedAbs;
     if (recheck !== undefined) {
       const resolved = decideFsAccessForPath(rules, recheck.rulePath, op);
       if (resolved.outcome.kind === "deny") {
@@ -653,8 +656,9 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
     const recheck = resolveForRecheckSync(normalizedAbs, createPath, op, syscall);
-    if (createPath && (op === "write" || op === "copy-dest") && hasCopyOnWrite) {
-      const leaf = resolveForRecheckSync(normalizedAbs, false, op, syscall);
+    let leaf: RecheckResult | undefined;
+    if (createPath && (op === "write" || op === "copy-dest")) {
+      leaf = resolveForRecheckSync(normalizedAbs, false, op, syscall);
       if (leaf) {
         const resolved = decideFsAccessForPath(rules, leaf.rulePath, op);
         if (resolved.outcome.kind === "deny") auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, resolved.rule?.reason ?? "denied by policy");
@@ -665,7 +669,7 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
     }
     // Preserve a covered spelling when it aliases an uncovered target.
-    const resolvedAbs = primary.rule?.mode === "copy-on-write" ? normalizedAbs : recheck?.absPath ?? normalizedAbs;
+    const resolvedAbs = primary.rule?.mode === "copy-on-write" ? normalizedAbs : leaf?.absPath ?? recheck?.absPath ?? normalizedAbs;
     if (recheck !== undefined) {
       const resolved = decideFsAccessForPath(rules, recheck.rulePath, op);
       if (resolved.outcome.kind === "deny") {

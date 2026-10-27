@@ -322,8 +322,8 @@ expected behavior, but cannot edit or create one.
 Path rules need three checks to prevent bypasses.
 
 **1. Check both the requested and resolved paths.** Each operation checks the
-normalised request, then its `realpath()`. Create operations resolve the parent
-instead. Without this check, `ln -s .env decoy && cat decoy` bypasses rules
+normalised request, then its `realpath()`. Create operations resolve the parent.
+Writes and copy destinations also check an existing leaf and use its canonical path. Without this check, `ln -s .env decoy && cat decoy` bypasses rules
 because `decoy` matches nothing. `ShadowProvider` provides the same check
 through `denySymlinkBypass`.
 

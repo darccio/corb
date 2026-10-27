@@ -305,7 +305,7 @@ describe("copy-on-write", () => {
     expect(backend.readFileSync("/shadow", "utf8")).toBe("host");
   });
 
-  it.each(["ordinary.alias", "copy.alias"])("refuses a late swap from %s to a shadow-write target", async (alias) => {
+  it.each(["ordinary.alias", "copy.alias"])("protects a shadow-write target after a late swap from %s", async (alias) => {
     const { backend, wrapped } = fixture([
       { glob: "copy*", mode: "copy-on-write", reason: "private" },
       { glob: "shadow", mode: "shadow-write", reason: "discard" },
@@ -324,10 +324,12 @@ describe("copy-on-write", () => {
       }
       return resolved;
     };
-    await expect(wrapped.writeFile(`/${alias}`, "guest")).rejects.toMatchObject({ code: "EACCES" });
+    const result = wrapped.writeFile(`/${alias}`, "guest");
+    if (alias === "copy.alias") await expect(result).rejects.toMatchObject({ code: "EACCES" });
+    else await expect(result).resolves.toBeUndefined();
     expect(await wrapped.readFile(`/${alias}`, "utf8")).toBe("host");
     expect(backend.readFileSync("/shadow", "utf8")).toBe("host");
-    expect(backend.readFileSync("/ordinary", "utf8")).toBe("safe");
+    expect(backend.readFileSync("/ordinary", "utf8")).toBe(alias === "copy.alias" ? "safe" : "guest");
   });
 
   it("supports covered directory creation, rename and removal", async () => {

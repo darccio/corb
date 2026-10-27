@@ -757,3 +757,50 @@ describe("withGlobPolicy: truncate", () => {
     expect(await backend.readFile("/shadowed.txt")).toEqual(Buffer.from("0123456789"));
   });
 });
+
+describe("withGlobPolicy: existing write-target aliases without copy-on-write", () => {
+  for (const operation of ["writeFile", "writeFileSync", "copyFile", "copyFileSync"] as const) {
+    it.each(["deny-write", "deny-read", "hidden", "shadow-write"] as const)(`${operation} honors a resolved %s target`, async (mode) => {
+      const { backend, wrapped, denies } = setup([{ glob: "target", mode, reason: "protected target" }]);
+      backend.writeFileSync("/target", "host");
+      backend.writeFileSync("/source", "guest");
+      backend.symlinkSync("target", "/alias");
+      const result = Promise.resolve().then(() => operation.startsWith("copyFile")
+        ? wrapped[operation]("/source", "/alias")
+        : wrapped[operation]("/alias", "guest"));
+      if (mode === "shadow-write") {
+        await expect(result).resolves.toBeUndefined();
+        expect(await wrapped.readFile("/alias", "utf8")).toBe("host");
+      } else {
+        await expect(result).rejects.toMatchObject({ code: mode === "hidden" ? "ENOENT" : "EACCES" });
+      }
+      expect(backend.readFileSync("/target", "utf8")).toBe("host");
+      expect(denies.at(-1)?.path).toBe("alias");
+      expect(denies.at(-1)?.rule?.mode).toBe(mode);
+    });
+
+    it(`${operation} delegates an allowed existing leaf to its canonical path after an alias swap`, async () => {
+      const { backend, wrapped } = setup([{ glob: "protected", mode: "deny-read", reason: "private" }]);
+      backend.writeFileSync("/ordinary", "host");
+      backend.writeFileSync("/protected", "private");
+      backend.writeFileSync("/source", "guest");
+      backend.symlinkSync("ordinary", "/alias");
+      const originalRealpath = backend.realpathSync.bind(backend);
+      let first = true;
+      backend.realpathSync = (target) => {
+        const resolved = originalRealpath(target);
+        if (target === "/alias" && first) {
+          first = false;
+          backend.unlinkSync("/alias");
+          backend.symlinkSync("protected", "/alias");
+        }
+        return resolved;
+      };
+      if (operation.startsWith("copyFile")) await wrapped[operation]("/source", "/alias");
+      else await wrapped[operation]("/alias", "guest");
+      expect(backend.readFileSync("/ordinary", "utf8")).toBe("guest");
+      expect(backend.readFileSync("/protected", "utf8")).toBe("private");
+      await expect(wrapped.readFile("/alias")).rejects.toMatchObject({ code: "EACCES" });
+    });
+  }
+});
