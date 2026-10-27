@@ -575,4 +575,12 @@ It limits the Go evidence to pure Go on the measured native bases and leaves tok
 The independent final run on 2026-10-27 fails during the separate 3 GiB base upload after 25 passing tests.
 It also reveals upload-state tokens in transport and official registry diagnostics.
 The [validation report](layer-validation.md) preserves this failure and the later correction evidence.
-Final acceptance requires a complete passing run at the corrected executable head.
+
+The corrected executable `d306b80` then passes the coordinator's complete independent replay on 2026-10-27.
+It passes 100 tests in 14 files in 2867.34 seconds. The separate two-VM case stays disabled under the one-VM rule.
+The service group captures 50 real upload-state markers and passes all actual create/resume option checks.
+Its base upload waits 45.962 seconds after body completion before success.
+
+The host audit confirms all 352 recorded child PIDs are gone, with no forced kills, survivors or ownership uncertainty.
+All 42 base asset and manifest files and all four global refs remain unchanged.
+The [final replay report](layer-validation.md#final-complete-replay-2026-10-27) records the complete result and cleanup evidence.

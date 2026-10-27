@@ -310,7 +310,7 @@ The full run's service group then passes the private options observation at `b03
 It records **27 create calls and 8 resume calls**, all clean against password and Basic credential markers.
 The coordinator independently audits those receipts and actual host process cleanup.
 
-### Final serial suite
+### First complete serial run
 
 The full serial e2e suite passes **100 tests in 14 files** at executable commit `b03ad36` in **2779.98 seconds**.
 One separately gated two-VM case stays disabled because this issue permits one VM at a time.
@@ -358,8 +358,8 @@ This run also reveals a diagnostic gap. ORAS errors and official access logs con
 Earlier marker scans cover the fixture password and Basic credentials. They do not cover these dynamic tokens.
 Those previous scans do not establish complete token redaction.
 
-The required correction must scrub URL secrets before diagnostic storage and retain the full failed regression.
-Final acceptance remains pending a complete passing serial run at the corrected executable head.
+The correction below scrubs URL secrets before diagnostic storage and retains the full failed regression.
+The final complete replay below validates the corrected executable head.
 
 ### Registry recovery, 2026-10-27
 
@@ -396,8 +396,51 @@ Both registry and outer receipts report exit zero and no forced kills, survivors
 Actual host checks confirm all 11 recorded PIDs are gone.
 
 The production fix is `8a01169`. The fixture correction and executable freeze are `d306b80`.
-The coordinator must still run the complete serial suite at that final executable head.
-Earlier partial results do not replace that run. Final acceptance remains pending.
+The coordinator then runs the complete serial suite at that executable head, as recorded below.
+
+### Final complete replay, 2026-10-27
+
+The coordinator independently passes the complete serial suite at frozen executable `d306b80` with fresh config, state, cache and SDK storage.
+The result is **100 passing tests in 14 passing files**, plus one skipped test in its separately gated two-VM file.
+The one-VM rule keeps that gate disabled. The run starts at **00:49:43 local time** and takes **2867.34 seconds**, about **47.79 minutes**.
+This complete result validates the final executable tree. It does not combine earlier partial runs.
+
+The service/registry group passes all **14 cases** through 35 production commands and 429 real HTTP requests.
+It privately captures **50 actual upload-state markers** alongside the fixture password and Basic credentials.
+Transferred artifact bytes, shared files, ordinary diagnostics and actual VM options pass their marker checks.
+The observer records **27 create calls and 8 resume calls**, all clean.
+The root audit confirms all 27 guest PIDs and the registry process are gone.
+
+The separate base push waits **45.962 seconds** after body completion before upload success in this full run.
+Its total request takes 57.004 seconds and its body finishes after 11.042 seconds.
+The same-B import controls pass beside B's active layer. They preserve its selected config, shared lock, current pointer and checkpoint.
+The input graph remains portable across distinct coherent bases. Each base performs its own real package transaction and keeps its own exact-base checkpoint.
+
+The packaged Redis checks pass on fresh composition and own-base resume with the unmodified package config.
+Production restoration supplies the declared runtime directories before explicit startup as Redis from root build/preparation checks.
+The normal uid-1000 agent uses the loopback client. Ordinary shutdown stops the owned service before checkpoint creation.
+The missing-directory control fails for its measured log-path reason.
+These results promise no automatic boot service or public root launcher.
+
+The outer runner exits zero. Its **352 recorded child PIDs** are all gone in the coordinator's actual host audit.
+All **89 actual guests** use 1 GiB and two CPUs. The audit excludes **36 version probes** from the guest count.
+There are no forced kills, survivors or ownership uncertainties. No owned overlay or socket path remains.
+
+The main fixture removes its empty runtime and records no cleanup failures.
+The coordinator also removes the empty parent SDK runtime after process shutdown.
+
+The final preservation audit hashes **42 asset and manifest files**.
+It covers all 30 existing files and 12 files across the new bases.
+There are zero mismatches. All **4 global refs** remain unchanged, as do all **363 frozen executable files**.
+
+A and B retain identical `corb.toml` and `corb.sum` bytes and the same authenticated input digest.
+Their separate current generations and checkpoints match their recorded hashes and pass coherence plus all seven gates.
+Exact local base and checkpoint identities remain in local receipts.
+
+Final host checks pass typecheck, lint and **1931 unit tests in 101 files**.
+All five changed Markdown files pass local `se lint`. Both PR CI jobs pass at the preceding documentation head.
+The complete replay, exact environment and cleanup receipt remain under `image/build/dar-21-root-review/full-recovery`.
+The original failed run and both recovery probes remain recorded above.
 
 ### Repeat DAR-21 acceptance
 
