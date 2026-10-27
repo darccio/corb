@@ -2,7 +2,7 @@ import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { isWriteFlag, MemoryProvider } from "@earendil-works/gondolin";
+import { ERRNO, isWriteFlag, MemoryProvider } from "@earendil-works/gondolin";
 import { normalizeGuestPath } from "./glob.ts";
 import type { FsOpKind } from "./policy.ts";
 
@@ -16,8 +16,9 @@ interface CopyOnWriteView<P> {
   withRequest<R>(method: string, args: readonly unknown[], callback: () => R): R;
 }
 
-function error(code: string, target: string): NodeJS.ErrnoException {
-  return Object.assign(new Error(`${code}: copy-on-write '${target}'`), { code, path: target });
+// Include numeric errno so the RPC service preserves the intended guest error.
+function error(code: keyof typeof ERRNO, target: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(`${code}: copy-on-write '${target}'`), { code, errno: ERRNO[code], syscall: "copy-on-write", path: target });
 }
 
 function missing(err: unknown): boolean {

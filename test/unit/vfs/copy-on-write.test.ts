@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { RealFSProvider, ReadonlyProvider } from "@earendil-works/gondolin";
+import { FsRpcService, RealFSProvider, ReadonlyProvider } from "@earendil-works/gondolin";
 import { withGlobPolicy, type GlobPolicyDenyEvent } from "../../../src/vfs/glob-policy.ts";
 import type { GlobRule } from "../../../src/vfs/policy.ts";
 import { builtinGitRules } from "../../../src/config/gitprotect.ts";
@@ -403,6 +403,43 @@ describe("copy-on-write with a host directory", () => {
       expect(await wrapped.readFile("/.git/config", "utf8")).toBe(`guest-${count}`);
       expect(fs.readFileSync(path.join(directory, ".git/config"))).toEqual(original);
       expect(fs.existsSync(path.join(directory, ".git/config.lock"))).toBe(false);
+    }
+  });
+
+  it("reports tombstoned lock lookups as ENOENT through the real VFS RPC service", async () => {
+    const { directory, wrapped } = hostFixture();
+    const original = fs.readFileSync(path.join(directory, ".git/config"));
+    const rpc = new FsRpcService(wrapped);
+    let id = 1;
+    const request = (op: string, req: Record<string, unknown>) => rpc.handleRequest({ v: 1, t: "fs_request", id: id++, p: { op, req } });
+    try {
+      const git = (await request("lookup", { parent_ino: 1, name: ".git" })).p.res!.entry.ino;
+      await request("lookup", { parent_ino: git, name: "config" });
+      for (let count = 0; count < 3; count += 1) {
+        const created = await request("create", { parent_ino: git, name: "config.lock", flags: 0xc1, mode: 0o644 });
+        expect(created.p.err).toBe(0);
+        const fh = created.p.res!.fh;
+        const bytes = Buffer.from(`guest-${count}`);
+        expect((await request("write", { fh, offset: 0, data: bytes })).p.err).toBe(0);
+        expect((await request("release", { fh })).p.err).toBe(0);
+        expect((await request("rename", { old_parent_ino: git, old_name: "config.lock", new_parent_ino: git, new_name: "config" })).p.err).toBe(0);
+        const removed = await request("lookup", { parent_ino: git, name: "config.lock" });
+        expect(removed.p.err).toBe(2);
+        expect(removed.p.res).toHaveProperty("entry_ttl_ms");
+        expect(await wrapped.readFile("/.git/config", "utf8")).toBe(`guest-${count}`);
+        expect(fs.readFileSync(path.join(directory, ".git/config"))).toEqual(original);
+        expect(fs.existsSync(path.join(directory, ".git/config.lock"))).toBe(false);
+      }
+      const escaped = await request("rename", { old_parent_ino: git, old_name: "config", new_parent_ino: 1, new_name: "escape" });
+      expect(escaped.p.err).toBe(18);
+      const config = (await request("lookup", { parent_ino: git, name: "config" })).p.res!.entry.ino;
+      const reader = (await request("open", { ino: config, flags: 0 })).p.res!.fh;
+      expect((await request("write", { fh: reader, offset: 0, data: Buffer.from("denied") })).p.err).toBe(9);
+      expect((await request("release", { fh: reader })).p.err).toBe(0);
+      expect(fs.readFileSync(path.join(directory, ".git/config"))).toEqual(original);
+      expect(fs.existsSync(path.join(directory, "escape"))).toBe(false);
+    } finally {
+      await rpc.close();
     }
   });
 
