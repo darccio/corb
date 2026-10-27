@@ -6,75 +6,63 @@ Accepted
 
 ## Context and Problem Statement
 
-Corb enforces per-path filesystem rules (deny-write, deny-read, hidden,
-shadow-write) below the guest kernel's view of the filesystem, by decorating
-Gondolin's real `VirtualProvider` with a policy layer. Gondolin's SDK offers
-`VirtualProviderClass` as the intended extension point for building a custom
-provider. How should the policy layer actually be implemented — as a subclass
-of that base class, or some other wrapper shape?
+Corb enforces per-path filesystem rules below the guest kernel's view.
+It decorates Gondolin's real `VirtualProvider` with deny-write, deny-read,
+hidden, and shadow-write policies. Gondolin offers `VirtualProviderClass` as the
+extension point for custom providers. Does the policy layer need a subclass
+or another wrapper shape?
 
 See `docs/design.md` §3 ("Build it as a Proxy wrapper, not a subclass") and
 `docs/gondolin-notes.md` R13.
 
 ## Decision Drivers
 
-* `VirtualProviderClass` is declared as `{ new (...args: any[]): any }` in
-  Gondolin's shipped types — extending it gives zero compile-time type
-  checking on the resulting subclass.
-* A subclass silently delegates any method it doesn't override to the base
-  class's default implementation. A forgotten override is therefore a policy
-  hole that compiles clean and produces no warning.
-* `VirtualProvider` requires both async and `*Sync` variants of a fairly large
-  method set (`open`, `stat`, `lstat`, `readdir`, `mkdir`, `rmdir`, `unlink`,
-  `rename`, plus optional `link`, `readFile`, `writeFile`, `appendFile`,
-  `exists`, `copyFile`, `realpath`, `access`, `readlink`, `symlink`, `statfs`,
-  the `watch*` family) — a large surface to remember to cover exhaustively by
-  hand.
-* An SDK update could add a new `VirtualProvider` operation at any point,
-  since Gondolin is an actively evolving, "early" SDK (0.12.0, breaking
-  reshapes as recently as 0.6.0).
+* Gondolin declares `VirtualProviderClass` as `{ new (...args: any[]): any }` in its shipped types.
+  Extending it provides no compile-time type checking on the subclass.
+* A subclass silently delegates methods it does not override to the base class's defaults.
+  A forgotten override creates a policy hole that compiles without warnings.
+* `VirtualProvider` requires both async and `*Sync` variants of a large method set.
+  Required methods are `open`, `stat`, `lstat`, `readdir`, `mkdir`, `rmdir`, `unlink`, and `rename`.
+  Optional methods include `link`, `readFile`, `writeFile`, `appendFile`, `exists`, `copyFile`, `realpath`, `access`, `readlink`, `symlink`, `statfs`, and the `watch*` family.
+  Manual coverage is easy to miss.
+* An SDK update can add a new `VirtualProvider` operation at any point.
+  Gondolin is an actively changing, "early" SDK (0.12.0), with breaking reshapes as recently as 0.6.0.
 
 ## Considered Options
 
-* Extend `VirtualProviderClass` and override the methods that need policy
-  enforcement
-* Wrap the real provider in a `Proxy`, driven by an explicit method→access
-  table, with every method the table doesn't recognize defaulting to a thrown
-  `EPERM`
+* Extend `VirtualProviderClass` and override methods that need policy enforcement
+* Wrap the real provider in a `Proxy` driven by an explicit method→access table.
+  Throw `EPERM` for every method the table does not recognize.
 
 ## Decision Outcome
 
-Chosen option: "`Proxy` wrapper over an explicit method→access table", because
-a subclass gives no type checking and silently leaks any method the
-implementer forgets to override, while a `Proxy` defaults an unrecognized
-method name to a thrown `EPERM` — so a future Gondolin release that adds a new
-VFS operation fails loudly and immediately instead of leaking ungated access
-through it. This also makes R13 (whether `VirtualProviderClass` correctly
-delegates unoverridden methods) moot for the critical path, since nothing here
-depends on that delegation behavior at all. Confirmed in implementation
-(`src/vfs/glob-policy.ts`, commit `0b3fcc4`): every operation makes its own
-top-level policy decision before ever touching the backend, rather than
-inheriting `VirtualProviderClass`'s base-class defaults for `readFile`/
-`writeFile`/`appendFile`/`exists` (verified these are built on `open`/`stat`
-internally and would otherwise call `this.open` against the raw, unwrapped
-backend, bypassing the wrapper entirely).
+Chosen option: "`Proxy` wrapper over an explicit method→access table".
+A subclass lacks type checking and silently leaks methods the implementer
+forgets to override. A `Proxy` throws `EPERM` for an unrecognized method name.
+If a future Gondolin release adds a VFS operation, it fails loudly and
+immediately instead of allowing ungated access.
+
+R13 asks whether `VirtualProviderClass` correctly delegates unoverridden
+methods. That behavior is moot for the critical path because this design does
+not depend on it.
+
+The implementation in `src/vfs/glob-policy.ts` (commit `0b3fcc4`) confirmed that
+every gated operation makes its own top-level policy decision before touching
+the backend. `statfs` and `internalModuleStat` pass through without policy
+checks. It does not inherit the base-class defaults for
+`readFile`/`writeFile`/`appendFile`/`exists`. Those defaults use `open`/`stat`
+internally. They call `this.open` against the raw backend and bypass the wrapper
+entirely.
 
 ### Consequences
 
-* Good, because an SDK update adding a new VFS operation is a fail-closed
-  event (a thrown `EPERM` surfaces immediately) rather than a silent gap in
-  policy coverage.
-* Good, because the explicit method→access table is the single place the
-  full set of gated operations is enumerated and reviewable, rather than being
-  implicit in "whatever wasn't overridden."
-* Bad, because every new `VirtualProvider` method the SDK ships still has to
-  be explicitly added to the table before it can be used at all — the Proxy's
-  safety is bought by initially refusing anything not yet accounted for, which
-  is a deliberate cost, not a free win.
-* Neutral, because this closes several bypasses beyond the subclass-vs-proxy
-  question itself as part of the same implementation: symlink-indirection
-  re-checking against `realpath()` with fail-closed behavior on resolver
-  errors, gating both path arguments of `link()`/`symlink()`, and treating a
-  directory `rename` as covering its whole matched subtree — none of which
-  follow automatically from choosing a Proxy, but all of which the Proxy shape
-  made it natural to enumerate and enforce in one place.
+* Good, because an SDK update adding a VFS operation fails closed with an immediate `EPERM`.
+  It cannot silently create a policy gap.
+* Good, because the explicit method→access table lists all gated operations in one reviewable place.
+  Coverage does not depend on implicitly finding missing overrides.
+* Bad, because every new `VirtualProvider` method requires an explicit table entry before use.
+  The `Proxy` initially refuses every operation the table does not cover. This safety has a deliberate maintenance cost.
+* Neutral, because the same implementation closes additional bypasses beyond the subclass-versus-proxy choice.
+  It rechecks symlink indirection against `realpath()` and fails closed on resolver errors.
+  It gates both path arguments of `link()`/`symlink()` and treats directory `rename` as covering the whole matched subtree.
+  A `Proxy` does not provide these checks automatically. Its shape helps list and enforce them in one place.

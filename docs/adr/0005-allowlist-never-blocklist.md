@@ -6,86 +6,77 @@ Accepted
 
 ## Context and Problem Statement
 
-Several parts of Corb gate access to something with a large, evolving command
-surface: git and `gh` invocations, outbound network hosts, and the GitHub REST
-API's methods and paths. For each of these, policy could either enumerate what
-is forbidden (a blocklist) or enumerate what is permitted (an allowlist). Which
-should Corb use?
+Several parts of Corb gate access to large command surfaces that keep changing.
+These include git and `gh` invocations, outbound network hosts, and GitHub REST
+API methods and paths. Policy can enumerate forbidden actions (a blocklist) or
+permitted actions (an allowlist). Which fits Corb?
 
 See `docs/design.md` §1 ("Allowlist, never blocklist, for anything with a
-CLI-sized surface") and §4 (the local git/gh gate), and
-`docs/gondolin-notes.md` §4 (`allowedHosts`) and the `[egress.github-api]`
-config in the project plan.
+CLI-sized surface") and §4 (the local git/gh gate).
+Also see `docs/gondolin-notes.md` §4 (`allowedHosts`) and the
+`[egress.github-api]` config in the project plan.
 
 ## Decision Drivers
 
-* A blocklist over a tool the size of `git` or `gh` cannot be completed:
-  blocking five git subcommands still leaves `--git-dir`, `--work-tree`,
-  `--exec-path`, `remote add` to an arbitrary URL, `push`, `svn`, `daemon`;
-  blocking `gh auth` still leaves `gh api` with the entire REST surface
-  including arbitrary `PUT`/`DELETE`.
-* Enumerating what is permitted is finite and reviewable; enumerating what is
-  forbidden is not, because the tool's authors keep adding surface Corb would
-  have to track.
-* `allowedHosts`'s own sentinel behavior in Gondolin's `createHttpHooks`
-  underscores the same asymmetry at the network layer: omitting the field
-  means allow-all, and an explicit empty array means deny-all — there is no
-  safe default, only an explicit list.
+* A complete blocklist for a tool the size of `git` or `gh` is impractical.
+  Blocking five git subcommands still leaves `--git-dir`, `--work-tree`, `--exec-path`, `remote add` to an arbitrary URL, `push`, `svn`, `daemon`.
+  Blocking `gh auth` still leaves `gh api` with the entire REST surface and arbitrary `PUT`/`DELETE`.
+* Enumerating permitted actions is finite and reviewable.
+  Enumerating forbidden actions is not, because the tool's authors keep adding surface Corb must track.
+* Gondolin's `createHttpHooks` and its `allowedHosts` sentinel behavior show the same network-layer asymmetry.
+  Omitting the field allows all hosts. An explicit empty array denies all hosts.
+  Safety requires an explicit list rather than reliance on a default.
 
 ## Considered Options
 
 * Blocklist specific dangerous subcommands, flags, hosts, or API paths
-* Allowlist: enumerate exactly what is permitted, deny everything else by
-  default
+* Allowlist: enumerate permitted actions and deny everything else by default
 
 ## Decision Outcome
 
-Chosen option: "Allowlist", applied consistently to the local git/gh gate
-(`policygate`'s `blockedSubcommands`/`blockedFlags`, which is itself an
-acknowledged exception — see Consequences), the egress host allowlist
-(`createHttpHooks({ allowedHosts })`), the SSH repo allowlist
-(`ssh.execPolicy`), and the GitHub API method/path gate
-(`[egress.github-api].methods`/`deny-paths`), because a blocklist over any of
-these surfaces cannot be completed and a missed case fails open silently, while
-an allowlist's failure mode is a false denial — visible and safe.
+Chosen option: "Allowlist". Apply it to the local git/gh gate,
+egress host allowlist (`createHttpHooks({ allowedHosts })`), and SSH repo
+allowlist (`ssh.execPolicy`). Also apply it to the GitHub API method/path gate
+(`[egress.github-api].methods`/`deny-paths`). The local gate uses
+`policygate`'s `blockedSubcommands`/`blockedFlags`, an acknowledged exception
+explained below.
+
+A complete blocklist over these surfaces is impractical. A missed case fails
+open silently. An allowlist's failure mode is a visible, safe false denial.
 
 ### Consequences
 
-* Good, because a miss in an allowlist denies something that should have been
-  permitted (loud, safe, and fixable by widening the list), while a miss in a
-  blocklist permits something that should have been denied (silent and
-  unsafe).
-* Good, because this makes the "trust ratchet" concept coherent: widening an
-  allowlist is a detectable, confirmable event, whereas there is no equivalent
-  well-defined notion of "widening" a blocklist.
-* Bad, because the local git/gh gate is itself necessarily a blocklist
-  (`blockedSubcommands`, `blockedFlags`) rather than a pure allowlist, since
-  enumerating every permitted git/gh invocation up front is impractical — this
-  is accepted specifically because the gate's failure mode is bounded: a bypass
-  there means "the guest does something to itself," never "the host does
-  something on the guest's behalf" (see the no-host-side-execution ADR), so the
-  cost of an incomplete enumeration is tolerable only in that one place. This
-  bound is narrower than it first looks, though: §4/§5's out-of-guest content
-  check for `commit`/`push` is dispatched off the *same* resolved subcommand
-  the local blocklist matches on, so an incomplete `blockedFlags` entry (e.g.
-  missing `-C`, which shifts the subcommand out of `args[0]` entirely) can
-  silently skip the content check too — not just the local table. This hazard
-  was real, not hypothetical: a later review found `blockedFlags` covered only
-  the specific flags its authors had thought to enumerate (`-C`, `--git-dir`,
-  `--work-tree`, and a handful of others), while git's own
-  global-flag-before-subcommand form accepts many more (`--no-pager`,
-  `--bare`, `--literal-pathspecs`, and others), each silently skipping both
-  the subcommand blocklist and the content check the same way `-C` would
-  have. Completing `blockedFlags` for this purpose would just be a second,
-  unwinnable blocklist nested inside the first one — so the actual fix is not
-  a longer `blockedFlags`, it is `AllowedGlobalFlags`/`ResolveSubcommand`
-  (`guest/internal/gate/policy.go`): a real allowlist of exactly which flags
-  may precede the subcommand, consistent with this ADR's own decision rather
-  than an exception to it. `blockedFlags` continues to cover `-C`/
-  `--git-dir`/`--work-tree`/etc. as redundant defense-in-depth — those flags
-  retarget which repository or config git reads, so they stay denied
-  outright, and they would also fail the new allowlist independently — but it
-  is no longer the mechanism this particular hazard depends on.
-* Neutral, because this pushes ongoing maintenance cost onto keeping the
-  allowlists current (new egress hosts, new allowed GitHub API paths) rather
-  than onto tracking a moving target of things to forbid.
+* Good, because an allowlist miss denies a permitted action. The denial is loud, safe, and fixable by widening the list.
+  A blocklist miss silently permits a forbidden action, which is unsafe.
+* Good, because the "trust ratchet" has a clear meaning.
+  Widening an allowlist is a detectable, confirmable event. A blocklist has no equivalent well-defined notion of "widening".
+* Bad, because enumerating every permitted git/gh invocation first is impractical.
+  The local git/gh gate therefore uses a blocklist (`blockedSubcommands`, `blockedFlags`) rather than a pure allowlist.
+  This exception is acceptable only because a bypass lets "the guest do something to itself".
+  It never lets "the host do something on the guest's behalf" (see the no-host-side-execution ADR).
+
+  That bound is narrower than it first looks. §4/§5's out-of-guest content check
+  for `commit`/`push` uses the *same* resolved subcommand as the local blocklist.
+  An incomplete `blockedFlags` entry can silently skip both the content check
+  and the local table. For example, an unblocked `-C` shifts the subcommand out of
+  `args[0]` entirely.
+
+  A later review found this hazard in practice. `blockedFlags` covered only
+  flags its authors chose to enumerate: `-C`, `--git-dir`, `--work-tree`, and a
+  handful of others. Git accepts many more global flags before the subcommand.
+  Examples include `--no-pager`, `--bare`, and `--literal-pathspecs`.
+  Each silently skipped both the subcommand blocklist and content check, as an
+  unblocked `-C` does.
+
+  Completing `blockedFlags` for this purpose requires another unwinnable
+  blocklist inside the first. The fix uses `AllowedGlobalFlags`/`ResolveSubcommand`
+  (`guest/internal/gate/policy.go`) to allowlist exactly which flags can precede
+  the subcommand. This follows the ADR's decision rather than adding another
+  exception.
+
+  `blockedFlags` still denies repository- or config-retargeting flags such as
+  `-C`/`--git-dir`/`--work-tree` as redundant defense-in-depth.
+  These flags also fail the new allowlist independently.
+  This hazard no longer depends on `blockedFlags` completeness.
+* Neutral, because ongoing maintenance keeps allowlists current with new egress hosts and allowed GitHub API paths.
+  It does not track a moving target of forbidden actions.

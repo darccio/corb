@@ -6,70 +6,66 @@ Accepted
 
 ## Context and Problem Statement
 
-Corb runs Pi (`@earendil-works/pi-coding-agent`) inside the guest, and Pi
-itself already supports over two dozen model providers, each authenticated via
-its own named environment variable, `auth.json` entry, or OAuth subscription.
-Corb also needs to bind the actual credential host-side (via
-`createHttpHooks({ secrets })`) so it never enters the guest. Should Corb
-hardcode a specific provider (name, API host, credential env-var name), or stay
-agnostic and pass the user's choice through to Pi unchanged?
+Corb runs Pi (`@earendil-works/pi-coding-agent`) inside the guest.
+Pi already supports over two dozen model providers. Each uses its own named
+environment variable, `auth.json` entry, or OAuth subscription for
+authentication. Corb must bind the actual credential host-side via
+`createHttpHooks({ secrets })`, so it never enters the guest.
+Does Corb need hardcoded provider names, API hosts, and credential environment
+variable names, or can it pass the user's choice through to Pi?
 
 See `docs/design.md` §8 ("Provider and model selection") and commit `341a073`
 ("record provider-agnostic secrets/agent design decision").
 
 ## Decision Drivers
 
-* Pi already has full multi-provider support built in; Corb reimplementing a
-  provider table would just drift from Pi's own as Pi adds or changes
-  providers.
-* `buildSecretBindings()` (`src/vm/egress.ts`, M3.2) is already fully generic:
-  it binds whatever `[secrets.NAME]` entries a workspace configures, regardless
-  of what provider that name happens to belong to.
-* Before this decision, `session.ts` had a hardcoded `ANTHROPIC_HOST` constant,
-  a `requireApiKey` check, and a `MissingApiKeyError`, meaning every `corb run`
-  silently ignored a workspace's actual `[secrets]`/`[egress]` configuration
-  and always assumed a single Anthropic-shaped setup.
+* Pi already has full multi-provider support.
+  A separate Corb provider table risks drifting from Pi's as Pi adds or changes providers.
+* `buildSecretBindings()` (`src/vm/egress.ts`, M3.2) is already generic.
+  It binds every workspace-configured `[secrets.NAME]` entry, regardless of provider.
+* Before this decision, `session.ts` hardcoded `ANTHROPIC_HOST`, a `requireApiKey` check, and `MissingApiKeyError`.
+  Every `corb run` silently ignored the workspace's `[secrets]`/`[egress]` configuration and assumed an Anthropic-shaped setup.
 
 ## Considered Options
 
-* Corb hardcodes a single supported provider (model API host, credential
-  env-var name) and only that one
-* Corb maintains its own table mapping provider names to hosts and credential
-  env-var names, wired through `[agent].provider`
-* Corb stays provider-agnostic: `[secrets.NAME]` binds whatever host
-  environment variable the user's chosen provider (via Pi) expects, and
-  `[agent].provider`/`[agent].model` pass through untouched to Pi's own
-  `--provider`/`--model` flags
+* Corb hardcodes one supported provider's API host and credential environment variable name
+* Corb maintains its own provider-to-host-and-credential table, wired through `[agent].provider`
+* Corb stays provider-agnostic.
+  `[secrets.NAME]` binds the host environment variable the user's chosen provider expects through Pi.
+  `[agent].provider`/`[agent].model` pass unchanged to Pi's `--provider`/`--model` flags.
 
 ## Decision Outcome
 
-Chosen option: "Provider-agnostic pass-through", because Pi already solves
-multi-provider selection and credential resolution, and Corb's job is narrow:
-pass the user's choice through, not reimplement provider logic. Corb does not
-hardcode any model provider's name, API host, or credential env-var name.
-`[agent].provider`/`[agent].model` translate directly into Pi's own
-`--provider`/`--model` CLI flags, and `[secrets.NAME]` binds whatever host
-environment variable the user's chosen provider expects — the user is
-responsible for spelling the secret name exactly as Pi's own table expects
-(e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). Because
-`buildSecretBindings()` and `buildGuestEnv`'s environment-spreading were already
-generic, no new mechanism was needed — the decision was to actually wire the
-existing generic mechanism into `session.ts` and delete the Anthropic-specific
-hardcoding (M3.4), not to build something new.
+Chosen option: "Provider-agnostic pass-through".
+Pi already handles multi-provider selection and credential resolution.
+For non-brokered providers using `[secrets.NAME]`, Corb passes the user's choice
+through. It does not reimplement provider logic or hardcode model provider names,
+API hosts, or credential environment variable names.
+Host-brokered providers registered in `PROVIDERS` (`src/auth/provider.ts`)
+and accessed through `corb login` require provider-specific Corb code.
+They are the scoped exception described in [ADR 0012](0012-host-brokered-oauth-providers.md).
+
+`[agent].provider`/`[agent].model` translate directly into Pi's
+`--provider`/`--model` CLI flags. `[secrets.NAME]` binds the host environment
+variable the user's chosen provider expects. The user must match Pi's secret
+names exactly, for example `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+`GEMINI_API_KEY`.
+
+`buildSecretBindings()` and `buildGuestEnv`'s environment spreading were already
+generic, so no new mechanism was needed. M3.4 wired the existing mechanism into
+`session.ts` and removed the Anthropic-specific hardcoding.
 
 ### Consequences
 
-* Good, because adding support for a new provider requires no Corb code
-  change at all — it is purely a matter of the user's workspace config naming
-  the right secret and the right `--provider`/`--model` values, both of which
-  Pi already understands.
-* Good, because Corb's provider knowledge cannot drift out of sync with Pi's
-  own, since Corb maintains no copy of that name-to-provider table to go stale.
-* Bad, because Corb has no way to validate that a `[secrets.NAME]` entry is
-  spelled correctly for the chosen provider ahead of time — a misnamed secret
-  fails only once the guest actually tries to use it, inside Pi's own
-  no-credentials UX, after the VM has already booted.
-* Neutral, because `corb doctor`'s job here is deliberately soft: warn (not
-  hard-block) when no `[secrets.*]` entry is configured at all, pointing at
-  `corb explain` and Pi's own provider docs, rather than trying to guess which
-  provider the user intends to use.
+* Good, because supporting a new non-brokered provider through `[secrets.NAME]` requires no Corb code change.
+  The workspace config names the right secret and `--provider`/`--model` values that Pi already understands.
+* Good, because non-brokered providers using `[secrets.NAME]` need no Corb provider table.
+  There is no separate table that can drift out of sync with Pi's.
+* Bad, because Corb cannot validate a `[secrets.NAME]` spelling for the chosen provider ahead of time.
+  `buildSecretBindings()` detects absent or empty required host secrets during
+  `buildEgressConfig()`, before `VM.create()`. Absent optional secrets are omitted.
+  A misnamed secret in the host environment may fail when Pi tries to use it after VM boot.
+  Pi's own no-credentials UX reports that failure.
+* Neutral, because `corb doctor` warns without blocking when no `[secrets.*]` entry is configured for an API-key provider.
+  Recognized brokered providers are exempt: `checkSecretsConfigured()` returns `ok` for them.
+  It points to `corb explain` and Pi's provider docs, without guessing the intended provider.

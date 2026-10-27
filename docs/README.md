@@ -1,11 +1,11 @@
 # Corb documentation
 
 Corb runs Pi in a restricted micro-VM. Filesystem and network rules apply to all
-guest processes; command shims check selected tool invocations. These guides
+guest processes. Command shims check selected tool invocations. These guides
 describe the implemented behavior and identify planned features.
 
-Start with [Getting started](getting-started.md) for the one-time host setup,
-then follow the [development walkthrough](walkthrough.md) to start a workspace,
+Start with [Getting started](getting-started.md) for the one-time host setup.
+Then follow the [development walkthrough](walkthrough.md) to start a workspace,
 apply project settings, develop with Pi, and review the result.
 
 - [Getting started](getting-started.md): dependencies, image build,

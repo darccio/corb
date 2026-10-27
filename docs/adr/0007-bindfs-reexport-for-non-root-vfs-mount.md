@@ -6,79 +6,68 @@ Accepted
 
 ## Context and Problem Statement
 
-Corb drops the agent process to uid 1000 (`dropcap`) before it runs, so that
-nothing in the agent's process tree holds root privilege. Verifying this against
-a real boot (M1.6) surfaced a blocker: Gondolin's `sandboxfs` mounts every
-`vfs.mounts` guest path with a compile-time-literal FUSE option string
-(`user_id=0,group_id=0,default_permissions`, no `allow_other` — `main.zig`'s
-`mountFuse`), so once `dropcap` drops to uid 1000, the agent has zero
-filesystem access: every `stat`/`open`/write against the workspace mount
-returns `EACCES` at the guest kernel FUSE layer, before any host-side policy is
-ever consulted. No upstream fix exists (Gondolin issue #76, closed unanswered
-against 0.12.0), and there is no config surface to add `allow_other` to
-`sandboxfs`'s own mount. How should this be fixed without giving up the
-privilege drop?
+Corb drops the agent process to uid 1000 (`dropcap`) before it runs.
+Nothing in the agent's process tree holds root privilege.
+A real boot during M1.6 verification exposed a blocker.
+Gondolin's `sandboxfs` mounts every `vfs.mounts` guest path with a compile-time-literal
+FUSE option string: `user_id=0,group_id=0,default_permissions`, with no
+`allow_other` (`main.zig`'s `mountFuse`).
+
+Once `dropcap` drops to uid 1000, every `stat`/`open`/write against the workspace
+mount returns `EACCES`. The guest kernel FUSE layer denies access before
+host-side policy runs. No upstream fix exists: Gondolin issue #76 closed
+unanswered against 0.12.0. No configuration can add `allow_other` to
+`sandboxfs`'s own mount. What fix preserves the privilege drop?
 
 See `docs/gondolin-notes.md` R5, R12, R18, and `docs/design.md` §2.
 
 ## Decision Drivers
 
-* The privilege drop (uid 1000) and actual filesystem access are both
-  non-negotiable; neither can be sacrificed for the other.
-* Whatever fixes this becomes a permanent, load-bearing part of the boot
-  sequence, on the same tier of importance as `dropcap` itself.
-* Options were evaluated on: coupling to unofficial forks, write performance,
-  and whether they leave a visible artifact inside the host-mounted directory.
+* Both the privilege drop (uid 1000) and filesystem access are non-negotiable.
+* The fix becomes a permanent part of the boot sequence, as important as `dropcap` itself.
+* Evaluation criteria were coupling to unofficial forks, write performance, and visible artifacts inside host-mounted directories.
 
 ## Considered Options
 
 * A patched `sandboxfs` binary adding `allow_other`
-* `fuse-overlayfs` (from Alpine's `community` stable repo) re-exporting the raw
-  mount
-* `bindfs`, built from source (not packaged for any current Alpine stable
-  branch), re-exporting the raw mount with `--force-user`/`--force-group`
+* `fuse-overlayfs` (from Alpine's `community` stable repo) re-exporting the raw mount
+* `bindfs`, built from source to re-export the raw mount with `--force-user`/`--force-group`.
+  It is not packaged for any current Alpine stable branch.
 
 ## Decision Outcome
 
 Chosen option: "`bindfs`, built from source, with a pinned and independently
-re-derived checksum", because it is purpose-built for exactly this job — a
-straight passthrough re-export with uid/gid squashing and `allow_other` on by
-default, no overlay/copy-up semantics at all — and measured smaller overhead
-than the alternative that also worked. The raw `sandboxfs` mount stays
-untouched, root-only, at an internal-only guest path
-(`/mnt/corb-raw/work`); `bindfs --force-user=<uid> --force-group=<gid>`
-re-exports it at the public `/work`, spliced in via `rootfsInitExtra` after
-`sandboxfs` mounts and before `sandboxd` starts accepting exec requests.
+re-derived checksum". It provides passthrough re-export with uid/gid squashing
+and `allow_other` on by default, without overlay/copy-up semantics.
+It measured less overhead than the other working option.
+
+The raw `sandboxfs` mounts stay root-only at internal-only guest paths.
+`bindfs --force-user=<uid> --force-group=<gid>` re-exports each workspace
+from `/mnt/corb-raw/<name>` to `/work/<name>`, and the gate mount from
+`/mnt/corb-raw-gate` to `/run/corb`. `rootfsInitExtra` inserts this step after
+`sandboxfs` mounts and before `sandboxd` accepts exec requests.
 
 ### Consequences
 
-* Good, because it closes the blocker without forking anyone else's code: the
-  patched-`sandboxfs` option was rejected specifically because it would couple
-  Corb to a vendored fork of a Zig source tree Corb doesn't own.
-* Good, because it leaves no artifact on the host filesystem — `bindfs` has no
-  workdir concept (it is not a copy-up filesystem), unlike `fuse-overlayfs`,
-  whose `.corb-fuse-overlay-workdir` directory was visible inside every
-  mounted workspace directory on the host disk.
-* Good, because it measured faster than the alternative that also worked:
-  ~1.15–1.76x overhead on reads (`find`/`grep`) and ~1.44x on small sequential
-  writes, versus `fuse-overlayfs`'s ~3x write-loop penalty in the same
-  benchmark.
-* Good, because it needs no SUID binary at runtime (`fusermount3` is not
-  required when the caller is already root, which the boot-time re-export
-  always is), whereas the `fuse-overlayfs` predecessor required stripping the
-  SUID bit off `fusermount3` as a second layer of mitigation.
-* Bad, because `bindfs` is not packaged for any current Alpine stable branch
-  (checked 3.22, 3.23, 3.24) — it exists only in `edge/testing`, a provenance
-  tier this project avoids, so it must be built from source at image-build
-  time, with its source tarball and checksum re-derived from Alpine's own
-  aports build recipe rather than trusted from a prior run.
-* Bad, because it adds a second FUSE hop (agent → `bindfs` → `sandboxfs` →
-  virtio RPC → host) on every guest workspace filesystem operation — a real,
-  if modest, and now-measured performance cost that a real build (not just a
-  synthetic file tree) still hasn't been benchmarked against (R6 remains open
-  for that specific number).
-* Neutral, because this fix converts what looked like a `stat`-level
-  uid/gid-reporting question (R5/R12's original framing) into a
-  kernel-FUSE-layer mounting-uid problem — the lesson generalizes: the actual
-  blocker was found only by booting a real VM and testing as the
-  dropped-privilege user, not by reading the SDK's types.
+* Good, because the fix closes the blocker without forking other projects' code.
+  The patched-`sandboxfs` option couples Corb to a vendored fork of a Zig source tree it does not own.
+* Good, because `bindfs` leaves no artifact on the host filesystem.
+  It is not a copy-up filesystem and has no workdir concept.
+  In contrast, `fuse-overlayfs` left `.corb-fuse-overlay-workdir` visible inside every mounted workspace directory on the host disk.
+* Good, because it measured faster than the other working option.
+  Reads (`find`/`grep`) had ~1.15–1.76x overhead, and small sequential writes had ~1.44x overhead.
+  In the same benchmark, `fuse-overlayfs` had a ~3x write-loop penalty.
+* Good, because it needs no SUID binary at runtime.
+  The boot-time re-export always runs as root, so it does not require `fusermount3`.
+  The `fuse-overlayfs` predecessor required stripping the SUID bit from `fusermount3` as a second mitigation layer.
+* Bad, because `bindfs` is absent from current Alpine stable branches (checked 3.22, 3.23, 3.24).
+  It exists only in `edge/testing`, whose provenance tier this project avoids.
+  The image build must compile it from source.
+  Re-derive its source tarball and checksum from Alpine's aports build recipe. Do not trust a prior run.
+* Bad, because every guest workspace filesystem operation adds a second FUSE hop.
+  The path is agent → `bindfs` → `sandboxfs` → virtio RPC → host.
+  The measured performance cost is modest, but a real build remains unbenchmarked.
+  R6 remains open for that number beyond the synthetic file-tree benchmark.
+* Neutral, because R5/R12 originally framed this as a `stat`-level uid/gid-reporting question.
+  The fix instead concerns the kernel FUSE mounting uid.
+  Booting a real VM and testing as the unprivileged user exposed the blocker. Reading the SDK types did not.
