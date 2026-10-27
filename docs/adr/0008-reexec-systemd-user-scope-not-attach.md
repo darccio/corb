@@ -6,72 +6,61 @@ Accepted
 
 ## Context and Problem Statement
 
-Gondolin provides no in-guest resource governance at all — no cgroups, no
-rlimits, nothing to stop a guest process from burning CPU, filling memory, or
-forking without bound. Any resource limit on a session has to be applied to the
-host-side hypervisor process from outside the SDK. `vm.getHostPid()` returns
-the real QEMU process id, but only after `VM.create()` has already started the
-VM. How should host-side resource limits (`[vm.limits]`: memory, task count,
-CPU quota) actually be applied?
+Gondolin provides no in-guest resource governance: no cgroups or rlimits.
+Nothing stops a guest process from exhausting CPU or memory, or forking without
+bound. Session resource limits must apply to the host-side hypervisor process
+from outside the SDK. `vm.getHostPid()` returns the real QEMU process id only
+after `VM.create()` starts the VM. How can Corb apply host-side resource limits
+(`[vm.limits]`: memory, task count, CPU quota)?
 
 See `docs/design.md` §7 ("Host resource limits: re-exec, not attach") and
 `docs/gondolin-notes.md` R15.
 
 ## Decision Drivers
 
-* `vm.getHostPid()` only resolves once `VM.create()` has returned, so attaching
-  a cgroup to that pid afterward leaves a window, of unknown length, during
-  which the guest is already running completely unconstrained.
-* There is nothing in the SDK to narrow that window or report when it closes —
-  it isn't observable, only inferable.
-* The limit needs to exist *before* the hypervisor does, not be retrofitted
-  onto a process that's already running.
+* `vm.getHostPid()` only resolves after `VM.create()` returns.
+  Attaching a cgroup afterward leaves an unknown window in which the guest runs without constraints.
+* The SDK cannot narrow that window or report when it closes.
+  Its duration is inferable, but not observable.
+* The limit must exist *before* the hypervisor, rather than attach to a process that is already running.
 
 ## Considered Options
 
-* Attach a cgroup to the host pid after `VM.create()` returns, using
-  `vm.getHostPid()`
-* Re-exec `corb run` itself under a transient `systemd-run --user --scope`
-  before `VM.create()` is ever reached, with the limit properties passed to
-  `systemd-run` directly
+* Attach a cgroup to the host pid after `VM.create()` returns. Get the pid with `vm.getHostPid()`
+* Re-exec `corb run` under a transient `systemd-run --user --scope` before reaching `VM.create()`.
+  Pass the limit properties directly to `systemd-run`.
 
 ## Decision Outcome
 
-Chosen option: "Re-exec into a systemd user scope before `VM.create()`",
-because it eliminates the timing race by construction rather than trying to
-shrink it: when `[vm.limits]` is configured and `CORB_SCOPED` is unset, `corb
-run` re-executes itself (`process.execPath`, `process.argv.slice(1)`, never a
-reconstructed command string) under `systemd-run --user --scope --collect
---quiet -p MemoryMax=… -p TasksMax=… -p CPUQuota=…`, with `CORB_SCOPED=1` set in
-the child's environment so it doesn't re-exec again. `stdio` is inherited, so
-the agent's TUI and pty behave exactly as a direct run, and the parent process
-exits with the child's exact exit code — this is a re-exec, not a supervisor.
-The limit then covers the whole process tree (`corb`, QEMU, everything they
-spawn) from before QEMU exists, and no pid observation is ever needed. Risk R15
-("cgroup attach timing") is closed as moot, not answered, since the attach was
-never attempted.
+Chosen option: "Re-exec into a systemd user scope before `VM.create()`".
+It eliminates the timing race by construction. When `[vm.limits]` is configured
+and `CORB_SCOPED` is unset, `corb
+run` re-executes itself under `systemd-run --user --scope --collect
+--quiet -p MemoryMax=… -p TasksMax=… -p CPUQuota=…`.
+It uses `process.execPath` and `process.argv.slice(1)`, never a reconstructed
+command string. The child's environment sets `CORB_SCOPED=1` to prevent
+another re-exec.
+
+The child inherits `stdio`, so the agent's TUI and pty behave as in a direct
+run. The parent exits with the child's exact exit code. This is a re-exec,
+rather than a supervisor.
+
+The limit covers the whole process tree (`corb`, QEMU, and their children)
+before QEMU exists. No pid observation is needed. R15 ("cgroup attach timing")
+is moot because this design never attempts the attach.
 
 ### Consequences
 
-* Good, because there is no unconstrained window at all — the limit is in
-  force before the hypervisor process exists, which is a stronger guarantee
-  than any window-narrowing on the attach-after-launch approach could achieve.
-* Good, because rebuilding the command from `process.execPath`/`argv` (not a
-  textual `corb …` reconstruction) means the re-exec behaves identically under
-  `node src/cli.ts run …` in development and under the installed bin shim.
-* Bad, because this only works where a delegated systemd user scope with the
-  needed controllers (`memory`, `pids`, `cpu`) exists — on a platform lacking
-  `systemd-run`, or with a user session missing controller delegation, the
-  mechanism is skipped entirely (never partially applied) and the session runs
-  unlimited with only a stderr warning, matching the same fail-open-and-say-so
-  posture used elsewhere. macOS gets no host-side resource limits at all under
-  this design, and no polling-based equivalent is built to compensate.
-* Bad, because a subtle mapping detail has to be maintained by hand: the pids
-  controller's systemd property is spelled `TasksMax=`, not `PidsMax=` — using
-  the latter fails outright with "Unknown assignment," confirmed only by
-  testing against real `systemd-run` rather than assumed from the controller's
-  own name.
-* Neutral, because this is a re-exec, not a supervisor: the parent process
-  exits with the child's exact code and does not stay around to manage it,
-  which keeps signal handling and shutdown behavior simple but means there is
-  no separate host-side process watching the constrained one.
+* Good, because the limit takes effect before the hypervisor process exists.
+  There is no unconstrained window. Attach-after-launch can only narrow that window.
+* Good, because `process.execPath`/`argv` preserves behavior under both `node src/cli.ts run …` and the installed bin shim.
+  It avoids textual `corb …` reconstruction.
+* Bad, because this requires a delegated systemd user scope with the needed controllers (`memory`, `pids`, `cpu`).
+  If `systemd-run` or user-session controller delegation is missing, Corb skips the mechanism entirely.
+  It never applies limits partially. The session runs unlimited with a stderr warning, consistent with other fail-open-and-say-so behavior.
+  macOS gets no host-side resource limits, and this design provides no polling equivalent.
+* Bad, because the pids controller maps to `TasksMax=`, rather than `PidsMax=`.
+  The latter fails with "Unknown assignment," as real `systemd-run` testing confirmed.
+  This mapping requires manual maintenance. The controller's name alone does not establish the correct property.
+* Neutral, because the parent exits with the child's exact code without staying to manage it.
+  This keeps signal handling and shutdown simple. No separate host-side process watches the constrained process.
