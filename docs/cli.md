@@ -135,13 +135,21 @@ sidecar while its recorded host process is alive. Inspect proposed removals with
 ## Doctor
 
 ```bash
-corb doctor [--verify-secrets]
+corb doctor [--verify-secrets] [--json]
 ```
 
 Check the host environment, dependencies, cgroup delegation, and required
 credential variables. When `[agent].provider` uses a subscription login, it also
 checks that the login exists and reports the API hosts Corb allows automatically.
 `--verify-secrets` additionally sends the configured credential-verification requests.
+
+`--json` prints one JSON object with a `checks` array and an overall `ok` boolean.
+Each check contains `name`, `status` (`ok`, `warn`, or `fail`), and `detail`.
+Warnings keep `ok` true. Any failed check sets `ok` to false.
+
+If any check fails, Doctor exits with code 1. Otherwise, it exits with code 0.
+Both output formats use these exit codes.
+Combine `--json` with `--verify-secrets` to include credential checks. Neither format prints secret values.
 
 The `workspace-trust` line counts trusted, changed and never-trusted workspaces.
 Narrowed settings count as trusted. Pending `--trust-config` changes are normal and do not cause a warning.
