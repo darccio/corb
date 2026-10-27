@@ -23,6 +23,14 @@ commands.
 Rules can hide paths, deny reads and writes, deny writes alone, or route writes
 into memory. Shadow writes leave the host file unchanged. Reads, metadata, and
 listings still show that host file. Shadow writes do not provide an overlay.
+
+The `copy-on-write` mode keeps a private session copy after a write. Reads,
+metadata, and listings then show that copy. Create, rename, and unlink update
+the private copy. Rename and hard-link operations across its boundary fail.
+The host stays unchanged. Corb drops the copies when the session ends.
+
+The session audit log marks these writes and states that Corb will drop them.
+
 Ordinary writable mounts modify the real host files.
 
 Host directories outside the chosen mounts are not exposed through the workspace
@@ -35,9 +43,12 @@ Git runs inside the guest, but files it changes can affect the user's next
 host Git command. Hooks, config settings, and `commondir` redirects can make
 host Git execute code outside the VM.
 
-Corb adds `deny-write` rules to every read/write mount by default. They protect
-the root `.git` entry, its config files and locks, `commondir`, and hooks.
-They also cover config and `commondir` in `.git/worktrees/*`, plus config,
+Corb adds Git rules to every read/write mount by default.
+Config files and their locks use `copy-on-write`. Guest Git commands can read
+their own config changes. The host config stays unchanged.
+The root `.git` entry, `commondir`, and hooks use `deny-write`.
+
+The rules also cover config and `commondir` in `.git/worktrees/*`, plus config,
 `commondir`, and hooks under `.git/modules/**`. Rules apply before user rules.
 They block replacing a protected entry and renaming a directory into a
 protected subtree. The [configuration guide](configuration.md#built-in-git-protection)

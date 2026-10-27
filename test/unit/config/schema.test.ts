@@ -7,6 +7,11 @@
 import { describe, expect, it } from "vitest";
 import { ConfigParseError, parseConfigLayer } from "../../../src/config/schema.ts";
 
+it("parses the copy-on-write path mode", () => {
+  const layer = parseConfigLayer('[[dir]]\nname = "repo"\nrules = [{ glob = "config*", mode = "copy-on-write" }]', "test");
+  expect(layer.dir?.[0]?.rules?.[0]?.mode).toBe("copy-on-write");
+});
+
 describe("config/schema: protect-git", () => {
   it.each([true, false])("parses protect-git = %s", (protectGit) => {
     const layer = parseConfigLayer(`[[dir]]\nname = "repo"\nprotect-git = ${protectGit}`, "test");

@@ -34,20 +34,20 @@ const EACCES: FsAccessOutcome = { kind: "deny", errno: "EACCES" };
  * `RuleMode`), `deny-write`, `deny-read`, `hidden`, `shadow-write`.
  */
 const MATRIX: Record<FsOpKind, Record<RuleMode, FsAccessOutcome>> = {
-  read: { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW },
-  write: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED },
-  stat: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW },
-  mutate: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED },
-  rename: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED },
-  "copy-source": { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW },
-  "copy-dest": { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED },
-  link: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED },
-  "access-exists": { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW },
-  "access-read": { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW },
-  "access-write": { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW },
-  readlink: { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW },
-  exists: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW },
-  realpath: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW },
+  read: { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  write: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  stat: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  mutate: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  rename: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  "copy-source": { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  "copy-dest": { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  link: { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": SHADOWED, "copy-on-write": ALLOW },
+  "access-exists": { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  "access-read": { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  "access-write": { "deny-write": EACCES, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  readlink: { "deny-write": ALLOW, "deny-read": EACCES, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  exists: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
+  realpath: { "deny-write": ALLOW, "deny-read": ALLOW, hidden: ENOENT, "shadow-write": ALLOW, "copy-on-write": ALLOW },
 };
 
 const OP_KINDS = Object.keys(MATRIX) as FsOpKind[];

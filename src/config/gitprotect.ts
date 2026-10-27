@@ -14,5 +14,5 @@ const GIT_PROTECTION_GLOBS = [
 
 /** Keep the order and reason stable: trust records compare both. */
 export function builtinGitRules(): DirRuleConfig[] {
-  return GIT_PROTECTION_GLOBS.map((glob) => ({ glob, mode: "deny-write", reason: "protect host Git metadata" }));
+  return GIT_PROTECTION_GLOBS.map((glob) => ({ glob, mode: glob.endsWith("config*") ? "copy-on-write" : "deny-write", reason: "protect host Git metadata" }));
 }

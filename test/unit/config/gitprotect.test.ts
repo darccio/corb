@@ -8,7 +8,7 @@ import { FakeVirtualProvider } from "../../fakes/provider.ts";
 describe("config/gitprotect", () => {
   const rules = toGlobRules("repo", builtinGitRules());
 
-  it("returns the fixed, ordered deny-write rules with a stable reason", () => {
+  it("returns the fixed, ordered rules with a stable reason", () => {
     expect(builtinGitRules()).toEqual([
       ".git",
       ".git/config*",
@@ -19,7 +19,7 @@ describe("config/gitprotect", () => {
       ".git/modules/**/config*",
       ".git/modules/**/commondir",
       ".git/modules/**/hooks/**",
-    ].map((glob) => ({ glob, mode: "deny-write", reason: "protect host Git metadata" })));
+    ].map((glob) => ({ glob, mode: glob.endsWith("config*") ? "copy-on-write" : "deny-write", reason: "protect host Git metadata" })));
     const changed = builtinGitRules();
     changed[0]!.reason = "changed";
     expect(builtinGitRules()[0]!.reason).toBe("protect host Git metadata");
@@ -34,7 +34,7 @@ describe("config/gitprotect", () => {
     ".git/modules/a/refs/heads/config", ".git/modules/a/modules/b/commondir",
     ".git/modules/a/modules/b/hooks/pre-commit",
   ])("protects %s", (target) => {
-    expect(matchRule(rules, target)?.mode).toBe("deny-write");
+    expect(matchRule(rules, target)?.mode).toBe(target.includes("config") ? "copy-on-write" : "deny-write");
   });
 
   it.each([
@@ -51,7 +51,7 @@ describe("config/gitprotect", () => {
       expect(ruleMayMatchUnderDirectory(rules, directory)).toBe(false);
       const backend = new FakeVirtualProvider();
       await backend.mkdir(`/${directory}`, { recursive: true });
-      const wrapped = withGlobPolicy(backend, { rules });
+      const wrapped = withGlobPolicy(backend, { rules, onDeny: () => {} });
       await expect(wrapped.rename(`/${directory}`, `/${directory}-renamed`)).resolves.toBeUndefined();
     },
   );
@@ -60,7 +60,7 @@ describe("config/gitprotect", () => {
     const backend = new FakeVirtualProvider();
     await backend.mkdir("/.git");
     await backend.writeFile("/.git/index", "old");
-    const wrapped = withGlobPolicy(backend, { rules });
+    const wrapped = withGlobPolicy(backend, { rules, onDeny: () => {} });
     await wrapped.writeFile("/.git/index.lock", "new");
     await wrapped.rename("/.git/index.lock", "/.git/index");
     expect(await backend.readFile("/.git/index", { encoding: "utf8" })).toBe("new");

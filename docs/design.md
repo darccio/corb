@@ -217,7 +217,7 @@ helper supports only exact-path and prefix matching.
 ### Rule model
 
 ```ts
-export type GlobRuleMode = "deny-write" | "deny-read" | "hidden" | "shadow-write";
+export type GlobRuleMode = "deny-write" | "deny-read" | "hidden" | "shadow-write" | "copy-on-write";
 
 export interface GlobRule {
   glob: string;    // "**/*_test.go" — ** matches across path segments
@@ -228,13 +228,14 @@ export interface GlobRule {
 
 Rules are evaluated in order and first match wins.
 
-Every read/write mount gets built-in Git `deny-write` rules before user rules,
+Every read/write mount gets built-in Git rules before user rules,
 even when no repository exists at startup. The computed `builtin-rules` field
 on `DirConfig` holds them separately from `rules`. The merge rebuilds this
 field from the final mode and `protect-git` flag. TOML cannot set it.
 Read-only mounts get an empty list because `ReadonlyProvider` already blocks
 writes. `protect-git` defaults to true and can be disabled per `[[dir]]`.
 
+Config files and locks use `copy-on-write`. Other Git rules use `deny-write`.
 The rules cover the root `.git` entry, config files and locks, hooks, and
 `commondir`, plus metadata under `.git/modules/**` and `.git/worktrees/*`.
 They do not start with `**/`, so unrelated directory renames remain available.
@@ -264,20 +265,20 @@ Otherwise `corb explain` can show an apparently active rule that matches nothing
 
 ### Semantics matrix
 
-| Operation | no rule | `deny-write` | `deny-read` | `hidden` | `shadow-write` |
-|---|---|---|---|---|---|
-| `stat` / `lstat` | allow | allow | allow | `ENOENT` | allow |
-| appears in `readdir` | yes | yes | yes | no | yes |
-| `open` for read | allow | allow | `EACCES` | `ENOENT` | allow |
-| `open` for write / create / truncate / append | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
-| `readFile` | allow | allow | `EACCES` | `ENOENT` | allow |
-| `writeFile` / `appendFile` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
-| `mkdir` / `rmdir` / `unlink` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
-| `rename`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
-| directory `rename` from or into a subtree a rule may match | allow | `EACCES` | `EACCES` | `EACCES` | `EACCES` |
-| `copyFile` source | allow | allow | `EACCES` | `ENOENT` | allow |
-| `copyFile` destination | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
-| `link` / `symlink`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) |
+| Operation | no rule | `deny-write` | `deny-read` | `hidden` | `shadow-write` | `copy-on-write` |
+|---|---|---|---|---|---| --- |
+| `stat` / `lstat` | allow | allow | allow | `ENOENT` | allow | session view |
+| appears in `readdir` | yes | yes | yes | no | yes | session view |
+| `open` for read | allow | allow | `EACCES` | `ENOENT` | allow | session view |
+| `open` for write / create / truncate / append | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) | private copy |
+| `readFile` | allow | allow | `EACCES` | `ENOENT` | allow | session view |
+| `writeFile` / `appendFile` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) | private copy |
+| `mkdir` / `rmdir` / `unlink` | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) | private copy |
+| `rename`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) | within covered set |
+| directory `rename` from or into a subtree a rule may match | allow | `EACCES` | `EACCES` | `EACCES` | `EACCES` | within covered set |
+| `copyFile` source | allow | allow | `EACCES` | `ENOENT` | allow | session view |
+| `copyFile` destination | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) | private copy |
+| `link` / `symlink`, either endpoint | allow | `EACCES` | `EACCES` | `ENOENT` | shadowed (tmpfs) | within covered set |
 
 `deny-read` also denies writes. Allowing blind overwrites of unreadable files
 lets the agent destroy content it cannot inspect. No mode denies reads while
@@ -294,9 +295,24 @@ reflect the unchanged real backend.
 
 Both link endpoints need shadowing. A real link creates another name for a
 protected inode, so a write through that name can bypass the redirect.
-Directory renames that affect possible rule matches fail with `EACCES` under
-every mode. Otherwise the rename can move a subtree beyond its rule and expose
-it to later writes.
+Directory renames that affect possible rule matches normally fail with `EACCES`.
+Otherwise the rename can move a subtree beyond its rule and expose it to later writes.
+
+`copy-on-write` uses a private `MemoryProvider` for each mount.
+It copies host bytes before a write, append, or truncate.
+The first covered `open` also copies bytes so existing descriptors see later writes.
+Reads and metadata use the private version after copy-up. Listings merge the
+host entries with private creations and deletions. Git's `config.lock` rename
+replaces the private config and removes the private lock.
+
+Covered directory renames validate every child before moving the private tree.
+Rename and hard-link operations across the covered boundary fail with `EXDEV`.
+The provider keeps open handles attached to their private files after rename or unlink.
+It never changes host files. The copies disappear when the session ends.
+The VFS audit event states that Corb will drop these changes.
+
+The pure policy table allows this mode. The copy-on-write provider routes its operations.
+The storage layer checks the resolved target again before a read or mutation.
 
 `deny-write` permits reads. The agent can read a test file to understand the
 expected behavior, but cannot edit or create one.
@@ -306,8 +322,8 @@ expected behavior, but cannot edit or create one.
 Path rules need three checks to prevent bypasses.
 
 **1. Check both the requested and resolved paths.** Each operation checks the
-normalised request, then its `realpath()`. Create operations resolve the parent
-instead. Without this check, `ln -s .env decoy && cat decoy` bypasses rules
+normalised request, then its `realpath()`. Create operations resolve the parent.
+Writes and copy destinations also check an existing leaf and use its canonical path. Without this check, `ln -s .env decoy && cat decoy` bypasses rules
 because `decoy` matches nothing. `ShadowProvider` provides the same check
 through `denySymlinkBypass`.
 

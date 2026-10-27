@@ -3,9 +3,9 @@
 // Gondolin VFS calls. `src/vfs/glob.ts` (M5.1) and `src/vfs/policy.ts` (M5.2)
 // are pure decision tables with zero Gondolin dependency; this module is
 // where that decision table meets the real, importing-from-Gondolin world —
-// it is the one place in the `vfs/` family that is allowed to `import` from
-// `@earendil-works/gondolin`, and it does so only for `ERRNO`, `isWriteFlag`
-// and `MemoryProvider`, three small, already-shipped primitives, never a
+// it imports from `@earendil-works/gondolin` for `ERRNO`, `isWriteFlag`
+// and `MemoryProvider`. The copy-on-write layer also imports `MemoryProvider`.
+// These are small, already-shipped primitives, never a
 // bespoke enforcement primitive of the SDK's own (see "Why not
 // `ShadowProvider`" below for the one place that distinction matters).
 //
@@ -217,8 +217,9 @@
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { ERRNO, isWriteFlag, MemoryProvider } from "@earendil-works/gondolin";
+import { withCopyOnWrite } from "./copy-on-write.ts";
 import { normalizeGuestPath } from "./glob.ts";
-import { decideFsAccessForPath, isEntryHidden, ruleMayMatchUnderDirectory, type FsAccessOutcome, type FsErrno, type FsOpKind, type GlobRule } from "./policy.ts";
+import { decideFsAccessForPath, isEntryHidden, matchRule, ruleMayMatchUnderDirectory, type FsAccessOutcome, type FsErrno, type FsOpKind, type GlobRule } from "./policy.ts";
 
 // ---------------------------------------------------------------------------
 // Public option / event shapes
@@ -409,7 +410,25 @@ interface FileHandleLike {
 export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOptions): P {
   const rules = opts.rules;
   const onDeny = opts.onDeny;
-  const backendAny = backend as ProviderLike;
+  const hasCopyOnWrite = rules.some((rule) => rule.mode === "copy-on-write");
+  const copyOnWrite = hasCopyOnWrite
+    ? withCopyOnWrite(backend, (target) => matchRule(rules, toRulePath(target))?.mode === "copy-on-write", (target, requested, op, origin) => {
+        const originalRule = matchRule(rules, toRulePath(origin));
+        const rule = originalRule?.mode === "copy-on-write" ? originalRule : matchRule(rules, toRulePath(target));
+        onDeny({ path: toRulePath(requested), op, outcome: { kind: "shadowed" }, rule,
+          reason: `copy-on-write: changes are dropped when the session ends. ${rule?.reason ?? "session copy"}` });
+      }, (target, op, requested) => {
+        const decision = decideFsAccessForPath(rules, toRulePath(target), op);
+        if (decision.outcome.kind === "deny") {
+          auditAndThrow(op, op, toRulePath(normalizeGuestPath(requested)), decision.outcome, decision.rule, `${decision.rule?.reason ?? "denied by policy"} (via resolved path '${toRulePath(target)}')`);
+        }
+        if (decision.outcome.kind === "shadowed") {
+          auditAndThrow(op, op, toRulePath(normalizeGuestPath(requested)), { kind: "deny", errno: "EACCES" }, decision.rule,
+            `resolved target requires shadow-write storage after the policy check. ${decision.rule?.reason ?? "shadowed"}`);
+        }
+      })
+    : undefined;
+  const backendAny = (copyOnWrite?.provider ?? backend) as ProviderLike;
 
   // The symlink-bypass defense (`resolveForRecheck`/`resolveForRecheckSync`
   // below) has no way to function without a real `realpath`/`realpathSync`
@@ -553,6 +572,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
    * every call site already branched on, plus the resolved absolute path
    * that made the decision (`docs/adr/0011-close-open-race-with-resolved-path.md`).
    *
+   * Writes and copy destinations also resolve an existing leaf.
+   * Their lower calls use that canonical leaf.
    * `resolvedAbs` is `resolveForRecheck`'s `absPath` when a recheck actually
    * ran and found something to resolve; it falls back to the original,
    * unresolved `normalizedAbs` unchanged when `resolveForRecheck` returned
@@ -596,7 +617,20 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
     const recheck = await resolveForRecheck(normalizedAbs, createPath, op, syscall);
-    const resolvedAbs = recheck?.absPath ?? normalizedAbs;
+    let leaf: RecheckResult | undefined;
+    if (createPath && (op === "write" || op === "copy-dest")) {
+      leaf = await resolveForRecheck(normalizedAbs, false, op, syscall);
+      if (leaf) {
+        const resolved = decideFsAccessForPath(rules, leaf.rulePath, op);
+        if (resolved.outcome.kind === "deny") auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, resolved.rule?.reason ?? "denied by policy");
+        if (resolved.outcome.kind === "shadowed") {
+          onDeny({ path: rulePath, op, outcome: resolved.outcome, rule: resolved.rule, reason: resolved.rule?.reason ?? "shadowed" });
+          return { mode: "shadowed", resolvedAbs: leaf.absPath };
+        }
+      }
+    }
+    // Preserve a covered spelling when it aliases an uncovered target.
+    const resolvedAbs = primary.rule?.mode === "copy-on-write" ? normalizedAbs : leaf?.absPath ?? recheck?.absPath ?? normalizedAbs;
     if (recheck !== undefined) {
       const resolved = decideFsAccessForPath(rules, recheck.rulePath, op);
       if (resolved.outcome.kind === "deny") {
@@ -622,7 +656,20 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
     const recheck = resolveForRecheckSync(normalizedAbs, createPath, op, syscall);
-    const resolvedAbs = recheck?.absPath ?? normalizedAbs;
+    let leaf: RecheckResult | undefined;
+    if (createPath && (op === "write" || op === "copy-dest")) {
+      leaf = resolveForRecheckSync(normalizedAbs, false, op, syscall);
+      if (leaf) {
+        const resolved = decideFsAccessForPath(rules, leaf.rulePath, op);
+        if (resolved.outcome.kind === "deny") auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, resolved.rule?.reason ?? "denied by policy");
+        if (resolved.outcome.kind === "shadowed") {
+          onDeny({ path: rulePath, op, outcome: resolved.outcome, rule: resolved.rule, reason: resolved.rule?.reason ?? "shadowed" });
+          return { mode: "shadowed", resolvedAbs: leaf.absPath };
+        }
+      }
+    }
+    // Preserve a covered spelling when it aliases an uncovered target.
+    const resolvedAbs = primary.rule?.mode === "copy-on-write" ? normalizedAbs : leaf?.absPath ?? recheck?.absPath ?? normalizedAbs;
     if (recheck !== undefined) {
       const resolved = decideFsAccessForPath(rules, recheck.rulePath, op);
       if (resolved.outcome.kind === "deny") {
@@ -758,6 +805,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
       auditAndThrow("rename", syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "could not stat the rename source to check for a rule-matched subtree; failing closed");
     }
+    if (matchRule(rules, rulePath)?.mode === "copy-on-write" && matchRule(rules, toRulePath(resolvedNew))?.mode === "copy-on-write"
+      && ![rulePath, toRulePath(newNorm), toRulePath(resolvedNew)].some((candidate) => ruleMayMatchUnderDirectory(rules.filter((rule) => rule.mode !== "copy-on-write"), candidate))) return false;
     return isDirectory && [rulePath, toRulePath(newNorm), toRulePath(resolvedNew)]
       .some((candidate) => ruleMayMatchUnderDirectory(rules, candidate));
   }
@@ -774,6 +823,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       }
       auditAndThrow("rename", syscall, rulePath, { kind: "deny", errno: "EACCES" }, undefined, "could not stat the rename source to check for a rule-matched subtree; failing closed");
     }
+    if (matchRule(rules, rulePath)?.mode === "copy-on-write" && matchRule(rules, toRulePath(resolvedNew))?.mode === "copy-on-write"
+      && ![rulePath, toRulePath(newNorm), toRulePath(resolvedNew)].some((candidate) => ruleMayMatchUnderDirectory(rules.filter((rule) => rule.mode !== "copy-on-write"), candidate))) return false;
     return isDirectory && [rulePath, toRulePath(newNorm), toRulePath(resolvedNew)]
       .some((candidate) => ruleMayMatchUnderDirectory(rules, candidate));
   }
@@ -1515,6 +1566,12 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   for (const [name, factory] of Object.entries(optionalFactories)) {
     if (typeof backendAny[name] === "function") {
       handlers[name] = factory();
+    }
+  }
+
+  if (copyOnWrite) {
+    for (const [method, handler] of Object.entries(handlers)) {
+      handlers[method] = (...args: unknown[]) => copyOnWrite.withRequest(method, args, () => (handler as AnyFn)(...args));
     }
   }
 
