@@ -412,8 +412,8 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
   const onDeny = opts.onDeny;
   const hasCopyOnWrite = rules.some((rule) => rule.mode === "copy-on-write");
   const backendAny = (hasCopyOnWrite
-    ? withCopyOnWrite(backend, (target) => matchRule(rules, toRulePath(target))?.mode === "copy-on-write", (target, requested, op) => {
-        const originalRule = matchRule(rules, toRulePath(requested));
+    ? withCopyOnWrite(backend, (target) => matchRule(rules, toRulePath(target))?.mode === "copy-on-write", (target, requested, op, origin) => {
+        const originalRule = matchRule(rules, toRulePath(origin));
         const rule = originalRule?.mode === "copy-on-write" ? originalRule : matchRule(rules, toRulePath(target));
         onDeny({ path: toRulePath(requested), op, outcome: { kind: "shadowed" }, rule,
           reason: `copy-on-write: changes are dropped when the session ends. ${rule?.reason ?? "session copy"}` });

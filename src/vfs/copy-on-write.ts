@@ -20,7 +20,7 @@ function missing(err: unknown): boolean {
 }
 
 /** Keep private copies for covered paths until this provider becomes unreachable. */
-export function withCopyOnWrite<P extends object>(backend: P, covered: (target: string) => boolean, onWrite: (target: string, requested: string, op: CopyOperation) => void, checkAccess: (target: string, op: FsOpKind, requested: string) => void): P {
+export function withCopyOnWrite<P extends object>(backend: P, covered: (target: string) => boolean, onWrite: (target: string, requested: string, op: CopyOperation, origin: string) => void, checkAccess: (target: string, op: FsOpKind, requested: string) => void): P {
   const lower = backend as Provider;
   const upper = new MemoryProvider() as unknown as Provider;
   const changed = new Set<string>();
@@ -107,9 +107,9 @@ export function withCopyOnWrite<P extends object>(backend: P, covered: (target: 
 
   function notify(target: string, raw: string, op: CopyOperation): void {
     const normalized = normalizeGuestPath(raw);
-    const requested = covered(normalized) ? normalized : origins.get(target) ?? normalized;
-    origins.set(target, requested);
-    onWrite(target, requested, op);
+    const origin = covered(normalized) ? normalized : origins.get(target) ?? normalized;
+    origins.set(target, origin);
+    onWrite(target, normalized, op, origin);
   }
 
   function mark(target: string, raw = target, op: CopyOperation = "write"): void {

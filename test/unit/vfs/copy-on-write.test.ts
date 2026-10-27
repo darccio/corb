@@ -194,6 +194,13 @@ describe("copy-on-write", () => {
     expect(backend.readFileSync("/ordinary", "utf8")).toBe("keep");
     expect(events.at(-1)?.rule?.reason).toBe("session config");
     expect(events.at(-1)?.path).toBe("config.alias");
+    await wrapped.appendFile("/ordinary", "!");
+    expect(await wrapped.readFile("/ordinary", "utf8")).toBe("private!");
+    expect(events.at(-1)?.path).toBe("ordinary");
+    expect(events.at(-1)?.op).toBe("write");
+    expect(events.at(-1)?.rule?.reason).toBe("session config");
+    expect(events.at(-1)?.reason).toContain("dropped when the session ends");
+    expect(backend.readFileSync("/ordinary", "utf8")).toBe("keep");
   });
 
   it("preserves stricter first-match and resolved-target rules", async () => {
