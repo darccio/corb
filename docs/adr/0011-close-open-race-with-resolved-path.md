@@ -76,7 +76,7 @@ For **create-path** operations whose leaf does not exist, resolve only the
 *parent* directory, then reattach the unchanged literal final segment.
 Existing write and copy-destination targets also resolve the leaf and may pass
 that resolved path to the backend. A `rename` destination, `link` new-name,
-or `symlink`'s own name always keeps its leaf literal; only its parent is resolved.
+or `symlink`'s own name always keeps its leaf literal. Only its parent is resolved.
 
 ### Mechanism
 
@@ -90,8 +90,8 @@ error remain unchanged. The result now retains `absPath`.
 
 `decide`/`decideSync` now return `DecideResult { mode, resolvedAbs }` rather
 than a bare `Mode`. If the recheck resolves a target, `resolvedAbs` contains
-the recheck's `absPath`, preferring the resolved leaf for existing write and
-copy-destination targets. If no recheck resolves, it contains the unchanged
+the recheck's `absPath`. For existing write and copy-destination targets, this
+value prefers the resolved leaf. If no recheck resolves, it contains the unchanged
 original `normalizedAbs`. That means the target, or a create-path operation's
 parent, does not exist yet. A missing create parent may cause the backend to
 report `ENOENT` for non-recursive `mkdir`, while recursive directory creation
@@ -119,7 +119,7 @@ trailing symlink under their own semantics. Earlier resolution changes only
 | `stat`/`statSync` | the path |
 | `access`/`accessSync` | the path |
 | `readFile`/`readFileSync`, `writeFile`/`writeFileSync`, `appendFile`/`appendFileSync` | the path |
-| `copyFile`/`copyFileSync` | the *source* argument; the destination uses `destDecision.resolvedAbs`, including destination-parent resolution |
+| `copyFile`/`copyFileSync` | the *source* argument. The destination uses `destDecision.resolvedAbs` with destination-parent resolution. |
 | `truncate`/`truncateSync` (the top-level, path-based operation) | the path. Unlike `ftruncate`, POSIX `truncate(path,...)` follows a trailing symlink. |
 | `readdir`/`readdirSync` | the directory argument to the backend's own `readdir` call *only*. The requested directory's rule-relative path (`dirRulePath`, used by `isEntryHidden` to test each returned entry) stays unchanged. The rule-path basis for child-entry visibility is a separate design question outside this fix. |
 | `mkdir`/`mkdirSync` | the (create-path) parent |

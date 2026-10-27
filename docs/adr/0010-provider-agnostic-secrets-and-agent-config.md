@@ -39,8 +39,8 @@ See `docs/design.md` §8 ("Provider and model selection") and commit `341a073`
 Chosen option: "Provider-agnostic pass-through".
 Pi already handles multi-provider selection and credential resolution.
 For non-brokered providers using `[secrets.NAME]`, Corb passes the user's choice
-through without reimplementing provider logic or hardcoding model provider
-names, API hosts, or credential environment variable names.
+through. It does not reimplement provider logic or hardcode model provider names,
+API hosts, or credential environment variable names.
 Host-brokered providers registered in `PROVIDERS` (`src/auth/provider.ts`)
 and accessed through `corb login` require provider-specific Corb code.
 They are the scoped exception described in [ADR 0012](0012-host-brokered-oauth-providers.md).
@@ -59,12 +59,13 @@ generic, so no new mechanism was needed. M3.4 wired the existing mechanism into
 
 * Good, because supporting a new non-brokered provider through `[secrets.NAME]` requires no Corb code change.
   The workspace config names the right secret and `--provider`/`--model` values that Pi already understands.
-* Good, because non-brokered providers using `[secrets.NAME]` need no Corb provider table that can drift out of sync with Pi's.
+* Good, because non-brokered providers using `[secrets.NAME]` need no Corb provider table.
+  There is no separate table that can drift out of sync with Pi's.
 * Bad, because Corb cannot validate a `[secrets.NAME]` spelling for the chosen provider ahead of time.
   `buildSecretBindings()` detects absent or empty required host secrets during
-  `buildEgressConfig()`, before `VM.create()`; absent optional secrets are omitted.
-  A misnamed secret that exists in the host environment may fail later when Pi
-  tries to use it, after the VM boots. Pi's own no-credentials UX reports that failure.
+  `buildEgressConfig()`, before `VM.create()`. Absent optional secrets are omitted.
+  A misnamed secret in the host environment may fail when Pi tries to use it after VM boot.
+  Pi's own no-credentials UX reports that failure.
 * Neutral, because `corb doctor` warns without blocking when no `[secrets.*]` entry is configured for an API-key provider.
   Recognized brokered providers are exempt: `checkSecretsConfigured()` returns `ok` for them.
   It points to `corb explain` and Pi's provider docs, without guessing the intended provider.
