@@ -42,6 +42,10 @@ Other valid architecture targets and an existing lockfile symlink stay intact.
 Build uses those exact cached inputs. It runs a real signed APK transaction and copies complete SDK trees.
 The solver may retain compatible providers already on the base. It cannot change existing package identities or fetch an unbundled alternative.
 
+The shared candidate closure retains archives that the producer already supplies.
+A recipient can need those same archives when its installed providers differ.
+The same Alpine branch does not guarantee compatibility. Conflicting providers or required base changes fail explicitly.
+
 Corb displays runtime directories, hosts and ordered unpinned root commands before executing them.
 The builder closes before a separate checkpoint verifier boots. All seven gates and composition coherence must pass.
 
@@ -94,6 +98,32 @@ The plan launches no service. There is no startup script, supervisor or automati
 Ordered root build commands can install other toolchains, but cannot alter protected files or add/change APK identities.
 Services must be stopped before checkpointing. The checkpoint caches disk bytes, not running processes.
 
+For Alpine Redis packages that use the ordinary packaged paths, declare both transient directories:
+
+```toml
+[[image.layer.runtime-dir]]
+path = "/run/redis"
+mode = "0755"
+owner = "redis"
+group = "redis"
+
+[[image.layer.runtime-dir]]
+path = "/var/log/redis"
+mode = "0755"
+owner = "redis"
+group = "redis"
+```
+
+Corb resolves the actual Redis account numbers after package installation.
+Keep `/var/lib/redis` and `/etc/redis.conf` as the package installs them.
+The declarations restore directories before an explicit `redis-server /etc/redis.conf` launch.
+The acceptance check launches Redis through production `dropcap` from the root builder or validated preparation context.
+They do not start Redis when a session boots.
+Keep the packaged daemonization choice and stop the owned service with ordinary Redis shutdown before checkpoint creation.
+
+The ordinary agent runs as uid 1000 and cannot change to the Redis account through `dropcap`.
+Corb provides no public root service launcher.
+
 ## Separate base distribution
 
 Base artifacts are independent of input artifacts:
@@ -115,6 +145,9 @@ Without `--tag`, pull imports untagged and prints its build ID and directory.
 With `--tag`, it updates only that requested ref after verification. SDK errors after a ref write can leave that requested ref updated. Inspect the reported state before retrying.
 No implicit version alias, workspace pin or layer pointer changes occur.
 
+An input pull does not fetch a base artifact. The recipient can compose on a different compatible base.
+Base graphs contain raw assets and the portable SDK projection. They contain no local checkpoint or source path.
+
 `corb image ls --json` provides version-1 JSON for local SDK refs and known workspace composition records.
 The SDK inventory lists refs. It does not enumerate every untagged object.
 Recorded composition status is not a substitute for run's full validation.
@@ -134,6 +167,18 @@ Registry token realms, redirects and host credential helpers are trusted transpo
 This is not guest hostname confinement or independent publisher authentication.
 These host settings never enter guest inputs or shared artifact bytes.
 
+Corb redacts URL userinfo, queries and fragments in ORAS error diagnostics before retaining their bounded output tails.
+
+The acceptance fixture uses the official Distribution 3.1.2 binary with its immutable archive and executable hashes.
+Its [release page](https://github.com/distribution/distribution/releases/tag/v3.1.2) provides the primary source.
+
+The fixture creates its own CA, HTTPS endpoints, credentials and private storage on loopback ports.
+It uses a private registry config for every external ORAS transfer.
+Its small HTTPS proxy records methods, paths, status codes and authentication results without credentials or upload tokens.
+
+Official access logging is disabled. The fixture also scrubs captured registry diagnostics and privately tracks dynamic upload-state markers.
+This fixture is test code. Corb does not provide a registry service.
+
 Local state uses private directories, immutable verified cache objects and one exclusive writer lock per workspace.
 A live or uncertain owner fails. Corb recovers a lock only when its recorded local owner is provably dead, never because of age.
 Completed generations stay under `CORB_STATE_DIR/layers/<workspace>/<arch>/bases/<base-id>/generations/<uuid>`.
@@ -147,5 +192,9 @@ A failed late step can leave verified cache blobs, an unused completed generatio
 Corb reports the completed or uncertain stage and preserves the previous authoritative file where publication has not completed.
 It removes only its own temporary children. Repeated identical input pushes have the same manifest digest.
 
-Local OCI-layout tests do not establish remote registry authentication or transfer acceptance.
-DAR-21 owns that isolated HTTPS producer/recipient flow and real packaged Redis startup checks.
+Moving a remote tag does not change an existing digest lock.
+Corb revalidates complete cached objects and refuses corrupt content without replacing it silently.
+If remote publication succeeds but lock replacement fails, the old lock remains authoritative.
+If composition fails after download, the previous current generation remains available.
+
+The [validation report](layer-validation.md) separates local-layout evidence from measured remote HTTPS and packaged-service results.

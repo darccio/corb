@@ -173,3 +173,317 @@ Enable it only after a separate resource/backing preflight and explicit coordina
 | `be710ae` | test(vm): drain owned CLI descendants before another group |
 | `d1ce0f7` | test(vm): bound cleanup when process discovery fails |
 | `a457e68` | docs(layers): record source checks and validation boundaries |
+
+## DAR-21 production acceptance, 2026-10-26
+
+DAR-21 starts from merged main `ecbed5be58d5c331e056a2cb3b43c457ff0f7b79` after DAR-20, DAR-22 and DAR-23.
+The earlier results above remain historical evidence.
+
+The required host checks pass: typecheck, lint and **1921 unit tests in 97 files**.
+Three new cleanup regressions cover exact owned Docker mounts, unrelated containers and changed mount identities.
+Three private options-observer regressions cover injected credential markers, bounded traversal and unchanged call behavior.
+The local `se lint` engine checks each changed Markdown file. No repository prose enters an external lint service.
+
+### Real HTTPS registry evidence
+
+The first isolated remote group passes **16 tests** through the external ORAS **1.3.5** CLI.
+It uses official Distribution **3.1.2** from its [primary release](https://github.com/distribution/distribution/releases/tag/v3.1.2).
+The release archive SHA-256 is `40df2224d410f72ae425c3371873b078bbdbda3b8b612be9571f0e6751f3acc8`.
+The extracted executable SHA-256 is `7f9e0df42bd028efb1a11eb7f92ef494156bf308770303a256d3acdcadb378cd`.
+
+Both registry and proxy use HTTPS on fresh loopback ports with a valid fixture CA.
+The official registry checks a private bcrypt credential file.
+Every ORAS transfer receives an explicit private registry config and the fixture CA.
+Missing credentials, wrong credentials and an untrusted CA fail through real transport requests.
+The proxy records query-free request paths. A later independent run finds upload-state tokens in official child logs and ORAS errors.
+
+The first group records **115 HTTP requests**.
+Authenticated success includes 4 upload starts, 13 completed writes, 22 downloads and 11 successful HEAD requests.
+It also records 14 authenticated missing-object responses, 45 unauthenticated challenges and 6 injected publication failures.
+The owned HTTPS proxy supplies truncation, digest corruption and publication faults.
+
+The tests upload identical bytes under two tags and retain an old digest after moving a tag.
+They download into an empty recipient cache and reject corrupt complete cache content without replacement.
+Remote malformed artifacts, media types, descriptor URLs, traversal titles and incompatible SDK architecture fail before composition.
+These checks delegate standard token realms and redirects to ORAS. They establish no publisher-key authentication or custom host confinement.
+
+The registry and outer runner receipts report zero forced kills and zero remaining children.
+They report no ownership uncertainty.
+The coordinator separately checks host processes after fixture shutdown.
+The first group receipts remain under `image/build/dar-21/api/registry-wjSMN5` and `image/build/dar-21/api-group.json`.
+
+### Distinct coherent bases
+
+Production build helpers created two new private bases on Alpine **v3.23**.
+Both have **76 coherent package records** and pass **all seven image gates**.
+Base A supplies `lua5.4-libs=5.4.8-r0` and has neither tree nor the recipient account.
+Base B supplies `tree=2.2.1-r0` and an unrelated consumer account with persistent sentinel state.
+Base B has no Lua library package before composition.
+
+The builds retain production coherence and security finalization after the fixture additions.
+They use private Docker configuration, SDK stores and explicit fixture tags.
+
+Each verifier uses **1 GiB and two CPUs**. The builds run serially under the coordinator's exclusive slot.
+Owned POSIX descendants, Docker mount identities and the SDK registry are checked before the next build.
+Both Docker containers exit through their ordinary removal path. No forced cleanup occurs.
+
+Exact base IDs, asset hashes, host PIDs and owned container identities remain in local build receipts under `image/build/dar-21/bases`.
+The canonical stock refs and existing assets remain unchanged.
+The old canonical image still lacks current coherence evidence, so this acceptance uses the new private bases.
+
+### Packaged service and input sharing
+
+The first serial production group passes **14 tests** through **35 CLI and preparation commands** in **1112.42 seconds**.
+It records **429 real HTTPS requests** and closes **27 guest QEMU processes**.
+The group uses the real signed `redis=8.4.2-r0` package and its unmodified `/etc/redis.conf`.
+The packaged config uses the foreground Redis default, `/run/redis/redis.sock`, `/var/log/redis/redis.log` and `/var/lib/redis`.
+
+The config SHA-256 stays `3a928d392a6223df1632b65bd6106d3dfd357491f0df42a1b5a5711cee154b05` throughout the positive and negative checks.
+Production restoration creates both transient Redis directories with mode `0755` and account ownership resolved from the composed guest.
+Tests inspect those non-symlink paths before each explicit launch. They never create or repair the guest runtime directories.
+The package retains its persistent data directory.
+
+Fresh builder commands and later validated preparation resumes explicitly invoke `redis-server /etc/redis.conf` through production `dropcap` as Redis.
+The normal agent account sends loopback TCP PING and SET/GET requests through its own production `dropcap` invocation.
+Ordinary Redis shutdown stops each owned foreground process before checkpoint creation or VM close.
+No test supplies alternate ports, sockets, data paths, save settings or Redis configuration.
+The ordinary agent cannot become Redis in a normal Pi session. This acceptance creates no public service launcher or automatic boot service.
+
+Without the runtime declarations, a separate own-base checkpoint resume loses both required transient directories.
+The same config and ordinary invocation exit with `Can't open the log file: No such file or directory`.
+The executable, package identities and all seven image gates remain valid.
+The positive declarations succeed through production restoration, without test repairs.
+
+The producer pins **15 candidate APK archives**, two signed indexes, one static installer and the complete official **Go 1.27.3** archive.
+Requested package versions are `lua5.4=5.4.8-r0`, `redis=8.4.2-r0` and `tree=2.2.1-r0`.
+The bundle retains unrequested `lua5.4-libs=5.4.8-r0` even though A already supplies it.
+Its exact archive SHA-256 is `9db3caaf1aea3b1082d5ebf85a32e02713716df31a14c39cfd6a682a26879f45`.
+Its signed control identity is `Q1RVmcbLJ/x9f7OeFEBrt5LCsBW2E=`.
+
+The shared input digest is `sha256:58f9f1cf1a95eaa569c45c756d7c6cf9c42a4030e8fee64457b119e02d3bdd31`.
+The recipient starts with an empty artifact cache and receives actual authenticated manifest and blob downloads.
+It uses the byte-identical workspace definition and `corb.sum` without repinning or alternative APK lookups.
+A installs Lua, Redis and tree. B installs the Lua library, Lua and Redis while retaining its existing tree package and consumer state.
+Each real transaction preserves its existing package, account, native and protected state.
+
+Both bases retain the same complete **17372-entry Go tree** and the fixed archive SHA-256 recorded above.
+The archive has **70588678 bytes**. The test requires that exact authenticated blob download from its manifest descriptor.
+Ordinary production sessions run useful Go, Lua, tree and native library checks as uid 1000.
+Each Go workload passes three tests and builds its result with separate writable caches, `GOTOOLCHAIN=local` and `CGO_ENABLED=0`.
+
+Installed runs need no ORAS or registry access. A valid repeated input pull performs no download or VM work.
+
+Exact-base local checkpoints have different composition identities and remain immutable across their own resumes.
+All fresh compositions and explicit service resumes pass **seven of seven image gates**.
+The checks preserve all seven forbidden-name removals and the protected package baselines.
+Exact base IDs, checkpoint hashes and account mappings stay in the local generation receipts.
+The shared graph and `corb.sum` remain unchanged.
+
+### Separate base transfer and recovery
+
+The independent base artifact digest is `sha256:9691c0d8a48e0a7fe5bfaf1da7d0ee54b71e2eac348609ec2deb119717ac2f23`.
+A separate recipient with an empty SDK store receives the exact raw roles and portable SDK projection.
+It recomputes the build ID and all role hashes, then passes coherence and all seven gates before publishing its requested private tag.
+Repeated import accepts harmless different local build metadata. An inconsistent existing object fails before VM creation and remains unchanged.
+
+Input pulling never fetches that base graph. Base pulling changes neither workspace pins nor layer pointers.
+
+Real command controls reject missing or wrong credentials, an untrusted CA and malicious remote metadata before any guest process starts.
+They also reject missing digests.
+They also reject truncated or digest-mismatched transfers and incompatible SDK architecture.
+Corrupt installed cache content fails before an already-installed verdict, with no registry request or replacement.
+An omitted candidate dependency triggers the exact real solver compatibility refusal before package installation.
+Same-branch membership remains insufficient as a general compatibility guarantee.
+
+Publication faults leave real remote blobs and report partial publication while preserving the old lock.
+A local lock replacement fault retains the authoritative lock after verified remote publication.
+Source and pin mutations at the final boundary fail explicitly.
+A downloaded graph whose command fails retains the previous current pointer and checkpoint.
+Existing generations remain intact.
+
+The first service-group receipts remain under `image/build/dar-21/main/service-xEsdS4` and `image/build/dar-21/main-group.json`.
+They report zero forced kills and no remaining children. They report no ownership uncertainty.
+The coordinator separately audits actual host processes and SDK runtime cleanup.
+The fixture scans all transferred input and base blob bytes, shared files and ordinary diagnostics for credential markers.
+
+The full run's service group then passes the private options observation at `b03ad36`.
+It records **27 create calls and 8 resume calls**, all clean against password and Basic credential markers.
+The coordinator independently audits those receipts and actual host process cleanup.
+
+### First complete serial run
+
+The full serial e2e suite passes **100 tests in 14 files** at executable commit `b03ad36` in **2779.98 seconds**.
+One separately gated two-VM case stays disabled because this issue permits one VM at a time.
+The run uses fresh private state, completed coherent bases and an independent private default image alias.
+The prompt's four-minute estimate does not match this complete production suite. This measured run takes about 46 minutes.
+
+The private Node preload observes actual VM creation and checkpoint resume options without changing their arguments or behavior.
+It records only call kind, count and a clean boolean. It never records marker values or raw options.
+The service group records 27 create calls and 8 resume calls, all clean.
+
+The full outer runner exits zero with no forced kills and no remaining children. It reports no ownership uncertainty.
+The SDK runtime is empty and removed after its processes stop.
+
+The coordinator independently verifies all 4 canonical refs and hashes all 30 files across 5 existing objects after the run.
+They remain unchanged. Full receipts and the exact minimal replay environment remain under `image/build/dar-21/full`.
+
+After this full run, `1f5cd0e` strengthens two fixture assertions without changing production code.
+The tag-move case now writes an actual `corb.sum`, reads its immutable URI through production `readLayerLock` and preserves its bytes.
+All **16 API cases pass again** at that head in **8.66 seconds**, with 115 real requests and complete owned cleanup.
+The base-transfer case now uses B's empty SDK store beside its active workspace and verified generation.
+It checks B's selected config, shared files, current pointer and checkpoint after each base-import control.
+
+### Independent failed run, 2026-10-27
+
+The coordinator's independent final run at `1f5cd0e` fails on 2026-10-27 after **25 passes and 1 failure** in **2305.11 seconds**.
+The failure occurs during A's separate base push, before the stronger B import checks run.
+Source coherence and all seven gates pass. ORAS then reports EOF during the 3 GiB rootfs upload.
+The owned registry receives the full body, whose hash still matches A's exact source rootfs.
+The proxy records 502 without a final upload success response.
+
+The fixture's ten-second upstream idle timeout can expire while the registry commits a complete body.
+The official implementation calls filesystem flush and sync before returning upload success.
+This is the leading explanation for the observed failure. The original receipt lacks timing evidence to prove that phase caused the timeout.
+See the [official upload handler](https://github.com/distribution/distribution/blob/v3.1.2/registry/handlers/blobupload.go) and [filesystem writer](https://github.com/distribution/distribution/blob/v3.1.2/registry/storage/driver/filesystem/driver.go).
+
+Registry shutdown also fails its one-second drain limit and requires a forced kill.
+The outer runner reports no remaining children or ownership uncertainty, but the nested registry receipt correctly reports uncertainty.
+The old teardown stops at that registry failure. It skips later base audits, runtime removal and the main result receipt.
+The coordinator independently confirms every recorded process is gone and all canonical refs and existing assets remain unchanged.
+
+The failed receipts remain under `image/build/dar-21-root-review/full`.
+Later URL-secret redaction changes only nine known diagnostic files. A private action receipt records their before and after hashes at `image/build/dar-21/diagnostic-redaction.json`.
+
+This run also reveals a diagnostic gap. ORAS errors and official access logs contain registry-generated upload-state query tokens.
+Earlier marker scans cover the fixture password and Basic credentials. They do not cover these dynamic tokens.
+Those previous scans do not establish complete token redaction.
+
+The correction below scrubs URL secrets before diagnostic storage and retains the full failed regression.
+The final complete replay below validates the corrected executable head.
+
+### Registry recovery, 2026-10-27
+
+The narrow production correction scrubs URL userinfo, query values and fragments from ORAS error diagnostics before retaining output tails.
+It handles chunk boundaries, truncated userinfo and oversized tokens. Successful descriptor stdout and binary transfers retain their exact bytes.
+The fixture disables official access logs and scrubs other child diagnostics before writing receipts.
+Actual upload-state values join the private marker plan. Reports record only their count.
+
+The marker plan keeps its 64 KiB limit and accepts at most 256 markers. Overflow fails closed.
+Later VM calls read a refreshed private plan through the same bounded observer.
+
+The proxy now allows 120 seconds of upstream inactivity within the existing command and overall bounds.
+It records query-free body byte counts, body completion, elapsed time and failure class.
+Cleanup attempts every registry, base audit and runtime step, then writes a result receipt that includes the runtime path.
+It retains primary test failures and reports all cleanup failures.
+
+A fresh official-registry probe uploads and downloads the exact **3,221,225,472-byte** rootfs through real ORAS over authenticated HTTPS.
+The successful upload returns **201** after **48.523 seconds**. Its body finishes after **11.555 seconds**.
+The measured **36.968-second post-body wait** exceeds the old ten-second fixture limit.
+The authenticated download returns **200**, transfers the same byte count and matches the original source hash.
+
+The complete owned probe takes **70.252 seconds** and captures one real upload-state marker without diagnostic leakage.
+The registry and outer runner exit zero with no forced kills, survivors or ownership uncertainty. Actual host checks confirm all recorded PIDs are gone.
+
+The first recovery probe also transfers and hashes the full bytes, but fails a new fixture assertion.
+It selects the expected unauthenticated GET challenge instead of the later authenticated download.
+The correction selects the successful authenticated row and retains every byte, hash and status assertion.
+Both receipts remain preserved. This fixture error is separate from the original base-push failure.
+
+The host checks pass **1931 unit tests in 101 files**, typecheck and lint.
+Six focused files pass 17 diagnostic, marker, TCP timeout, observer and cleanup tests.
+The API group passes **16 tests** again in **8.82 seconds**, with 115 real requests and four dynamic upload-state markers.
+Both registry and outer receipts report exit zero and no forced kills, survivors or ownership uncertainty.
+Actual host checks confirm all 11 recorded PIDs are gone.
+
+The production fix is `8a01169`. The fixture correction and executable freeze are `d306b80`.
+The coordinator then runs the complete serial suite at that executable head, as recorded below.
+
+### Final complete replay, 2026-10-27
+
+The coordinator independently passes the complete serial suite at frozen executable `d306b80` with fresh config, state, cache and SDK storage.
+The result is **100 passing tests in 14 passing files**, plus one skipped test in its separately gated two-VM file.
+The one-VM rule keeps that gate disabled. The run starts at **00:49:43 local time** and takes **2867.34 seconds**, about **47.79 minutes**.
+This complete result validates the final executable tree. It does not combine earlier partial runs.
+
+The service/registry group passes all **14 cases** through 35 production commands and 429 real HTTP requests.
+It privately captures **50 actual upload-state markers** alongside the fixture password and Basic credentials.
+Transferred artifact bytes, shared files, ordinary diagnostics and actual VM options pass their marker checks.
+The observer records **27 create calls and 8 resume calls**, all clean.
+The root audit confirms all 27 guest PIDs and the registry process are gone.
+
+The separate base push waits **45.962 seconds** after body completion before upload success in this full run.
+Its total request takes 57.004 seconds and its body finishes after 11.042 seconds.
+The same-B import controls pass beside B's active layer. They preserve its selected config, shared lock, current pointer and checkpoint.
+The input graph remains portable across distinct coherent bases. Each base performs its own real package transaction and keeps its own exact-base checkpoint.
+
+The packaged Redis checks pass on fresh composition and own-base resume with the unmodified package config.
+Production restoration supplies the declared runtime directories before explicit startup as Redis from root build/preparation checks.
+The normal uid-1000 agent uses the loopback client. Ordinary shutdown stops the owned service before checkpoint creation.
+The missing-directory control fails for its measured log-path reason.
+These results promise no automatic boot service or public root launcher.
+
+The outer runner exits zero. Its **352 recorded child PIDs** are all gone in the coordinator's actual host audit.
+All **89 actual guests** use 1 GiB and two CPUs. The audit excludes **36 version probes** from the guest count.
+There are no forced kills, survivors or ownership uncertainties. No owned overlay or socket path remains.
+
+The main fixture removes its empty runtime and records no cleanup failures.
+The coordinator also removes the empty parent SDK runtime after process shutdown.
+
+The final preservation audit hashes **42 asset and manifest files**.
+It covers all 30 existing files and 12 files across the new bases.
+There are zero mismatches. All **4 global refs** remain unchanged, as do all **363 frozen executable files**.
+
+A and B retain identical `corb.toml` and `corb.sum` bytes and the same authenticated input digest.
+Their separate current generations and checkpoints match their recorded hashes and pass coherence plus all seven gates.
+Exact local base and checkpoint identities remain in local receipts.
+
+Final host checks pass typecheck, lint and **1931 unit tests in 101 files**.
+All five changed Markdown files pass local `se lint`. Both PR CI jobs pass at the preceding documentation head.
+The complete replay, exact environment and cleanup receipt remain under `image/build/dar-21-root-review/full-recovery`.
+The original failed run and both recovery probes remain recorded above.
+
+### Repeat DAR-21 acceptance
+
+Read the official release page, download the fixed Linux AMD64 archive into an owned directory and verify its digest before extraction.
+The fixture verifies the extracted executable digest again before starting it.
+For example, from the checkout:
+
+```bash
+mkdir -p image/build
+taskRegistryDir=$(mktemp -d "$PWD/image/build/dar-21-registry.XXXXXX")
+curl -q --fail --location --max-time 120 \
+  --output "$taskRegistryDir/registry.tar.gz" \
+  https://github.com/distribution/distribution/releases/download/v3.1.2/registry_3.1.2_linux_amd64.tar.gz
+printf '40df2224d410f72ae425c3371873b078bbdbda3b8b612be9571f0e6751f3acc8  %s\n' \
+  "$taskRegistryDir/registry.tar.gz" | sha256sum --check
+tar -xzf "$taskRegistryDir/registry.tar.gz" -C "$taskRegistryDir" registry
+export CORB_E2E_REGISTRY_BINARY="$taskRegistryDir/registry"
+```
+
+Obtain the coordinator's exclusive build slot before invoking `test/e2e/fixtures/build-service-bases.ts` with `CORB_E2E=1` and `--build`.
+Give it a fresh owned disk-backed directory. It creates private Docker configuration, base configs, stores and build receipts.
+Reuse completed coherent bases on later checks. Read the private build logs for each exact asset directory.
+
+Set `CORB_E2E_SERVICE_BASE_A` and `CORB_E2E_SERVICE_BASE_B` to those distinct completed object directories.
+Set `CORB_E2E_LAYER_BASE` and `CORB_E2E_LAYER_SECOND_BASE` to the same pair for the existing lifecycle suite.
+Use `CORB_E2E_LAYER_ROOT` for fresh disk-backed fixture evidence.
+Prepare the independent private default SDK alias and short runtime directory as described above.
+Supply no live provider credentials. Leave `CORB_E2E_LAYER_CONCURRENCY` unset for this one-VM acceptance.
+
+Run the full serial suite through the owned outer runner after another resource check and exclusive slot grant:
+
+```bash
+CORB_E2E=1 node test/e2e/fixtures/owned-group.ts \
+  /owned/acceptance/group.json 4200 npm run test:e2e
+```
+
+The fixture creates fresh CA and credential files and binds HTTPS endpoints only to loopback.
+It reads no personal Docker or ORAS configuration.
+Keep its private credentials outside every workspace mount and preserve receipts until the coordinator completes host cleanup checks.
+
+### Compatibility limits
+
+The measured bases target native Linux `x86_64`, musl and Alpine v3.23.
+The Go workload uses pure Go with cgo disabled. It establishes no cgo, cross-architecture or arbitrary future-base support.
+The fixture measures Basic authentication. Standard token realms and redirects remain delegated ORAS behavior without separate fault scenarios here.
+This acceptance establishes no publisher-signing policy, automatic boot service or general service supervisor.
