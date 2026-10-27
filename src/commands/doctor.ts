@@ -1086,20 +1086,49 @@ function statusLabel(status: DoctorStatus): string {
   }
 }
 
-export async function runDoctorCommand(argv: string[] = []): Promise<void> {
+export interface DoctorCommandArgs {
+  json: boolean;
+  verifySecrets: boolean;
+}
+
+export function parseDoctorArgs(argv: string[]): DoctorCommandArgs {
   const { values } = parseArgs({
     args: argv,
-    options: { "verify-secrets": { type: "boolean" } },
+    options: {
+      json: { type: "boolean" },
+      "verify-secrets": { type: "boolean" },
+    },
     allowPositionals: false,
     strict: true,
   });
-  const report = await runDoctorChecks({ verifySecrets: values["verify-secrets"] ?? false });
-  for (const check of report.checks) {
-    console.log(`[${statusLabel(check.status)}] ${check.name}: ${check.detail}`);
-  }
+  return { json: values.json ?? false, verifySecrets: values["verify-secrets"] ?? false };
+}
+
+export function renderDoctorText(report: DoctorReport): string {
+  const lines = report.checks.map((check) => `[${statusLabel(check.status)}] ${check.name}: ${check.detail}`);
   const failCount = report.checks.filter((c) => c.status === "fail").length;
   const warnCount = report.checks.filter((c) => c.status === "warn").length;
-  console.log(`corb doctor: ${report.checks.length} check(s), ${failCount} failed, ${warnCount} warning(s).`);
+  lines.push(`corb doctor: ${report.checks.length} check(s), ${failCount} failed, ${warnCount} warning(s).`);
+  return lines.join("\n");
+}
+
+export interface DoctorJson {
+  checks: DoctorCheckResult[];
+  ok: boolean;
+}
+
+export function renderDoctorJson(report: DoctorReport): string {
+  const payload: DoctorJson = {
+    checks: report.checks.map(({ name, status, detail }) => ({ name, status, detail })),
+    ok: report.ok,
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+export async function runDoctorCommand(argv: string[] = []): Promise<void> {
+  const args = parseDoctorArgs(argv);
+  const report = await runDoctorChecks({ verifySecrets: args.verifySecrets });
+  console.log(args.json ? renderDoctorJson(report) : renderDoctorText(report));
   if (!report.ok) {
     process.exitCode = 1;
   }
