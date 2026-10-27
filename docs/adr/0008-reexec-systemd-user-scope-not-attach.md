@@ -33,16 +33,19 @@ See `docs/design.md` §7 ("Host resource limits: re-exec, not attach") and
 ## Decision Outcome
 
 Chosen option: "Re-exec into a systemd user scope before `VM.create()`".
-It eliminates the timing race by construction. When `[vm.limits]` is configured
-and `CORB_SCOPED` is unset, `corb
-run` re-executes itself under `systemd-run --user --scope --collect
+It eliminates the timing race by construction. When `[vm.limits]` has at least
+one configured key, all controllers required by those keys are delegated,
+and `CORB_SCOPED` is unset, `corb run` re-executes itself under
+`systemd-run --user --scope --collect
 --quiet -p MemoryMax=… -p TasksMax=… -p CPUQuota=…`.
 It uses `process.execPath` and `process.argv.slice(1)`, never a reconstructed
 command string. The child's environment sets `CORB_SCOPED=1` to prevent
 another re-exec.
 
 The child inherits `stdio`, so the agent's TUI and pty behave as in a direct
-run. The parent exits with the child's exact exit code. This is a re-exec,
+run. The parent forwards the child's exact exit code for a normal exit,
+uses 128 plus the signal number for signal termination, and returns 1 for
+other results without an exit status. This is a re-exec,
 rather than a supervisor.
 
 The limit covers the whole process tree (`corb`, QEMU, and their children)
@@ -62,5 +65,6 @@ is moot because this design never attempts the attach.
 * Bad, because the pids controller maps to `TasksMax=`, rather than `PidsMax=`.
   The latter fails with "Unknown assignment," as real `systemd-run` testing confirmed.
   This mapping requires manual maintenance. The controller's name alone does not establish the correct property.
-* Neutral, because the parent exits with the child's exact code without staying to manage it.
+* Neutral, because the parent forwards the child's exact code on normal exit, uses 128 plus the signal number on signal termination, and returns 1 for other results without an exit status.
+  It does not stay to manage the child.
   This keeps signal handling and shutdown simple. No separate host-side process watches the constrained process.

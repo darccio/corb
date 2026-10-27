@@ -22,7 +22,8 @@ project plan (`let-s-read-the-docs-nifty-russell.md`).
   VFS-over-RPC (`VirtualProvider`), and the SSH policy layer (`ssh.execPolicy`).
 * The guest helper `dropcap` needs raw `prctl(PR_SET_NO_NEW_PRIVS)` and
   `setresuid`/`setresgid` syscalls in a fixed order.
-  There is no room for a runtime or GC pause between steps.
+  The sequence must stay on the same OS thread through exec, enforced by
+  `runtime.LockOSThread()`.
 * The guest image needs minimal runtime baggage.
   Every installed interpreter or dynamic library adds attack surface and image size.
 
@@ -39,8 +40,10 @@ Gondolin only ships a Node SDK. A Go host requires a substantial reimplementatio
 of the MITM egress proxy, secret substitution, VFS-over-RPC, and SSH policy layer.
 
 On the guest side, `dropcap` needs direct, ordered syscalls
-(`prctl`, `setgroups`, `setresgid`, `setresuid`). Go's `syscall` package exposes
-these calls and applies them across every OS thread. Building with
+(`prctl`, `setgroups`, `setresgid`, `setresuid`). `unix.Prctl()` sets
+`PR_SET_NO_NEW_PRIVS` only on the OS thread locked by `runtime.LockOSThread()`.
+Go's `syscall.Setgroups`, `syscall.Setresgid`, and `syscall.Setresuid` apply
+credential changes across every OS thread. Building with
 `CGO_ENABLED=0` yields a single static binary with no runtime dependency on the
 guest's libc or dynamic linker.
 
@@ -52,5 +55,5 @@ guest's libc or dynamic linker.
   The Alpine guest image needs nothing extra to install or link against.
 * Bad, because the project carries two toolchains (Node/TypeScript and Go).
   It also needs two build steps (`tsc` and `go build`) instead of one.
-* Neutral, because this rules out running guest helpers under a different guest distro's libc.
-  The image is Alpine-only today. If that changes, this constraint needs review.
+* Neutral, because `CGO_ENABLED=0` removes the guest libc dependency and does not restrict helpers to Alpine-based images.
+  Changing the image requires review of kernel, architecture, and image integration assumptions.

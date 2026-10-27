@@ -38,9 +38,12 @@ See `docs/design.md` §8 ("Provider and model selection") and commit `341a073`
 
 Chosen option: "Provider-agnostic pass-through".
 Pi already handles multi-provider selection and credential resolution.
-Corb passes the user's choice through without reimplementing provider logic.
-It hardcodes no model provider name, API host, or credential environment variable
-name.
+For non-brokered providers using `[secrets.NAME]`, Corb passes the user's choice
+through without reimplementing provider logic or hardcoding model provider
+names, API hosts, or credential environment variable names.
+Host-brokered providers registered in `PROVIDERS` (`src/auth/provider.ts`)
+and accessed through `corb login` require provider-specific Corb code.
+They are the scoped exception described in [ADR 0012](0012-host-brokered-oauth-providers.md).
 
 `[agent].provider`/`[agent].model` translate directly into Pi's
 `--provider`/`--model` CLI flags. `[secrets.NAME]` binds the host environment
@@ -54,11 +57,14 @@ generic, so no new mechanism was needed. M3.4 wired the existing mechanism into
 
 ### Consequences
 
-* Good, because supporting a new provider requires no Corb code change.
+* Good, because supporting a new non-brokered provider through `[secrets.NAME]` requires no Corb code change.
   The workspace config names the right secret and `--provider`/`--model` values that Pi already understands.
-* Good, because Corb keeps no provider table that can drift out of sync with Pi's.
+* Good, because non-brokered providers using `[secrets.NAME]` need no Corb provider table that can drift out of sync with Pi's.
 * Bad, because Corb cannot validate a `[secrets.NAME]` spelling for the chosen provider ahead of time.
-  A misnamed secret fails only when Pi tries to use it, after the VM boots.
-  Pi's own no-credentials UX reports the failure.
-* Neutral, because `corb doctor` warns without blocking when no `[secrets.*]` entry is configured.
+  `buildSecretBindings()` detects absent or empty required host secrets during
+  `buildEgressConfig()`, before `VM.create()`; absent optional secrets are omitted.
+  A misnamed secret that exists in the host environment may fail later when Pi
+  tries to use it, after the VM boots. Pi's own no-credentials UX reports that failure.
+* Neutral, because `corb doctor` warns without blocking when no `[secrets.*]` entry is configured for an API-key provider.
+  Recognized brokered providers are exempt: `checkSecretsConfigured()` returns `ok` for them.
   It points to `corb explain` and Pi's provider docs, without guessing the intended provider.

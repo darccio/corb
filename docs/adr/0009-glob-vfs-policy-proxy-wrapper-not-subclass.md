@@ -47,8 +47,9 @@ methods. That behavior is moot for the critical path because this design does
 not depend on it.
 
 The implementation in `src/vfs/glob-policy.ts` (commit `0b3fcc4`) confirmed that
-every operation makes its own top-level policy decision before touching the
-backend. It does not inherit the base-class defaults for
+every gated operation makes its own top-level policy decision before touching
+the backend. `statfs` and `internalModuleStat` pass through without policy
+checks. It does not inherit the base-class defaults for
 `readFile`/`writeFile`/`appendFile`/`exists`. Those defaults use `open`/`stat`
 internally. They call `this.open` against the raw backend and bypass the wrapper
 entirely.

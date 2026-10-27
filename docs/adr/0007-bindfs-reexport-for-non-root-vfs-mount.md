@@ -41,9 +41,10 @@ re-derived checksum". It provides passthrough re-export with uid/gid squashing
 and `allow_other` on by default, without overlay/copy-up semantics.
 It measured less overhead than the other working option.
 
-The raw `sandboxfs` mount stays root-only at the internal-only guest path
-`/mnt/corb-raw/work`. `bindfs --force-user=<uid> --force-group=<gid>` re-exports
-it at the public `/work`. `rootfsInitExtra` inserts this step after
+The raw `sandboxfs` mounts stay root-only at internal-only guest paths.
+`bindfs --force-user=<uid> --force-group=<gid>` re-exports each workspace
+from `/mnt/corb-raw/<name>` to `/work/<name>`, and the gate mount from
+`/mnt/corb-raw-gate` to `/run/corb`. `rootfsInitExtra` inserts this step after
 `sandboxfs` mounts and before `sandboxd` accepts exec requests.
 
 ### Consequences

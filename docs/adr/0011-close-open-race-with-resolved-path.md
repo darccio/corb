@@ -72,11 +72,11 @@ operation acts on. If an operation must act on the literal named entry,
 redirection changes *which real filesystem entry* it acts on. That causes the
 data-loss failure described above.
 
-For **create-path** operations, the target need not exist yet.
-Resolve only the *parent* directory, then reattach the unchanged literal final
-segment. Redirection changes only the already-resolved parent chain, never the
-leaf name. The leaf therefore stays literal for a create-path `rename`
-destination, `link` new-name, or `symlink`'s own name.
+For **create-path** operations whose leaf does not exist, resolve only the
+*parent* directory, then reattach the unchanged literal final segment.
+Existing write and copy-destination targets also resolve the leaf and may pass
+that resolved path to the backend. A `rename` destination, `link` new-name,
+or `symlink`'s own name always keeps its leaf literal; only its parent is resolved.
 
 ### Mechanism
 
@@ -90,10 +90,12 @@ error remain unchanged. The result now retains `absPath`.
 
 `decide`/`decideSync` now return `DecideResult { mode, resolvedAbs }` rather
 than a bare `Mode`. If the recheck resolves a target, `resolvedAbs` contains
-the recheck's `absPath`. If the recheck returns `undefined`, it contains the
-unchanged original `normalizedAbs`. That means the target, or a create-path
-operation's parent, does not exist yet. The backend's own call reports its
-correct `ENOENT`.
+the recheck's `absPath`, preferring the resolved leaf for existing write and
+copy-destination targets. If no recheck resolves, it contains the unchanged
+original `normalizedAbs`. That means the target, or a create-path operation's
+parent, does not exist yet. A missing create parent may cause the backend to
+report `ENOENT` for non-recursive `mkdir`, while recursive directory creation
+can create the missing parents instead.
 
 Every call site's `if (decision === "shadowed")` became
 `if (decision.mode === "shadowed")`. Calls in the redirect classification
@@ -117,7 +119,7 @@ trailing symlink under their own semantics. Earlier resolution changes only
 | `stat`/`statSync` | the path |
 | `access`/`accessSync` | the path |
 | `readFile`/`readFileSync`, `writeFile`/`writeFileSync`, `appendFile`/`appendFileSync` | the path |
-| `copyFile`/`copyFileSync` | the *source* argument |
+| `copyFile`/`copyFileSync` | the *source* argument; the destination uses `destDecision.resolvedAbs`, including destination-parent resolution |
 | `truncate`/`truncateSync` (the top-level, path-based operation) | the path. Unlike `ftruncate`, POSIX `truncate(path,...)` follows a trailing symlink. |
 | `readdir`/`readdirSync` | the directory argument to the backend's own `readdir` call *only*. The requested directory's rule-relative path (`dirRulePath`, used by `isEntryHidden` to test each returned entry) stays unchanged. The rule-path basis for child-entry visibility is a separate design question outside this fix. |
 | `mkdir`/`mkdirSync` | the (create-path) parent |
