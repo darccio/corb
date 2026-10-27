@@ -287,6 +287,49 @@ describe("copy-on-write", () => {
     expect(backend.readFileSync("/secret", "utf8")).toBe("secret");
   });
 
+  it.each([
+    ["ordinary.alias", "writeFile"], ["copy.alias", "writeFile"],
+    ["ordinary.alias", "copyFile"], ["copy.alias", "copyFile"],
+  ] as const)("preserves shadow-write through %s for %s", async (alias, operation) => {
+    const { backend, wrapped } = fixture([
+      { glob: "copy*", mode: "copy-on-write", reason: "private" },
+      { glob: "shadow", mode: "shadow-write", reason: "discard" },
+    ]);
+    backend.writeFileSync("/shadow", "host");
+    backend.writeFileSync("/source", "guest");
+    backend.symlinkSync("shadow", `/${alias}`);
+    if (operation === "writeFile") await wrapped.writeFile(`/${alias}`, "guest");
+    else await wrapped.copyFile("/source", `/${alias}`);
+    expect(await wrapped.readFile(`/${alias}`, "utf8")).toBe("host");
+    expect(await wrapped.readFile("/shadow", "utf8")).toBe("host");
+    expect(backend.readFileSync("/shadow", "utf8")).toBe("host");
+  });
+
+  it.each(["ordinary.alias", "copy.alias"])("refuses a late swap from %s to a shadow-write target", async (alias) => {
+    const { backend, wrapped } = fixture([
+      { glob: "copy*", mode: "copy-on-write", reason: "private" },
+      { glob: "shadow", mode: "shadow-write", reason: "discard" },
+    ]);
+    backend.writeFileSync("/ordinary", "safe");
+    backend.writeFileSync("/shadow", "host");
+    backend.symlinkSync("ordinary", `/${alias}`);
+    const originalRealpath = backend.realpathSync.bind(backend);
+    let first = true;
+    backend.realpathSync = (target) => {
+      const resolved = originalRealpath(target);
+      if (target === `/${alias}` && first) {
+        first = false;
+        backend.unlinkSync(`/${alias}`);
+        backend.symlinkSync("shadow", `/${alias}`);
+      }
+      return resolved;
+    };
+    await expect(wrapped.writeFile(`/${alias}`, "guest")).rejects.toMatchObject({ code: "EACCES" });
+    expect(await wrapped.readFile(`/${alias}`, "utf8")).toBe("host");
+    expect(backend.readFileSync("/shadow", "utf8")).toBe("host");
+    expect(backend.readFileSync("/ordinary", "utf8")).toBe("safe");
+  });
+
   it("supports covered directory creation, rename and removal", async () => {
     const { backend, wrapped } = fixture([{ glob: "private/**", mode: "copy-on-write", reason: "private" }]);
     backend.mkdirSync("/private");

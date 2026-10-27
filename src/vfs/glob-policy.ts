@@ -422,6 +422,10 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
         if (decision.outcome.kind === "deny") {
           auditAndThrow(op, op, toRulePath(normalizeGuestPath(requested)), decision.outcome, decision.rule, `${decision.rule?.reason ?? "denied by policy"} (via resolved path '${toRulePath(target)}')`);
         }
+        if (decision.outcome.kind === "shadowed") {
+          auditAndThrow(op, op, toRulePath(normalizeGuestPath(requested)), { kind: "deny", errno: "EACCES" }, decision.rule,
+            `resolved target requires shadow-write storage after the policy check. ${decision.rule?.reason ?? "shadowed"}`);
+        }
       })
     : undefined;
   const backendAny = (copyOnWrite?.provider ?? backend) as ProviderLike;
@@ -611,11 +615,15 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
     const recheck = await resolveForRecheck(normalizedAbs, createPath, op, syscall);
-    if (createPath && op === "write" && hasCopyOnWrite) {
+    if (createPath && (op === "write" || op === "copy-dest") && hasCopyOnWrite) {
       const leaf = await resolveForRecheck(normalizedAbs, false, op, syscall);
       if (leaf) {
         const resolved = decideFsAccessForPath(rules, leaf.rulePath, op);
         if (resolved.outcome.kind === "deny") auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, resolved.rule?.reason ?? "denied by policy");
+        if (resolved.outcome.kind === "shadowed") {
+          onDeny({ path: rulePath, op, outcome: resolved.outcome, rule: resolved.rule, reason: resolved.rule?.reason ?? "shadowed" });
+          return { mode: "shadowed", resolvedAbs: leaf.absPath };
+        }
       }
     }
     // Preserve a covered spelling when it aliases an uncovered target.
@@ -645,11 +653,15 @@ export function withGlobPolicy<P extends object>(backend: P, opts: GlobPolicyOpt
       auditAndThrow(op, syscall, rulePath, primary.outcome, primary.rule, primary.rule?.reason ?? "denied by policy");
     }
     const recheck = resolveForRecheckSync(normalizedAbs, createPath, op, syscall);
-    if (createPath && op === "write" && hasCopyOnWrite) {
+    if (createPath && (op === "write" || op === "copy-dest") && hasCopyOnWrite) {
       const leaf = resolveForRecheckSync(normalizedAbs, false, op, syscall);
       if (leaf) {
         const resolved = decideFsAccessForPath(rules, leaf.rulePath, op);
         if (resolved.outcome.kind === "deny") auditAndThrow(op, syscall, rulePath, resolved.outcome, resolved.rule, resolved.rule?.reason ?? "denied by policy");
+        if (resolved.outcome.kind === "shadowed") {
+          onDeny({ path: rulePath, op, outcome: resolved.outcome, rule: resolved.rule, reason: resolved.rule?.reason ?? "shadowed" });
+          return { mode: "shadowed", resolvedAbs: leaf.absPath };
+        }
       }
     }
     // Preserve a covered spelling when it aliases an uncovered target.
